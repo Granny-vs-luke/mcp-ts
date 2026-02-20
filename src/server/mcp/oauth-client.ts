@@ -27,6 +27,13 @@ import {
   ReadResourceRequest,
   ReadResourceResult,
   ReadResourceResultSchema,
+  ProgressNotificationSchema,
+  LoggingMessageNotificationSchema,
+  ResourceUpdatedNotificationSchema,
+  ResourceListChangedNotificationSchema,
+  PromptListChangedNotificationSchema,
+  ToolListChangedNotificationSchema,
+  TaskStatusNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { OAuthClientMetadata, OAuthTokens, OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { StorageOAuthClientProvider, type AgentsOAuthProvider } from './storage-oauth-provider.js';
@@ -46,7 +53,7 @@ export type TransportType = 'sse' | 'streamable_http';
 /**
  * Extended capabilities including MCP App support
  */
-import type { ClientCapabilities } from '@modelcontextprotocol/sdk/types.js';
+import type { ClientCapabilities, ServerNotification } from '@modelcontextprotocol/sdk/types.js';
 
 interface McpAppClientCapabilities extends ClientCapabilities {
   extensions?: {
@@ -111,7 +118,73 @@ export class MCPClient {
   private readonly _onObservabilityEvent = new Emitter<McpObservabilityEvent>();
   public readonly onObservabilityEvent = this._onObservabilityEvent.event;
 
+  private readonly _onServerNotification = new Emitter<{
+    sessionId: string;
+    serverId: string;
+    method: string;
+    params?: Record<string, unknown>;
+    timestamp: number;
+  }>();
+  public readonly onServerNotification = this._onServerNotification.event;
+
   private currentState: McpConnectionState = 'DISCONNECTED';
+
+  private handleServerNotification(notification: ServerNotification): void {
+    if (!this.serverId) return;
+
+    const method = notification.method;
+    const params = notification.params as Record<string, unknown> | undefined;
+    const timestamp = Date.now();
+
+    this._onConnectionEvent.fire({
+      type: 'server_notification',
+      sessionId: this.sessionId,
+      serverId: this.serverId,
+      method,
+      params,
+      timestamp,
+    });
+
+    this._onServerNotification.fire({
+      sessionId: this.sessionId,
+      serverId: this.serverId,
+      method,
+      params,
+      timestamp,
+    });
+
+    this._onObservabilityEvent.fire({
+      type: 'mcp:client:notification',
+      level: 'info',
+      message: `Server notification: ${method}`,
+      displayMessage: method === 'notifications/progress'
+        ? String(params?.message || 'Progress update')
+        : `Received ${method}`,
+      sessionId: this.sessionId,
+      serverId: this.serverId,
+      payload: { method, params },
+      timestamp,
+      id: nanoid(),
+    });
+  }
+
+  private registerServerNotificationHandlers(): void {
+    if (!this.client) return;
+
+    const register = (schema: any) => {
+      this.client!.setNotificationHandler(schema, (notification: ServerNotification) => {
+        this.handleServerNotification(notification);
+      });
+    };
+
+    register(ProgressNotificationSchema);
+    register(LoggingMessageNotificationSchema);
+    register(ResourceUpdatedNotificationSchema);
+    register(ResourceListChangedNotificationSchema);
+    register(PromptListChangedNotificationSchema);
+    register(ToolListChangedNotificationSchema);
+    register(TaskStatusNotificationSchema);
+  }
 
   /**
    * Creates a new MCP client instance
@@ -354,6 +427,7 @@ export class MCPClient {
           } as McpAppClientCapabilities
         }
       );
+      this.registerServerNotificationHandlers();
     }
 
     // Create session in storage if it doesn't exist yet
@@ -624,6 +698,7 @@ export class MCPClient {
             } as McpAppClientCapabilities
           }
         );
+        this.registerServerNotificationHandlers();
 
         this.emitStateChange('CONNECTING');
 
@@ -976,6 +1051,7 @@ export class MCPClient {
       },
       { capabilities: {} }
     );
+    this.registerServerNotificationHandlers();
 
     // Use default logic to get transport, defaulting to what's stored or auto
     const tt = this.transportType || 'streamable_http';
