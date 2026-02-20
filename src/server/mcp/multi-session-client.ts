@@ -142,6 +142,14 @@ export class MultiSessionClient {
     disconnect(): void {
         this.clients.forEach((client) => client.disconnect());
         this.clients = [];
+    }
+
+    /**
+     * Dispose this multi-session client and all event listeners.
+     * Use this when the instance will no longer be reused.
+     */
+    dispose(): void {
+        this.disconnect();
         this._onNotification.dispose();
     }
 }
