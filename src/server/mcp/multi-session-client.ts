@@ -2,7 +2,6 @@
 
 import { MCPClient } from './oauth-client.js';
 import { storage, type SessionData } from '../storage/index.js';
-import { Emitter, type Event } from '../../shared/events.js';
 
 /**
  * Manages multiple MCP connections for a single user identity.
@@ -26,14 +25,6 @@ export interface MultiSessionOptions {
     retryDelay?: number;
 }
 
-export interface MultiSessionNotificationEvent {
-    sessionId: string;
-    serverId: string;
-    method: string;
-    params?: Record<string, unknown>;
-    timestamp: number;
-}
-
 /**
  * Manages multiple MCP connections for a single user identity.
  * Allows aggregating tools from all connected servers.
@@ -42,8 +33,6 @@ export class MultiSessionClient {
     private clients: MCPClient[] = [];
     private identity: string;
     private options: MultiSessionOptions;
-    private readonly _onNotification = new Emitter<MultiSessionNotificationEvent>();
-    public readonly onNotification: Event<MultiSessionNotificationEvent> = this._onNotification.event;
 
     constructor(identity: string, options: MultiSessionOptions = {}) {
         this.identity = identity;
@@ -111,10 +100,6 @@ export class MultiSessionClient {
             headers: session.headers,
         });
 
-        client.onServerNotification((event) => {
-            this._onNotification.fire(event);
-        });
-
         const timeoutMs = this.options.timeout ?? 15000;
         const timeoutPromise = new Promise<never>((_, reject) => {
             setTimeout(() => reject(new Error(`Connection timed out after ${timeoutMs}ms`)), timeoutMs);
@@ -142,15 +127,6 @@ export class MultiSessionClient {
     disconnect(): void {
         this.clients.forEach((client) => client.disconnect());
         this.clients = [];
-    }
-
-    /**
-     * Dispose this multi-session client and all event listeners.
-     * Use this when the instance will no longer be reused.
-     */
-    dispose(): void {
-        this.disconnect();
-        this._onNotification.dispose();
     }
 }
 

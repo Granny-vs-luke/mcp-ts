@@ -35,7 +35,6 @@
 ## Features
 
 - **SSE** - Server-Sent Events for connection state and observability updates
-- **Server Notifications** - Handles MCP notifications (progress, tasks/status, list updates, logs) without polling
 - **Flexible Storage** - Redis, SQLite, File System, or In-Memory backends
 - **Serverless** - Works in serverless environments (Vercel, AWS Lambda, etc.)
 - **React Hook** - `useMcp` hook for easy React integration
@@ -217,27 +216,6 @@ const tools = await MastraAdapter.getTools(client);
 ```
 
 </details>
-
-### Server Notifications (no polling)
-
-`MCPClient` and `MultiSessionClient` now forward standard MCP notifications (like `notifications/progress`, `notifications/tasks/status`, and list-changed updates) so autonomous agents can react in real time.
-
-```typescript
-import { MultiSessionClient } from '@mcp-ts/sdk/server';
-
-const client = new MultiSessionClient('user_123');
-await client.connect();
-
-client.onNotification((event) => {
-  if (event.method === 'notifications/progress') {
-    console.log('Progress:', event.params);
-  }
-
-  if (event.method === 'notifications/tasks/status') {
-    console.log('Task status update:', event.params);
-  }
-});
-```
 
 ### AG-UI Middleware
 
