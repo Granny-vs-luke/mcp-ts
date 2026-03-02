@@ -41,6 +41,13 @@ Endpoints:
 - `GET /agents/details`
 - `GET /healthz`
 
+One-command deploy from this package:
+
+```bash
+cd packages/mcp-remote-server
+uv run mcp-remote-deploy
+```
+
 Optional Streamlit dashboard:
 
 ```bash
