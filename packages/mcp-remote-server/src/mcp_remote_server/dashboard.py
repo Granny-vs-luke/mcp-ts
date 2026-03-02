@@ -43,6 +43,58 @@ def _get_agents(http_base_url: str, token: str, timeout_seconds: float) -> list[
         return data.get("agents", [])
 
 
+def _post_mcp(http_base_url: str, agent_id: str, mcp_server: str, token: str, timeout_seconds: float, payload: dict[str, Any]) -> dict[str, Any]:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    with httpx.Client(timeout=timeout_seconds) as client:
+        response = client.post(f"{http_base_url}/{agent_id}/{mcp_server}/mcp", headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
+        return data if isinstance(data, dict) else {"data": data}
+
+
+def _fetch_mcp_server_info(http_base_url: str, agent_id: str, mcp_server: str, token: str, timeout_seconds: float) -> dict[str, Any]:
+    try:
+        initialize_payload = {
+            "jsonrpc": "2.0",
+            "id": "init-1",
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "mcp-remote-dashboard", "version": "1.0.0"},
+            },
+        }
+        init_response = _post_mcp(http_base_url, agent_id, mcp_server, token, timeout_seconds, initialize_payload)
+        init_result = init_response.get("result", init_response)
+        server_info = init_result.get("serverInfo", {}) if isinstance(init_result, dict) else {}
+        instructions = init_result.get("instructions", "") if isinstance(init_result, dict) else ""
+
+        tools_payload = {"jsonrpc": "2.0", "id": "tools-1", "method": "tools/list", "params": {}}
+        tools_response = _post_mcp(http_base_url, agent_id, mcp_server, token, timeout_seconds, tools_payload)
+        tools_result = tools_response.get("result", tools_response)
+        tools = tools_result.get("tools", []) if isinstance(tools_result, dict) else []
+
+        return {
+            "status": "✅ connected",
+            "server_name": mcp_server,
+            "title": str(server_info.get("title", "")),
+            "version": str(server_info.get("version", "")),
+            "tools_count": len(tools) if isinstance(tools, list) else 0,
+            "tools": tools if isinstance(tools, list) else [],
+            "instructions": str(instructions),
+        }
+    except Exception as exc:
+        return {
+            "status": "❌ error",
+            "server_name": mcp_server,
+            "title": "",
+            "version": "",
+            "tools_count": 0,
+            "tools": [],
+            "instructions": str(exc),
+        }
+
+
 def app() -> None:
     st.set_page_config(page_title="MCP Remote Dashboard", layout="wide")
     st.title("MCP Remote Server Dashboard")
@@ -59,19 +111,16 @@ def app() -> None:
         jwt_secret = st.text_input("JWT secret", value=os.getenv("JWT_SECRET", ""), type="password")
         jwt_algorithm = st.text_input("JWT algorithm", value=os.getenv("JWT_ALGORITHM", "HS256"))
         st.caption("Agent ID is auto-generated: max 10 chars, uppercase letters and numbers only.")
-        jwt_all_servers = st.checkbox("All MCP servers (*)", value=False)
-        jwt_mcp_server = st.text_input("MCP server name", value="filesystem")
         jwt_expiry_minutes = st.number_input("Expiry (minutes)", min_value=1, max_value=1440, value=60, step=5)
         if st.button("Generate JWT"):
             if not jwt_secret.strip():
                 st.error("JWT secret is required.")
             else:
-                capabilities = ["*"] if jwt_all_servers else ([jwt_mcp_server.strip()] if jwt_mcp_server.strip() else [])
                 subject = _generate_agent_id(10)
                 payload = {
                     "sub": subject,
                     "role": "agent",
-                    "capabilities": capabilities,
+                    "capabilities": ["*"],
                     "exp": int(time.time()) + int(jwt_expiry_minutes) * 60,
                 }
                 st.session_state["generated_jwt"] = jwt.encode(
@@ -139,6 +188,51 @@ def app() -> None:
                 }
             )
     st.dataframe(rows, use_container_width=True)
+
+    st.subheader("MCP Server Info")
+    if st.button("Refresh MCP Server Info"):
+        info_rows: list[dict[str, Any]] = []
+        for agent in agents:
+            agent_id = str(agent.get("agent_id", ""))
+            mcp_servers = list(agent.get("capabilities", []))
+            for mcp_server in mcp_servers:
+                row = _fetch_mcp_server_info(
+                    http_base_url=http_base_url,
+                    agent_id=agent_id,
+                    mcp_server=str(mcp_server),
+                    token=auth_token,
+                    timeout_seconds=timeout_seconds,
+                )
+                row["agent_id"] = agent_id
+                info_rows.append(row)
+        st.session_state["mcp_server_info_rows"] = info_rows
+
+    info_rows = st.session_state.get("mcp_server_info_rows", [])
+    for item in info_rows:
+        status = str(item.get("status", ""))
+        agent_id = str(item.get("agent_id", ""))
+        server_name = str(item.get("server_name", ""))
+        title = str(item.get("title", ""))
+        version = str(item.get("version", ""))
+        tools_count = int(item.get("tools_count", 0))
+        instructions = str(item.get("instructions", ""))
+        tools = item.get("tools", [])
+
+        header = f"{status} {agent_id} / {server_name} ({tools_count} tools)"
+        with st.expander(header, expanded=False):
+            st.write(f"**Agent ID:** `{agent_id}`")
+            st.write(f"**MCP Server:** `{server_name}`")
+            st.write(f"**Title:** `{title or '-'} `")
+            st.write(f"**Version:** `{version or '-'} `")
+            st.write(f"**Instructions:** {instructions or '-'}")
+            st.markdown("**Tools**")
+            if isinstance(tools, list) and tools:
+                for tool in tools:
+                    name = str((tool or {}).get("name", ""))
+                    description = str((tool or {}).get("description", ""))
+                    st.write(f"- `{name}`: {description}")
+            else:
+                st.write("- None")
 
     st.caption("Use these URLs in your MCP client integration layer with an agent JWT scoped to the MCP server.")
 

@@ -38,4 +38,4 @@ Environment variables:
 The dashboard lists connected agents and capabilities and generates ready-to-copy invoke URLs:
 - `https://<remote>/{agent_id}/{mcp_server}/mcp`
 
-It also includes a JWT Generator panel to create agent JWTs directly in the UI, with MCP server scope (`*` or a single server name).
+It also includes a JWT Generator panel to create agent JWTs directly in the UI.
