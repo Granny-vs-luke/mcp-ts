@@ -22,6 +22,7 @@ dependencies = [
 [project.scripts]
 mcp-remote-server = "mcp_remote_server.main:run"
 mcp-remote-dashboard = "mcp_remote_server.dashboard:run"
+mcp-remote-deploy = "mcp_remote_server.deploy:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcp_remote_server"]

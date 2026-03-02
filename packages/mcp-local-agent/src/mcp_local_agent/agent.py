@@ -146,14 +146,24 @@ class LocalBridgeAgent:
     async def _session(self) -> None:
         headers = {"Authorization": f"Bearer {self.config.jwt_token}"}
         async with connect(self.config.websocket_url, additional_headers=headers, ping_interval=20, ping_timeout=20) as websocket:
-            register_msg = {"type": "register", "agent_id": self.config.agent_id, "capabilities": self.config.capabilities}
+            announced_servers = self._announced_mcp_servers()
+            register_msg = {"type": "register", "agent_id": self.config.agent_id, "capabilities": announced_servers}
             await websocket.send(json.dumps(register_msg))
-            _console(f"✅ [bridge] connected and registered mcp_servers={','.join(self.config.capabilities)}")
+            _console(f"✅ [bridge] connected and registered mcp_servers={','.join(announced_servers)}")
 
             async for raw in websocket:
                 if self._stop_event.is_set():
                     break
                 await self._handle_message(websocket, raw)
+
+    def _announced_mcp_servers(self) -> list[str]:
+        if self.config.mcp_servers:
+            return [str(name) for name in self.config.mcp_servers.keys()]
+        # Fallback for endpoint-only configs; don't advertise wildcard as server name.
+        servers = [str(item) for item in self.config.capabilities if str(item) != "*"]
+        if servers:
+            return servers
+        return [str(name) for name in self.config.local_capability_endpoints.keys()]
 
     async def _start_mcp_servers_if_configured(self) -> None:
         servers = self.config.mcp_servers or {}

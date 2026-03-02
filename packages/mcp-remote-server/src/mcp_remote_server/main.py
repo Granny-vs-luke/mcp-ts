@@ -88,7 +88,7 @@ async def connect(websocket: WebSocket) -> None:
             return
 
         declared_capabilities = set(initial_obj.capabilities)
-        if not declared_capabilities.issubset(auth_ctx.capabilities):
+        if "*" not in auth_ctx.capabilities and not declared_capabilities.issubset(auth_ctx.capabilities):
             await websocket.close(code=4403, reason="capability scope violation")
             return
 
