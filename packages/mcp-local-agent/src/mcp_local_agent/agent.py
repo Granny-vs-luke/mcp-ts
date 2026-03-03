@@ -26,6 +26,7 @@ def configure_logging() -> None:
 
 
 logger = logging.getLogger("mcp_local_agent")
+DEFAULT_PROTOCOL_VERSION = os.getenv("MCP_PROTOCOL_VERSION", "2025-11-25")
 
 
 def _console(msg: str) -> None:
@@ -49,12 +50,30 @@ def _to_jsonable(value: Any) -> Any:
     return value
 
 
+def _normalize_initialize_result(result: Any, requested_protocol: str | None = None) -> dict[str, Any]:
+    payload = _to_jsonable(result)
+    payload = payload if isinstance(payload, dict) else {}
+
+    server_info = payload.get("serverInfo") if isinstance(payload.get("serverInfo"), dict) else {}
+    capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
+
+    payload["protocolVersion"] = str(requested_protocol or payload.get("protocolVersion") or DEFAULT_PROTOCOL_VERSION)
+    payload["capabilities"] = capabilities
+    payload["serverInfo"] = {
+        "name": str(server_info.get("name") or "local-bridge-proxy"),
+        "version": str(server_info.get("version") or "1.0.0"),
+    }
+    payload["instructions"] = str(payload.get("instructions") or "")
+    return payload
+
+
 class ManagedMCPServer:
     def __init__(self, name: str, server_cfg: dict[str, Any]) -> None:
         self.name = name
         self.server_cfg = server_cfg
         self.exit_stack = AsyncExitStack()
         self.session: ClientSession | None = None
+        self._initialize_result: dict[str, Any] = {}
 
     async def start(self) -> None:
         command = str(self.server_cfg.get("command", "")).strip()
@@ -72,12 +91,13 @@ class ManagedMCPServer:
         transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
         read, write = transport
         session = await self.exit_stack.enter_async_context(ClientSession(read, write))
-        await session.initialize()
+        self._initialize_result = _normalize_initialize_result(await session.initialize())
         self.session = session
 
     async def close(self) -> None:
         await self.exit_stack.aclose()
         self.session = None
+        self._initialize_result = {}
 
     async def handle_jsonrpc(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self.session is None:
@@ -86,10 +106,11 @@ class ManagedMCPServer:
         request_id = payload.get("id")
         method = str(payload.get("method", ""))
         params = payload.get("params", {}) if isinstance(payload.get("params", {}), dict) else {}
+        requested_protocol = str(params.get("protocolVersion", "")).strip() or None
 
         try:
             if method == "initialize":
-                result = await self.session.initialize()
+                result = _normalize_initialize_result(self._initialize_result, requested_protocol)
             elif method in {"tools/list", "list_tools"}:
                 result = await self.session.list_tools()
             elif method in {"tools/call", "call_tool"}:
