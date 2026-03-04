@@ -64,6 +64,13 @@ export interface UseMcpOptions {
    * @default 60000
    */
   requestTimeout?: number;
+
+  /**
+   * Enable client debug logs.
+   * @default false
+   */
+  debug?: boolean;
+
 }
 
 export interface McpConnection {
@@ -246,7 +253,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
           setStatus(newStatus);
         }
       },
-      requestTimeout: options.requestTimeout,
+      debug: options.debug,
     };
 
     const client = new SSEClient(clientOptions);

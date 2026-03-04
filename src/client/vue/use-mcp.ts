@@ -58,6 +58,18 @@ export interface UseMcpOptions {
      * If provided, this will be called instead of window.location.href assignment
      */
     onRedirect?: (url: string) => void;
+
+    /**
+     * Request timeout in milliseconds
+     * @default 60000
+     */
+    requestTimeout?: number;
+
+    /**
+     * Enable client debug logs.
+     * @default false
+     */
+    debug?: boolean;
 }
 
 export interface McpConnection {
@@ -183,6 +195,11 @@ export interface McpClient {
      * Read a specific resource
      */
     readResource: (sessionId: string, uri: string) => Promise<unknown>;
+
+    /**
+     * Access the underlying SSEClient instance (for advanced usage like AppHost)
+     */
+    sseClient: SSEClient | null;
 }
 
 /**
@@ -371,6 +388,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                     status.value = newStatus;
                 }
             },
+            debug: options.debug,
         };
 
         const client = new SSEClient(clientOptions);
@@ -579,5 +597,6 @@ export function useMcp(options: UseMcpOptions): McpClient {
         getPrompt,
         listResources,
         readResource,
+        sseClient: clientRef.value,
     };
 }

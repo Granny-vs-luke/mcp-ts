@@ -1,11 +1,17 @@
 /**
- * Next.js App Router Handler for MCP SSE
- * Provides a clean, zero-boilerplate API for Next.js applications
+ * Next.js App Router Handler for MCP
+ * Stateless transport for serverless environments:
+ * - POST + `Accept: text/event-stream` streams progress + rpc-response
+ * - POST + JSON accepts direct RPC result response
  */
 
 import { SSEConnectionManager, type ClientMetadata } from './sse-handler.js';
 import type { McpConnectionEvent, McpObservabilityEvent } from '../../shared/events.js';
 import type { McpRpcResponse } from '../../shared/types.js';
+
+function isRpcResponseEvent(event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse): event is McpRpcResponse {
+  return 'id' in event && ('result' in event || 'error' in event);
+}
 
 export interface NextMcpHandlerOptions {
   /**
@@ -31,39 +37,15 @@ export interface NextMcpHandlerOptions {
 
   /**
    * Static OAuth client metadata defaults (for all connections)
-   * Use this for single-tenant applications with fixed branding
    */
   clientDefaults?: ClientMetadata;
 
   /**
-   * Dynamic OAuth client metadata getter (per-request, useful for multi-tenant)
-   * Use this when you need different branding based on request (tenant, domain, etc.)
-   * Takes precedence over clientDefaults
+   * Dynamic OAuth client metadata getter (per-request)
    */
   getClientMetadata?: (request: Request) => ClientMetadata | Promise<ClientMetadata>;
 }
 
-type EventSink = (event: string, data: unknown) => void;
-type ManagerEntry = {
-  manager: SSEConnectionManager;
-  setSink: (sink: EventSink) => void;
-  clearSink: () => void;
-};
-
-// Global manager store - shared across requests for the same user
-const managerEntries = new Map<string, ManagerEntry>();
-
-/**
- * Creates Next.js App Router handlers (GET and POST) for MCP SSE endpoint
- *
- * @example
- * ```typescript
- * // app/api/mcp/route.ts
- * import { createNextMcpHandler } from '@mcp-ts/core/server';
- *
- * export const { GET, POST } = createNextMcpHandler();
- * ```
- */
 export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
   const {
     getIdentity = (request: Request) => new URL(request.url).searchParams.get('identity'),
@@ -77,126 +59,37 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
     getClientMetadata,
   } = options;
 
-  function createManagerEntry(identity: string, resolvedClientMetadata?: ClientMetadata): ManagerEntry {
-    let sink: EventSink = () => { };
+  const toManagerOptions = (identity: string, resolvedClientMetadata?: ClientMetadata) => ({
+    identity,
+    heartbeatInterval,
+    clientDefaults: resolvedClientMetadata,
+  });
 
-    const manager = new SSEConnectionManager(
+  async function resolveClientMetadata(request: Request): Promise<ClientMetadata | undefined> {
+    return getClientMetadata ? await getClientMetadata(request) : clientDefaults;
+  }
+
+  async function GET(): Promise<Response> {
+    return Response.json(
       {
-        identity,
-        heartbeatInterval,
-        clientDefaults: resolvedClientMetadata,
+        error: {
+          code: 'METHOD_NOT_ALLOWED',
+          message: 'Use POST /api/mcp. For streaming use Accept: text/event-stream.',
+        },
       },
-      (event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse) => {
-        // POST returns RPC response directly, do not echo over SSE.
-        if ('id' in event) {
-          return;
-        }
-        if ('type' in event && 'sessionId' in event) {
-          sink('connection', event);
-        } else {
-          sink('observability', event);
-        }
-      }
+      { status: 405 }
     );
-
-    return {
-      manager,
-      setSink: (nextSink: EventSink) => {
-        sink = nextSink;
-      },
-      clearSink: () => {
-        sink = () => { };
-      },
-    };
   }
 
-  async function getOrCreateManagerEntry(identity: string, request?: Request): Promise<ManagerEntry> {
-    const existing = managerEntries.get(identity);
-    if (existing) return existing;
-
-    const resolvedClientMetadata = request
-      ? (getClientMetadata ? await getClientMetadata(request) : clientDefaults)
-      : clientDefaults;
-
-    const created = createManagerEntry(identity, resolvedClientMetadata);
-    managerEntries.set(identity, created);
-    return created;
-  }
-
-  /**
-   * GET handler - Establishes SSE connection
-   */
-  async function GET(request: Request): Promise<Response> {
-    const identity = getIdentity(request);
-    const authToken = getAuthToken(request);
-
-    if (!identity) {
-      return new Response('Missing identity', { status: 400 });
-    }
-
-    // Validate auth
-    const isAuthorized = await authenticate(identity, authToken);
-    if (!isAuthorized) {
-      return new Response('Unauthorized', { status: 401 });
-    }
-
-    // Create TransformStream for SSE
-    const stream = new TransformStream();
-    const writer = stream.writable.getWriter();
-    const encoder = new TextEncoder();
-    let streamWritable = true;
-
-    // Helper to send SSE events
-    const sendSSE = (event: string, data: any) => {
-      if (!streamWritable) return;
-      const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-      try {
-        writer.write(encoder.encode(message)).catch(() => {
-          streamWritable = false;
-        });
-      } catch {
-        streamWritable = false;
-      }
-    };
-
-    const entry = await getOrCreateManagerEntry(identity, request);
-    entry.setSink(sendSSE);
-
-    // Send connected event AFTER manager is registered (prevents race condition
-    // where client sends POST before manager is available)
-    sendSSE('connected', { timestamp: Date.now() });
-
-    // Handle client disconnect
-    request.signal?.addEventListener('abort', () => {
-      streamWritable = false;
-      entry.clearSink();
-      writer.close().catch(() => { });
-    });
-
-    // Return SSE response
-    return new Response(stream.readable, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      },
-    });
-  }
-
-  /**
-   * POST handler - Handles RPC requests
-   */
   async function POST(request: Request): Promise<Response> {
     const identity = getIdentity(request);
     const authToken = getAuthToken(request);
+    const acceptsEventStream = (request.headers.get('accept') || '').toLowerCase().includes('text/event-stream');
 
     if (!identity) {
       return Response.json({ error: { code: 'MISSING_IDENTITY', message: 'Missing identity' } }, { status: 400 });
     }
 
-    // Validate auth
     const isAuthorized = await authenticate(identity, authToken);
     if (!isAuthorized) {
       return Response.json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } }, { status: 401 });
@@ -208,20 +101,88 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
       const body = rawBody ? JSON.parse(rawBody) : null;
 
       if (!body || typeof body !== 'object') {
-        return Response.json({
-          error: {
-            code: 'INVALID_REQUEST',
-            message: 'Invalid JSON-RPC request body',
+        return Response.json(
+          {
+            error: {
+              code: 'INVALID_REQUEST',
+              message: 'Invalid JSON-RPC request body',
+            },
           },
-        }, { status: 400 });
+          { status: 400 }
+        );
       }
 
-      const entry = await getOrCreateManagerEntry(identity);
-      // Handle the request and return response directly (bypasses SSE latency)
-      const response = await entry.manager.handleRequest(body as any);
+      const resolvedClientMetadata = await resolveClientMetadata(request);
 
-      // Return the actual RPC response for immediate use by client
-      return Response.json(response);
+      if (!acceptsEventStream) {
+        const manager = new SSEConnectionManager(
+          toManagerOptions(identity, resolvedClientMetadata),
+          () => { }
+        );
+        try {
+          const response = await manager.handleRequest(body as any);
+          return Response.json(response);
+        } finally {
+          manager.dispose();
+        }
+      }
+
+      const stream = new TransformStream();
+      const writer = stream.writable.getWriter();
+      const encoder = new TextEncoder();
+      let streamWritable = true;
+
+      const sendSSE = (event: string, data: unknown) => {
+        if (!streamWritable) return;
+        const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+        writer.write(encoder.encode(message)).catch(() => {
+          streamWritable = false;
+        });
+      };
+
+      const manager = new SSEConnectionManager(
+        toManagerOptions(identity, resolvedClientMetadata),
+        (event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse) => {
+          if (isRpcResponseEvent(event)) {
+            sendSSE('rpc-response', event);
+          } else if ('type' in event && 'sessionId' in event) {
+            sendSSE('connection', event);
+          } else {
+            sendSSE('observability', event);
+          }
+        }
+      );
+
+      sendSSE('connected', { timestamp: Date.now() });
+
+      void (async () => {
+        try {
+          await manager.handleRequest(body as any);
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error('Unknown error');
+          sendSSE('rpc-response', {
+            id: (body as any).id || 'unknown',
+            error: {
+              code: 'EXECUTION_ERROR',
+              message: err.message,
+            },
+          } satisfies McpRpcResponse);
+        } finally {
+          streamWritable = false;
+          manager.dispose();
+          writer.close().catch(() => { });
+        }
+      })();
+
+      return new Response(stream.readable, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        },
+      });
     } catch (error) {
       const err = error instanceof Error ? error : new Error('Unknown error');
       console.error('[MCP Next Handler] Failed to handle RPC', {
