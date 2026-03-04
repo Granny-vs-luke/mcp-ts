@@ -15,6 +15,13 @@ export interface SessionData {
     createdAt: number;
     identity: string;
     headers?: Record<string, string>;
+    /**
+     * Session status marker used for TTL transitions:
+     * - false: short-lived intermediate/error/auth-pending session state
+     *          (keep this value when connection/auth is incomplete or failed)
+     * - true: active long-lived session state after successful connection/auth completion
+     */
+    active?: boolean;
     // OAuth data (consolidated)
     clientInformation?: OAuthClientInformationMixed;
     tokens?: OAuthTokens;

@@ -43,8 +43,15 @@ export interface NextMcpHandlerOptions {
   getClientMetadata?: (request: Request) => ClientMetadata | Promise<ClientMetadata>;
 }
 
+type EventSink = (event: string, data: unknown) => void;
+type ManagerEntry = {
+  manager: SSEConnectionManager;
+  setSink: (sink: EventSink) => void;
+  clearSink: () => void;
+};
+
 // Global manager store - shared across requests for the same user
-const managers = new Map<string, SSEConnectionManager>();
+const managerEntries = new Map<string, ManagerEntry>();
 
 /**
  * Creates Next.js App Router handlers (GET and POST) for MCP SSE endpoint
@@ -70,6 +77,52 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
     getClientMetadata,
   } = options;
 
+  function createManagerEntry(identity: string, resolvedClientMetadata?: ClientMetadata): ManagerEntry {
+    let sink: EventSink = () => { };
+
+    const manager = new SSEConnectionManager(
+      {
+        identity,
+        heartbeatInterval,
+        clientDefaults: resolvedClientMetadata,
+      },
+      (event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse) => {
+        // POST returns RPC response directly, do not echo over SSE.
+        if ('id' in event) {
+          return;
+        }
+        if ('type' in event && 'sessionId' in event) {
+          sink('connection', event);
+        } else {
+          sink('observability', event);
+        }
+      }
+    );
+
+    return {
+      manager,
+      setSink: (nextSink: EventSink) => {
+        sink = nextSink;
+      },
+      clearSink: () => {
+        sink = () => { };
+      },
+    };
+  }
+
+  async function getOrCreateManagerEntry(identity: string, request?: Request): Promise<ManagerEntry> {
+    const existing = managerEntries.get(identity);
+    if (existing) return existing;
+
+    const resolvedClientMetadata = request
+      ? (getClientMetadata ? await getClientMetadata(request) : clientDefaults)
+      : clientDefaults;
+
+    const created = createManagerEntry(identity, resolvedClientMetadata);
+    managerEntries.set(identity, created);
+    return created;
+  }
+
   /**
    * GET handler - Establishes SSE connection
    */
@@ -91,61 +144,33 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
     const encoder = new TextEncoder();
+    let streamWritable = true;
 
     // Helper to send SSE events
     const sendSSE = (event: string, data: any) => {
+      if (!streamWritable) return;
       const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-      writer.write(encoder.encode(message)).catch(() => {
-        // Client disconnected, ignore write errors
-      });
+      try {
+        writer.write(encoder.encode(message)).catch(() => {
+          streamWritable = false;
+        });
+      } catch {
+        streamWritable = false;
+      }
     };
 
-    // Clean up previous manager if exists (prevents memory leaks on reconnect)
-    const previousManager = managers.get(identity);
-    if (previousManager) {
-      previousManager.dispose();
-    }
-
-    // Resolve client metadata (dynamic takes precedence over static)
-    const resolvedClientMetadata = getClientMetadata
-      ? await getClientMetadata(request)
-      : clientDefaults;
-
-    // Create new manager
-    const manager = new SSEConnectionManager(
-      {
-        identity,
-        heartbeatInterval,
-        clientDefaults: resolvedClientMetadata, // Pass resolved metadata
-      },
-      (event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse) => {
-        // Determine event type and send via SSE
-        if ('id' in event) {
-          // RPC response
-          sendSSE('rpc-response', event);
-        } else if ('type' in event && 'sessionId' in event) {
-          // Connection event
-          sendSSE('connection', event);
-        } else {
-          // Observability event
-          sendSSE('observability', event);
-        }
-      }
-    );
-
-    managers.set(identity, manager);
+    const entry = await getOrCreateManagerEntry(identity, request);
+    entry.setSink(sendSSE);
 
     // Send connected event AFTER manager is registered (prevents race condition
     // where client sends POST before manager is available)
     sendSSE('connected', { timestamp: Date.now() });
 
     // Handle client disconnect
-    const abortController = new AbortController();
     request.signal?.addEventListener('abort', () => {
-      manager.dispose();
-      managers.delete(identity);
+      streamWritable = false;
+      entry.clearSink();
       writer.close().catch(() => { });
-      abortController.abort();
     });
 
     // Return SSE response
@@ -177,35 +202,39 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
       return Response.json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } }, { status: 401 });
     }
 
+    let rawBody = '';
     try {
-      const body = await request.json();
+      rawBody = await request.text();
+      const body = rawBody ? JSON.parse(rawBody) : null;
 
-      // Get existing manager (created by GET endpoint)
-      const manager = managers.get(identity);
-
-      if (!manager) {
-        return Response.json(
-          {
-            error: {
-              code: 'NO_CONNECTION',
-              message: 'No SSE connection found. Please establish SSE connection first.',
-            },
+      if (!body || typeof body !== 'object') {
+        return Response.json({
+          error: {
+            code: 'INVALID_REQUEST',
+            message: 'Invalid JSON-RPC request body',
           },
-          { status: 400 }
-        );
+        }, { status: 400 });
       }
 
+      const entry = await getOrCreateManagerEntry(identity);
       // Handle the request and return response directly (bypasses SSE latency)
-      const response = await manager.handleRequest(body);
+      const response = await entry.manager.handleRequest(body as any);
 
       // Return the actual RPC response for immediate use by client
       return Response.json(response);
     } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      console.error('[MCP Next Handler] Failed to handle RPC', {
+        identity,
+        message: err.message,
+        stack: err.stack,
+        rawBody: rawBody.slice(0, 500),
+      });
       return Response.json(
         {
           error: {
             code: 'EXECUTION_ERROR',
-            message: error instanceof Error ? error.message : 'Unknown error',
+            message: err.message,
           },
         },
         { status: 500 }

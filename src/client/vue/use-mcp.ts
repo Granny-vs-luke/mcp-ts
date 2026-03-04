@@ -68,6 +68,7 @@ export interface McpConnection {
     transport?: string;
     state: McpConnectionState;
     tools: ToolInfo[];
+    authUrl?: string;
     error?: string;
     createdAt?: Date;
 }
@@ -145,6 +146,11 @@ export interface McpClient {
     finishAuth: (sessionId: string, code: string) => Promise<FinishAuthResult>;
 
     /**
+     * Explicitly resume OAuth flow for an existing session
+     */
+    resumeAuth: (sessionId: string) => Promise<void>;
+
+    /**
      * Call a tool from a session
      */
     callTool: (
@@ -197,6 +203,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
     // Use shallowRef for client instance as it doesn't need deep reactivity
     const clientRef = shallowRef<SSEClient | null>(null);
     const isMountedRef = ref(true);
+    const suppressAuthRedirectSessions = ref(new Set<string>());
 
     const connections = ref<McpConnection[]>([]);
     const status = ref<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
@@ -250,15 +257,18 @@ export function useMcp(options: UseMcpOptions): McpClient {
                 if (event.authUrl) {
                     onLog?.('info', `OAuth required - redirecting to ${event.authUrl}`, { authUrl: event.authUrl });
 
-                    if (onRedirect) {
-                        onRedirect(event.authUrl);
-                    } else if (typeof window !== 'undefined') {
-                        window.location.href = event.authUrl;
+                    // Suppress redirects/popups for background auto-restore on page load.
+                    if (!suppressAuthRedirectSessions.value.has(event.sessionId)) {
+                        if (onRedirect) {
+                            onRedirect(event.authUrl);
+                        } else if (typeof window !== 'undefined') {
+                            window.location.href = event.authUrl;
+                        }
                     }
                 }
                 const index = connections.value.findIndex((c) => c.sessionId === event.sessionId);
                 if (index !== -1) {
-                    connections.value[index] = { ...connections.value[index], state: 'AUTHENTICATING' };
+                    connections.value[index] = { ...connections.value[index], state: 'AUTHENTICATING', authUrl: event.authUrl };
                 }
                 break;
             }
@@ -298,7 +308,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                     serverName: s.serverName ?? 'Unknown Server',
                     serverUrl: s.serverUrl,
                     transport: s.transport,
-                    state: 'VALIDATING' as McpConnectionState,
+                    state: (s.active === false ? 'AUTHENTICATING' : 'VALIDATING') as McpConnectionState,
                     createdAt: new Date(s.createdAt),
                     tools: [],
                 }));
@@ -309,9 +319,16 @@ export function useMcp(options: UseMcpOptions): McpClient {
                 sessions.map(async (session: SessionInfo) => {
                     if (clientRef.value) {
                         try {
+                            // Pending auth sessions should not auto-trigger popup/redirect on reload.
+                            if (session.active === false) {
+                                return;
+                            }
+                            suppressAuthRedirectSessions.value.add(session.sessionId);
                             await clientRef.value.restoreSession(session.sessionId);
                         } catch (error) {
                             console.error(`[useMcp] Failed to validate session ${session.sessionId}:`, error);
+                        } finally {
+                            suppressAuthRedirectSessions.value.delete(session.sessionId);
                         }
                     }
                 })
@@ -445,6 +462,17 @@ export function useMcp(options: UseMcpOptions): McpClient {
     };
 
     /**
+     * Explicit user action to resume OAuth for an existing pending session.
+     */
+    const resumeAuth = async (sessionId: string): Promise<void> => {
+        if (!clientRef.value) {
+            throw new Error('SSE client not initialized');
+        }
+        suppressAuthRedirectSessions.value.delete(sessionId);
+        await clientRef.value.restoreSession(sessionId);
+    };
+
+    /**
      * Call a tool
      */
     const callTool = async (
@@ -544,6 +572,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
         connectSSE,
         disconnectSSE,
         finishAuth,
+        resumeAuth,
         callTool,
         listTools,
         listPrompts,

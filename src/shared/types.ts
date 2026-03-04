@@ -224,6 +224,11 @@ export interface SessionInfo {
   serverUrl: string;
   transport: TransportType;
   createdAt: number;
+  /**
+   * Session readiness for auto-restore.
+   * false means auth is pending and should be resumed explicitly by user action.
+   */
+  active?: boolean;
 }
 
 export interface SessionListResult {
