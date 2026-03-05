@@ -20,25 +20,23 @@ The server exposes:
 - `POST /{agent_id}/{mcp_server}/mcp` (streamable-http style)
 - `POST /{agent_id}/{mcp_server}/sse` (SSE response)
 
+Management endpoints:
+- `GET /manage/agents/details`
+- `POST /manage/jwt/issue` with `{ "subject": "...", "expiry_minutes": 60, "capabilities": ["*"] }`
+- `POST /manage/jwt/revoke` with `{ "token": "..." }`
+- `POST /manage/{agent_id}/{mcp_server}/server-info`
+
 For local MCP clients like VS Code, unauthenticated MCP transport can be enabled:
 - `ALLOW_UNAUTH_MCP_TRANSPORT=true` (default in this setup)
 
-## Streamlit Dashboard
+## Dashboard
 
-```bash
-uv run mcp-remote-dashboard
-```
+This package no longer ships a built-in Streamlit dashboard.
 
-Environment variables:
-- `REMOTE_PUBLIC_BASE_URL` (default: `http://127.0.0.1:8000`)
-- `DASHBOARD_HOST` (default: `0.0.0.0`)
-- `DASHBOARD_PORT` (default: `8501`)
-- `DASHBOARD_JWT` (optional agent JWT)
-
-The dashboard lists connected agents and MCP servers and generates ready-to-copy invoke URLs:
-- `https://<remote>/{agent_id}/{mcp_server}/mcp`
-
-It also includes a JWT Generator panel to create agent JWTs directly in the UI.
+Use the Next.js dashboard in your `mcp-client` app to manage:
+- connected agents (`GET /agents/details`)
+- invoke URL generation
+- MCP server inspection (`initialize` + `tools/list`)
 
 ## One-Command Deploy
 

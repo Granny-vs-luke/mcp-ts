@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 from .auth import AuthContext, JWTAuthenticator
 from .connection_manager import ConnectionManager
-from .models import RegisterMessage, ResultMessage
+from .models import IssueTokenRequest, RevokeTokenRequest, RegisterMessage, ResultMessage
 
 load_dotenv()
 
@@ -47,6 +47,33 @@ async def agents(_: AuthContext = Depends(authenticator.http_auth)) -> dict[str,
 async def agent_details(_: AuthContext = Depends(authenticator.http_auth)) -> dict[str, list[dict[str, object]]]:
     agents = await connection_manager.connected_agents_details()
     return {"agents": agents}
+
+
+@app.get("/manage/agents/details")
+async def get_agents_details() -> dict[str, list[dict[str, object]]]:
+    agents = await connection_manager.connected_agents_details()
+    return {"agents": agents}
+
+
+@app.post("/manage/jwt/issue")
+async def issue_token(payload: IssueTokenRequest) -> dict[str, object]:
+    token = authenticator.issue_agent_token(
+        subject=payload.subject,
+        expiry_minutes=payload.expiry_minutes,
+        capabilities=payload.capabilities,
+    )
+    return {
+        "token": token,
+        "subject": payload.subject,
+        "expiry_minutes": payload.expiry_minutes,
+        "capabilities": payload.capabilities,
+    }
+
+
+@app.post("/manage/jwt/revoke")
+async def revoke_token(payload: RevokeTokenRequest) -> dict[str, bool]:
+    authenticator.revoke_token(payload.token)
+    return {"revoked": True}
 
 
 @app.get("/.well-known/oauth-protected-resource")
@@ -132,6 +159,77 @@ async def _invoke_core(
         timeout_seconds=REQUEST_TIMEOUT_SECONDS,
     )
     return result
+
+
+async def _get_mcp_server_info(agent_id: str, mcp_server: str) -> dict[str, object]:
+    request_id = str(uuid4())
+    init_payload = {
+        "jsonrpc": "2.0",
+        "id": "init-1",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "mcp-remote-server-manage", "version": "1.0.0"},
+        },
+    }
+    init_result = await connection_manager.invoke(
+        agent_id=agent_id,
+        mcp_server=mcp_server,
+        payload=init_payload,
+        request_id=request_id,
+        timeout_seconds=REQUEST_TIMEOUT_SECONDS,
+    )
+
+    request_id_tools = str(uuid4())
+    tools_payload = {"jsonrpc": "2.0", "id": "tools-1", "method": "tools/list", "params": {}}
+    tools_result = await connection_manager.invoke(
+        agent_id=agent_id,
+        mcp_server=mcp_server,
+        payload=tools_payload,
+        request_id=request_id_tools,
+        timeout_seconds=REQUEST_TIMEOUT_SECONDS,
+    )
+
+    init_data = init_result.get("result", init_result) if isinstance(init_result, dict) else {}
+    tools_data = tools_result.get("result", tools_result) if isinstance(tools_result, dict) else {}
+    server_info = init_data.get("serverInfo", {}) if isinstance(init_data, dict) else {}
+    tools = tools_data.get("tools", []) if isinstance(tools_data, dict) else []
+
+    return {
+        "status": "connected",
+        "agent_id": agent_id,
+        "mcp_server": mcp_server,
+        "title": str(server_info.get("title", "")),
+        "version": str(server_info.get("version", "")),
+        "instructions": str(init_data.get("instructions", "") if isinstance(init_data, dict) else ""),
+        "tools_count": len(tools) if isinstance(tools, list) else 0,
+        "tools": tools if isinstance(tools, list) else [],
+    }
+
+
+@app.post("/manage/{agent_id}/{mcp_server}/server-info")
+async def get_mcp_server_info(
+    agent_id: str,
+    mcp_server: str,
+) -> JSONResponse:
+    try:
+        data = await _get_mcp_server_info(agent_id=agent_id, mcp_server=mcp_server)
+        return JSONResponse(content=data)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "agent_id": agent_id,
+                "mcp_server": mcp_server,
+                "title": "",
+                "version": "",
+                "instructions": exc.detail,
+                "tools_count": 0,
+                "tools": [],
+            },
+        )
 
 
 @app.post("/{agent_id}/{mcp_server}/mcp")

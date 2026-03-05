@@ -19,3 +19,13 @@ class ResultMessage(BaseModel):
 
 class MCPInvokeRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class IssueTokenRequest(BaseModel):
+    subject: str = Field(min_length=1, max_length=128)
+    expiry_minutes: int = Field(default=60, ge=1, le=1440)
+    capabilities: list[str] = Field(default_factory=lambda: ["*"])
+
+
+class RevokeTokenRequest(BaseModel):
+    token: str = Field(min_length=1)

@@ -11,6 +11,18 @@ mcp-local-agent
 
 `mcp-local-agent` initializes MCP client sessions for configured `mcpServers` (stdio) and opens the outbound bridge connection to the remote server.
 
+Startup token behavior:
+- If `AGENT_JWT` is already configured (env or `config.json`), startup continues without prompting.
+- If `AGENT_JWT` is missing, the CLI shows a styled prompt and asks you to paste the token.
+- If WebSocket auth fails with `HTTP 403`, the CLI asks for a fresh `AGENT_JWT` and retries immediately.
+- `AGENT_ID` is auto-derived from JWT claims (or token fingerprint fallback), so no manual `AGENT_ID` prompt.
+- Prompted values are saved into resolved `config.json`, so next runs do not ask again.
+
+Terminal UX:
+- Branded startup banner (`MCP ASSISTANT PROXY`).
+- Progress-style startup logs for MCP server initialization with per-server steps.
+- Connection attempt counters for bridge reconnect flow.
+
 Set `START_MCP_SERVERS=false` if you only want the bridge process.
 
 Configuration can be provided through `.env` and/or `config.json`.

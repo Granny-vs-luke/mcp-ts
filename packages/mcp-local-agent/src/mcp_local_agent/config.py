@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import jwt
@@ -36,6 +38,19 @@ def _ws_url_from_base(base_url: str) -> str:
 
 def _decode_unverified_claims(token: str) -> dict:
     return jwt.decode(token, options={"verify_signature": False, "verify_exp": False})
+
+
+def _derive_agent_id(token: str, claims: dict[str, Any] | None = None) -> str:
+    if claims:
+        sub = str(claims.get("sub", "")).strip()
+        if sub:
+            return sub
+        for key in ("agent_id", "agentId", "jti", "iss"):
+            value = str(claims.get(key, "")).strip()
+            if value:
+                return f"agent-{value}"
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+    return f"agent-{digest}"
 
 
 def _get_env(primary: str, fallback: str, default: str = "") -> str:
@@ -94,6 +109,10 @@ def _resolve_config_path() -> Path:
     return cwd / "config.json"
 
 
+def resolve_config_path() -> Path:
+    return _resolve_config_path()
+
+
 def _is_local_ws(url: str) -> bool:
     try:
         parsed = urlparse(url)
@@ -126,7 +145,7 @@ def load_config() -> AgentConfig:
         except Exception as exc:
             raise RuntimeError("AGENT_JWT is not a valid JWT format") from exc
         if not agent_id:
-            agent_id = str(claims.get("sub", ""))
+            agent_id = _derive_agent_id(jwt_token, claims)
         if not capabilities:
             capabilities = [str(item) for item in claims.get("capabilities", [])]
 
@@ -164,10 +183,10 @@ def load_config() -> AgentConfig:
 
     if not websocket_url:
         raise RuntimeError("Missing REMOTE_WEBSOCKET_URL/REMOTE_SERVER_BASE_URL")
-    if not agent_id:
-        raise RuntimeError("Missing AGENT_ID and unable to derive from AGENT_JWT")
     if not jwt_token:
         raise RuntimeError("Missing AGENT_JWT. Local bridge requires AGENT_JWT token explicitly.")
+    if not agent_id:
+        agent_id = _derive_agent_id(jwt_token, {})
 
     if websocket_url.startswith("ws://") and not _is_local_ws(websocket_url):
         raise RuntimeError("REMOTE_WEBSOCKET_URL must use wss:// in production")
@@ -190,3 +209,20 @@ def load_config() -> AgentConfig:
         reconnect_max_delay_seconds=max(reconnect_initial, reconnect_max),
         request_timeout_seconds=max(1.0, request_timeout),
     )
+
+
+def load_config_file(path: Path | None = None) -> dict[str, Any]:
+    target = path or _resolve_config_path()
+    return _load_config_file(target)
+
+
+def save_config_updates(updates: dict[str, Any], path: Path | None = None) -> Path:
+    target = path or _resolve_config_path()
+    existing = _load_config_file(target)
+    merged = existing if isinstance(existing, dict) else {}
+    merged.update(updates)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8") as handle:
+        json.dump(merged, handle, indent=2)
+        handle.write("\n")
+    return target

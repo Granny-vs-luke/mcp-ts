@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -28,6 +29,8 @@ class JWTAuthenticator:
         self._algorithm = algorithm
 
     def _decode(self, token: str) -> dict[str, Any]:
+        if self.is_revoked(token):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
         try:
             claims = jwt.decode(token, self._secret, algorithms=[self._algorithm])
         except jwt.InvalidTokenError as exc:
@@ -39,6 +42,50 @@ class JWTAuthenticator:
             if now >= float(exp):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
         return claims
+
+    @staticmethod
+    def _token_digest(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    _revoked_token_digests: set[str] = set()
+
+    def is_revoked(self, token: str) -> bool:
+        return self._token_digest(token) in self._revoked_token_digests
+
+    def revoke_token(self, token: str) -> None:
+        digest = self._token_digest(token)
+        if digest in self._revoked_token_digests:
+            return
+        # Validate token signature/algorithm before revoking exact token instance.
+        try:
+            jwt.decode(
+                token,
+                self._secret,
+                algorithms=[self._algorithm],
+                options={"verify_exp": False},
+            )
+        except jwt.InvalidTokenError as exc:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+        self._revoked_token_digests.add(digest)
+
+    def issue_agent_token(
+        self,
+        subject: str,
+        expiry_minutes: int,
+        capabilities: list[str] | None = None,
+    ) -> str:
+        safe_subject = subject.strip()
+        if not safe_subject:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="subject is required")
+
+        minutes = max(1, min(1440, int(expiry_minutes)))
+        payload = {
+            "sub": safe_subject,
+            "role": "agent",
+            "capabilities": capabilities if capabilities is not None else ["*"],
+            "exp": int(datetime.now(UTC).timestamp()) + minutes * 60,
+        }
+        return str(jwt.encode(payload, self._secret, algorithm=self._algorithm))
 
     def _to_context(self, claims: dict[str, Any]) -> AuthContext:
         subject = str(claims.get("sub", ""))

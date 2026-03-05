@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import signal
+import sys
 from contextlib import AsyncExitStack
 from dataclasses import asdict, is_dataclass
 from typing import Any
@@ -17,8 +18,9 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import InvalidStatus
 
-from .config import AgentConfig, load_config
+from .config import AgentConfig, load_config, load_config_file, save_config_updates
 
 
 def configure_logging() -> None:
@@ -31,6 +33,148 @@ DEFAULT_PROTOCOL_VERSION = os.getenv("MCP_PROTOCOL_VERSION", "2025-11-25")
 
 def _console(msg: str) -> None:
     print(msg, flush=True)
+
+
+def _supports_color() -> bool:
+    if os.getenv("NO_COLOR"):
+        return False
+    if not sys.stdout.isatty():
+        return False
+    term = os.getenv("TERM", "").lower()
+    return term not in {"", "dumb"}
+
+
+def _style(text: str, *, color: str = "", bold: bool = False) -> str:
+    if not _supports_color():
+        return text
+    codes: list[str] = []
+    if bold:
+        codes.append("1")
+    if color:
+        codes.append(color)
+    if not codes:
+        return text
+    return f"\x1b[{';'.join(codes)}m{text}\x1b[0m"
+
+
+def _frame(lines: list[str]) -> str:
+    width = max(len(line) for line in lines) if lines else 0
+    border = "+" + "-" * (width + 2) + "+"
+    body = [f"| {line.ljust(width)} |" for line in lines]
+    return "\n".join([border, *body, border])
+
+
+def _print_start_banner() -> None:
+    lines = [
+        "MCP Local Agent",
+        "Paste AGENT_JWT to continue startup",
+    ]
+    _console(_style(_frame(lines), color="36", bold=True))
+
+
+def _print_runtime_banner() -> None:
+    title = [
+        " __  __  ____ ____      _    ____ ____ ___ ____ _____ _    _   _ _____ ",
+        "|  \\/  |/ ___|  _ \\    / \\  / ___/ ___|_ _/ ___|_   _/ \\  | \\ | |_   _|",
+        "| |\\/| | |   | |_) |  / _ \\ \\___ \\___ \\| |\\___ \\ | |/ _ \\ |  \\| | | |  ",
+        "| |  | | |___|  __/  / ___ \\ ___) |__) | | ___) || / ___ \\| |\\  | | |  ",
+        "|_|  |_|\\____|_|    /_/   \\_\\____/____/___|____/ |_/_/   \\_\\_| \\_| |_|  ",
+        "                         MCP ASSISTANT PROXY",
+    ]
+    _console(_style("\n".join(title), color="36", bold=True))
+    _console(_style("Tips:", color="35", bold=True))
+    _console("1. Keep AGENT_JWT valid for uninterrupted bridge sessions.")
+    _console("2. Use Ctrl+C to stop gracefully.")
+    _console("3. Check [mcp] and [bridge] phase logs for progress.\n")
+
+
+def _prompt_for_token() -> str:
+    _print_start_banner()
+    _console(_style("No AGENT_JWT found in environment or config.", color="33", bold=True))
+    while True:
+        token = input("Paste AGENT_JWT token: ").strip()
+        if token:
+            return token
+        _console(_style("Token is required to start the bridge agent.", color="31", bold=True))
+
+
+def _prompt_text(label: str, default: str | None = None) -> str:
+    suffix = f" [{default}]" if default else ""
+    while True:
+        value = input(f"{label}{suffix}: ").strip()
+        if value:
+            return value
+        if default:
+            return default
+        _console(_style(f"{label} is required.", color="31", bold=True))
+
+
+def _token_from_sources() -> str:
+    env_token = os.getenv("AGENT_JWT", "").strip()
+    if env_token:
+        return env_token
+    cfg = load_config_file()
+    return str(cfg.get("jwt_token") or cfg.get("agent_jwt") or "").strip()
+
+
+def _persist_updates(updates: dict[str, str]) -> None:
+    path = save_config_updates(updates)
+    _console(_style(f"Saved startup settings to {path}", color="36"))
+
+
+def _derive_agent_id_from_token(token: str) -> str:
+    try:
+        claims = jwt.decode(token, options={"verify_signature": False, "verify_exp": False})
+        sub = str(claims.get("sub", "")).strip()
+        if sub:
+            return sub
+    except Exception:
+        pass
+    # Fallback to existing config derivation rules
+    try:
+        from .config import _derive_agent_id as _cfg_derive_agent_id  # type: ignore
+        return _cfg_derive_agent_id(token, {})
+    except Exception:
+        return ""
+
+
+def _load_config_with_prompt() -> AgentConfig:
+    while True:
+        try:
+            return load_config()
+        except RuntimeError as exc:
+            message = str(exc)
+            updates: dict[str, str] = {}
+
+            token = _token_from_sources()
+            if "AGENT_JWT is not a valid JWT format" in message:
+                _console(_style("Current AGENT_JWT is invalid.", color="31", bold=True))
+                token = _prompt_for_token()
+                updates["jwt_token"] = token
+                os.environ["AGENT_JWT"] = token
+                new_agent_id = _derive_agent_id_from_token(token)
+                if new_agent_id:
+                    updates["agent_id"] = new_agent_id
+                    os.environ["AGENT_ID"] = new_agent_id
+            elif "Missing AGENT_JWT" in message:
+                token = _prompt_for_token()
+                updates["jwt_token"] = token
+                os.environ["AGENT_JWT"] = token
+                new_agent_id = _derive_agent_id_from_token(token)
+                if new_agent_id:
+                    updates["agent_id"] = new_agent_id
+                    os.environ["AGENT_ID"] = new_agent_id
+
+            if "Missing REMOTE_WEBSOCKET_URL/REMOTE_SERVER_BASE_URL" in message:
+                base_url = _prompt_text("Enter remote server base URL", "http://127.0.0.1:8000")
+                updates["remote_server_base_url"] = base_url
+                os.environ["REMOTE_SERVER_BASE_URL"] = base_url
+
+            if updates:
+                _persist_updates(updates)
+                continue
+
+            raise
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -145,24 +289,34 @@ class LocalBridgeAgent:
 
     async def run(self) -> None:
         await self._start_mcp_servers_if_configured()
-        _console(f"🚀 [bridge] starting: websocket={self.config.websocket_url} agent_id={self.config.agent_id}")
+        _console(f"[bridge] starting: websocket={self.config.websocket_url} agent_id={self.config.agent_id}")
         backoff = self.config.reconnect_initial_delay_seconds
-        while not self._stop_event.is_set():
-            try:
-                _console("🔌 [bridge] attempting websocket connection")
-                await self._session()
-                backoff = self.config.reconnect_initial_delay_seconds
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.exception("agent session error")
-                _console(f"⚠️ [bridge] reconnecting in {backoff:.1f}s due to error: {exc}")
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, self.config.reconnect_max_delay_seconds)
+        attempt = 0
+
+        try:
+            while not self._stop_event.is_set():
+                attempt += 1
+                try:
+                    _console(f"[bridge] connecting websocket (attempt {attempt})")
+                    await self._session()
+                    backoff = self.config.reconnect_initial_delay_seconds
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.exception("agent session error")
+                    if self._is_auth_forbidden(exc):
+                        recovered = await self._recover_token_after_403()
+                        if recovered:
+                            backoff = self.config.reconnect_initial_delay_seconds
+                            continue
+                    _console(f"[bridge] reconnecting in {backoff:.1f}s due to error: {exc}")
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, self.config.reconnect_max_delay_seconds)
+        finally:
+            await self._stop_mcp_servers()
 
     async def stop(self) -> None:
         self._stop_event.set()
-        await self._stop_mcp_servers()
 
     async def _session(self) -> None:
         headers = {"Authorization": f"Bearer {self.config.jwt_token}"}
@@ -170,7 +324,7 @@ class LocalBridgeAgent:
             announced_servers = self._announced_mcp_servers()
             register_msg = {"type": "register", "agent_id": self.config.agent_id, "capabilities": announced_servers}
             await websocket.send(json.dumps(register_msg))
-            _console(f"✅ [bridge] connected and registered mcp_servers={','.join(announced_servers)}")
+            _console(f"[bridge] connected and registered mcp_servers={','.join(announced_servers)}")
 
             async for raw in websocket:
                 if self._stop_event.is_set():
@@ -180,7 +334,6 @@ class LocalBridgeAgent:
     def _announced_mcp_servers(self) -> list[str]:
         if self.config.mcp_servers:
             return [str(name) for name in self.config.mcp_servers.keys()]
-        # Fallback for endpoint-only configs; don't advertise wildcard as server name.
         servers = [str(item) for item in self.config.capabilities if str(item) != "*"]
         if servers:
             return servers
@@ -189,25 +342,29 @@ class LocalBridgeAgent:
     async def _start_mcp_servers_if_configured(self) -> None:
         servers = self.config.mcp_servers or {}
         if not servers:
-            _console("ℹ️ [mcp] no mcpServers configured")
+            _console("[mcp] no mcpServers configured")
             return
 
         if os.getenv("START_MCP_SERVERS", "true").strip().lower() in {"0", "false", "no", "off"}:
-            _console("ℹ️ [mcp] START_MCP_SERVERS=false; skipping mcpServers startup")
+            _console("[mcp] START_MCP_SERVERS=false; skipping mcpServers startup")
             return
 
-        _console(f"🚀 [mcp] initializing {len(servers)} MCP server session(s)")
-        for name, cfg in servers.items():
+        total = len(servers)
+        _console(f"[mcp] initializing {total} MCP server session(s)")
+        for index, (name, cfg) in enumerate(servers.items(), start=1):
             if not isinstance(cfg, dict):
-                _console(f"⚠️ [mcp] skipping '{name}' (invalid config object)")
+                _console(f"[mcp] [{index}/{total}] skipping '{name}' (invalid config object)")
                 continue
             managed = ManagedMCPServer(name, cfg)
             try:
+                start_at = asyncio.get_running_loop().time()
+                _console(f"[mcp] [{index}/{total}] starting '{name}' ...")
                 await managed.start()
                 self._mcp_servers[name] = managed
-                _console(f"✅ [mcp] initialized '{name}' via stdio MCP client")
+                elapsed = asyncio.get_running_loop().time() - start_at
+                _console(f"[mcp] [{index}/{total}] ready '{name}' via stdio MCP client ({elapsed:.1f}s)")
             except Exception as exc:
-                _console(f"⚠️ [mcp] failed to initialize '{name}': {exc}")
+                _console(f"[mcp] [{index}/{total}] failed '{name}': {exc}")
 
     async def _stop_mcp_servers(self) -> None:
         for name, managed in list(self._mcp_servers.items()):
@@ -216,8 +373,34 @@ class LocalBridgeAgent:
             except Exception as exc:
                 logger.warning("error while closing MCP server '%s': %s", name, exc)
         if self._mcp_servers:
-            _console("ℹ️ [mcp] all managed MCP sessions closed")
+            _console("[mcp] all managed MCP sessions closed")
         self._mcp_servers.clear()
+
+    def _is_auth_forbidden(self, exc: Exception) -> bool:
+        if isinstance(exc, InvalidStatus):
+            response = getattr(exc, "response", None)
+            if response is not None and getattr(response, "status_code", None) == 403:
+                return True
+        return "HTTP 403" in str(exc)
+
+    async def _recover_token_after_403(self) -> bool:
+        _console(_style("[bridge] authorization failed (HTTP 403).", color="31", bold=True))
+        if not sys.stdin.isatty():
+            _console(_style("[bridge] non-interactive terminal; cannot prompt for token.", color="33", bold=True))
+            return False
+
+        token = _prompt_for_token()
+        self.config.jwt_token = token
+        os.environ["AGENT_JWT"] = token
+        new_agent_id = _derive_agent_id_from_token(token)
+        updates = {"jwt_token": token}
+        if new_agent_id:
+            self.config.agent_id = new_agent_id
+            os.environ["AGENT_ID"] = new_agent_id
+            updates["agent_id"] = new_agent_id
+        _persist_updates(updates)
+        _console(_style("[bridge] token updated. retrying now.", color="32", bold=True))
+        return True
 
     async def _handle_message(self, websocket: Any, raw: str) -> None:
         try:
@@ -304,17 +487,16 @@ class LocalBridgeAgent:
 
 async def _main() -> None:
     configure_logging()
-    config = load_config()
-    _console(f"✅ [boot] loaded config: agent_id={config.agent_id} websocket={config.websocket_url}")
-    _console(f"ℹ️ [boot] mcpServers keys: {list((config.mcp_servers or {}).keys())}")
+    config = _load_config_with_prompt()
+    _print_runtime_banner()
+    _console(_style(_frame([f"Agent: {config.agent_id}", f"WebSocket: {config.websocket_url}"]), color="32", bold=True))
+    _console(f"[boot] loaded config: agent_id={config.agent_id} websocket={config.websocket_url}")
+    _console(f"[boot] mcpServers keys: {list((config.mcp_servers or {}).keys())}")
     try:
         claims = jwt.decode(config.jwt_token, options={"verify_signature": False, "verify_exp": False})
-        _console(
-            "ℹ️ [boot] jwt summary: sub=%s role=%s mcp_servers=%s"
-            % (claims.get("sub", ""), claims.get("role", ""), len(claims.get("capabilities", []) or []))
-        )
+        _console("[boot] jwt summary: sub=%s role=%s mcp_servers=%s" % (claims.get("sub", ""), claims.get("role", ""), len(claims.get("capabilities", []) or [])))
     except Exception:
-        _console("⚠️ [boot] unable to parse AGENT_JWT claims")
+        _console("[boot] unable to parse AGENT_JWT claims")
 
     agent = LocalBridgeAgent(config)
     loop = asyncio.get_running_loop()
@@ -332,6 +514,7 @@ async def _main() -> None:
 
     runner = asyncio.create_task(agent.run())
     await shutdown_started.wait()
+    _console("[boot] shutdown requested. closing bridge...")
     await agent.stop()
     runner.cancel()
     try:
