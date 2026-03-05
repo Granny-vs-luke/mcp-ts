@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "@modelcontextprotocol/server-filesystem",
+        "C:/Users/Harish_Mehta/Desktop/my_dirs/workspace/mcp-ts"
+      ]
+    }
+  }
+}

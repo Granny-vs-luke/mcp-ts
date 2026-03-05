@@ -64,6 +64,13 @@ export interface UseMcpOptions {
    * @default 60000
    */
   requestTimeout?: number;
+
+  /**
+   * Enable client debug logs.
+   * @default false
+   */
+  debug?: boolean;
+
 }
 
 export interface McpConnection {
@@ -74,6 +81,7 @@ export interface McpConnection {
   transport?: string;
   state: McpConnectionState;
   tools: ToolInfo[];
+  authUrl?: string;
   error?: string;
   createdAt?: Date;
 }
@@ -151,6 +159,11 @@ export interface McpClient {
   finishAuth: (sessionId: string, code: string) => Promise<FinishAuthResult>;
 
   /**
+   * Explicitly resume OAuth flow for an existing session
+   */
+  resumeAuth: (sessionId: string) => Promise<void>;
+
+  /**
    * Call a tool from a session
    */
   callTool: (
@@ -207,6 +220,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
 
   const clientRef = useRef<SSEClient | null>(null);
   const isMountedRef = useRef(true);
+  const suppressAuthRedirectSessionsRef = useRef<Set<string>>(new Set());
 
   const [connections, setConnections] = useState<McpConnection[]>([]);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>(
@@ -239,7 +253,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
           setStatus(newStatus);
         }
       },
-      requestTimeout: options.requestTimeout,
+      debug: options.debug,
     };
 
     const client = new SSEClient(clientOptions);
@@ -265,15 +279,30 @@ export function useMcp(options: UseMcpOptions): McpClient {
   const updateConnectionsFromEvent = useCallback((event: McpConnectionEvent) => {
     if (!isMountedRef.current) return;
 
+    const isTransientReconnectState = (state: McpConnectionState): boolean =>
+      state === 'INITIALIZING' ||
+      state === 'VALIDATING' ||
+      state === 'RECONNECTING' ||
+      state === 'CONNECTING' ||
+      state === 'CONNECTED' ||
+      state === 'DISCOVERING';
+
     setConnections((prev: McpConnection[]) => {
       switch (event.type) {
         case 'state_changed': {
           const existing = prev.find((c: McpConnection) => c.sessionId === event.sessionId);
           if (existing) {
+            // In stateless per-request transport, tool calls can emit transient reconnect states.
+            // Keep READY sticky to avoid UI flicker from READY -> CONNECTING -> CONNECTED.
+            const nextState =
+              existing.state === 'READY' && isTransientReconnectState(event.state)
+                ? existing.state
+                : event.state;
+
             return prev.map((c: McpConnection) =>
               c.sessionId === event.sessionId ? {
                 ...c,
-                state: event.state,
+                state: nextState,
                 // update createdAt if present in event, otherwise keep existing
                 createdAt: event.createdAt ? new Date(event.createdAt) : c.createdAt
               } : c
@@ -315,14 +344,17 @@ export function useMcp(options: UseMcpOptions): McpClient {
           if (event.authUrl) {
             onLog?.('info', `OAuth required - redirecting to ${event.authUrl}`, { authUrl: event.authUrl });
 
-            if (onRedirect) {
-              onRedirect(event.authUrl);
-            } else if (typeof window !== 'undefined') {
-              window.location.href = event.authUrl;
+            // Suppress redirects/popups for auto-restore on page load.
+            if (!suppressAuthRedirectSessionsRef.current.has(event.sessionId)) {
+              if (onRedirect) {
+                onRedirect(event.authUrl);
+              } else if (typeof window !== 'undefined') {
+                window.location.href = event.authUrl;
+              }
             }
           }
           return prev.map((c: McpConnection) =>
-            c.sessionId === event.sessionId ? { ...c, state: 'AUTHENTICATING' } : c
+            c.sessionId === event.sessionId ? { ...c, state: 'AUTHENTICATING', authUrl: event.authUrl } : c
           );
         }
 
@@ -340,7 +372,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
           return prev;
       }
     });
-  }, [onLog]);
+  }, [onLog, onRedirect]);
 
   /**
    * Load sessions from server
@@ -363,7 +395,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
             serverName: s.serverName ?? 'Unknown Server',
             serverUrl: s.serverUrl,
             transport: s.transport,
-            state: 'VALIDATING' as McpConnectionState,
+            state: (s.active === false ? 'AUTHENTICATING' : 'VALIDATING') as McpConnectionState,
             createdAt: new Date(s.createdAt),
             tools: [],
           }))
@@ -375,9 +407,16 @@ export function useMcp(options: UseMcpOptions): McpClient {
         sessions.map(async (session: SessionInfo) => {
           if (clientRef.current) {
             try {
+              // Pending auth sessions should not auto-trigger popup/redirect on reload.
+              if (session.active === false) {
+                return;
+              }
+              suppressAuthRedirectSessionsRef.current.add(session.sessionId);
               await clientRef.current.restoreSession(session.sessionId);
             } catch (error) {
               console.error(`[useMcp] Failed to validate session ${session.sessionId}:`, error);
+            } finally {
+              suppressAuthRedirectSessionsRef.current.delete(session.sessionId);
             }
           }
         })
@@ -459,6 +498,18 @@ export function useMcp(options: UseMcpOptions): McpClient {
     }
 
     return await clientRef.current.finishAuth(sessionId, code);
+  }, []);
+
+  /**
+   * Explicit user action to resume OAuth for an existing pending session.
+   */
+  const resumeAuth = useCallback(async (sessionId: string): Promise<void> => {
+    if (!clientRef.current) {
+      throw new Error('SSE client not initialized');
+    }
+    // Ensure this attempt is not suppressed as background restore.
+    suppressAuthRedirectSessionsRef.current.delete(sessionId);
+    await clientRef.current.restoreSession(sessionId);
   }, []);
 
   /**
@@ -578,6 +629,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
     connectSSE,
     disconnectSSE,
     finishAuth,
+    resumeAuth,
     callTool,
     listTools,
     listPrompts,

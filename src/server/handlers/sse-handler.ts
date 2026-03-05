@@ -226,6 +226,7 @@ export class SSEConnectionManager {
         serverUrl: s.serverUrl,
         transport: s.transportType,
         createdAt: s.createdAt,
+        active: s.active !== false,
       })),
     };
   }
@@ -249,6 +250,15 @@ export class SSEConnectionManager {
     );
 
     if (duplicate) {
+      // If the existing session is still pending OAuth, treat connect as "resume auth"
+      // instead of failing with duplicate connection error.
+      if (duplicate.active === false) {
+        await this.restoreSession({ sessionId: duplicate.sessionId });
+        return {
+          sessionId: duplicate.sessionId,
+          success: true,
+        };
+      }
       throw new Error(`Connection already exists for server: ${duplicate.serverUrl || duplicate.serverId} (${duplicate.serverName})`);
     }
 

@@ -338,44 +338,40 @@ The library supports multiple storage backends. You can explicitly select one us
 
 ## 🏗️ Architecture
 
-This package uses **Server-Sent Events (SSE)** instead of WebSockets:
+`@mcp-ts/sdk` supports two common runtime topologies: direct SSE from browser clients, and outbound bridge connectivity for local agents.
 
 
 ```mermaid
-graph TD
-    subgraph Client ["Browser (React)"]
-        UI[UI Components]
+graph LR
+    subgraph Direct["Direct SDK Flow (SSE)"]
+        UI[Browser UI]
         Hook[useMcp Hook]
+        API[Next.js /api/mcp]
+        Mgr[MultiSessionClient]
+        Store[(Redis/File/Memory)]
+        MCP[MCP Servers]
+
         UI <--> Hook
+        Hook -- "HTTP RPC" --> API
+        API --> Mgr
+        Mgr -- "SSE events" --> Hook
+        Mgr <--> Store
+        Mgr <--> MCP
     end
 
-    subgraph Server ["Next.js Server (Node.js)"]
-        API[API Route /api/mcp]
-        SSE[SSE Handler]
-        ClientMgr[MCP Client Manager]
-        
-        API <--> ClientMgr
-        ClientMgr --> SSE
-    end
+    subgraph Bridge["Remote Bridge Flow (mcp-local-agent)"]
+        Agent[Local Agent Runtime]
+        Remote[Remote Bridge Server]
+        LocalMcp[Local MCP Servers]
 
-    subgraph Infrastructure
-        Redis[(Redis Session Store)]
+        Agent -- "WSS /connect (outbound)" --> Remote
+        Agent <--> LocalMcp
     end
-
-    subgraph External ["External MCP Servers"]
-        TargetServer[Target MCP Server]
-    end
-
-    Hook -- "HTTP POST (RPC)" --> API
-    SSE -- "Server-Sent Events" --> Hook
-    ClientMgr -- "Persist State" <--> Redis
-    ClientMgr -- "MCP Protocol" <--> TargetServer
 ```
 
-- **Browser**: React application using the `useMcp` hook for state management.
-- **Next.js Server**: Acts as a bridge, maintaining connections to external MCP servers.
-- **Storage**: Persists session state, OAuth tokens, and connection details (Redis, File, or Memory).
-- **SSE**: Delivers real-time updates (logs, tool list changes) to the client.
+- **Direct SDK flow**: Browser clients use `useMcp` over HTTP + SSE to a server route backed by `MultiSessionClient`.
+- **Bridge flow**: `mcp-local-agent` keeps an outbound authenticated WebSocket to a remote bridge and forwards tool calls to local MCP servers.
+- **Storage**: Session state and connection metadata persist in Redis, File, SQLite, or Memory backends.
 
 > [!NOTE]
 > This package (`@mcp-ts/sdk`) provides a unified MCP client with support for adapters and storage backends such as AI SDK, Mastra, LangChain, and Redis.
@@ -401,6 +397,4 @@ Contributions are welcome! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for 
   <em> Thanks for visiting ✨ @mcp-ts!</em><br><br>
   <img src="https://visitor-badge.laobi.icu/badge?page_id=zonlabs.mcp-ts&style=for-the-badge&color=00d4ff" alt="Views">
 </p>
-
-
 
