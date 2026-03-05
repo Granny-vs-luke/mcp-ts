@@ -3,7 +3,7 @@ requires = ["hatchling>=1.25.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mcp-remote-server"
+name = "remote-proxy"
 version = "0.1.0"
 description = "Remote FastAPI bridge for secure MCP access over outbound WebSocket agents"
 readme = "README.md"
@@ -19,8 +19,8 @@ dependencies = [
 ]
 
 [project.scripts]
-mcp-remote-server = "mcp_remote_server.main:run"
-mcp-remote-deploy = "mcp_remote_server.deploy:run"
+remote-proxy = "mcp_remote_server.main:run"
+remote-proxy-deploy = "mcp_remote_server.deploy:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcp_remote_server"]

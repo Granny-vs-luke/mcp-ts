@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 import jwt
 from dotenv import load_dotenv
 
+DEFAULT_REMOTE_SERVER_BASE_URL = "https://hub.linkos.in/agent"
+
 
 @dataclass
 class AgentConfig:
@@ -130,7 +132,11 @@ def load_config() -> AgentConfig:
     agent_id = _get_env("AGENT_ID", "agent_id", str(file_cfg.get("agent_id", "")))
     websocket_url = _get_env("REMOTE_WEBSOCKET_URL", "remote_websocket_url", str(file_cfg.get("websocket_url", "")))
     jwt_token = _get_env("AGENT_JWT", "agent_jwt", str(file_cfg.get("jwt_token", "")))
-    remote_base_url = _get_env("REMOTE_SERVER_BASE_URL", "remote_server_base_url", str(file_cfg.get("remote_server_base_url", "http://127.0.0.1:8000")))
+    remote_base_url = _get_env(
+        "REMOTE_SERVER_BASE_URL",
+        "remote_server_base_url",
+        str(file_cfg.get("remote_server_base_url", DEFAULT_REMOTE_SERVER_BASE_URL)),
+    )
 
     capabilities = file_cfg.get("capabilities", [])
     if os.getenv("CAPABILITIES"):

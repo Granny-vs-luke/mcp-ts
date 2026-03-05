@@ -117,7 +117,7 @@ async def _run(args: argparse.Namespace) -> None:
 
 
 def cli() -> None:
-    parser = argparse.ArgumentParser(prog="bridgeserver", description="Run MCP servers from mcpServers config")
+    parser = argparse.ArgumentParser(prog="mcpassistant-gateway-bridge", description="Run MCP servers from mcpServers config")
     parser.add_argument("--config", default="config.json", help="Path to config JSON containing mcpServers")
     parser.add_argument("--name", default="", help="Run only one mcpServers entry by name")
     parsed = parser.parse_args()
@@ -126,3 +126,4 @@ def cli() -> None:
 
 if __name__ == "__main__":
     cli()
+

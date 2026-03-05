@@ -9,6 +9,7 @@ import signal
 import sys
 from contextlib import AsyncExitStack
 from dataclasses import asdict, is_dataclass
+from importlib.metadata import PackageNotFoundError, version as pkg_version
 from typing import Any
 from urllib.parse import urlparse
 
@@ -29,10 +30,18 @@ def configure_logging() -> None:
 
 logger = logging.getLogger("mcp_local_agent")
 DEFAULT_PROTOCOL_VERSION = os.getenv("MCP_PROTOCOL_VERSION", "2025-11-25")
+APP_TITLE = "MCP ASSISTANT PROXY"
 
 
 def _console(msg: str) -> None:
     print(msg, flush=True)
+
+
+def _agent_version() -> str:
+    try:
+        return pkg_version("mcpassistant-gateway")
+    except PackageNotFoundError:
+        return "dev"
 
 
 def _supports_color() -> bool:
@@ -64,22 +73,22 @@ def _frame(lines: list[str]) -> str:
     return "\n".join([border, *body, border])
 
 
-def _print_start_banner() -> None:
+def _print_start_prompt() -> None:
     lines = [
-        "MCP Local Agent",
+        APP_TITLE,
         "Paste AGENT_JWT to continue startup",
     ]
     _console(_style(_frame(lines), color="36", bold=True))
 
-
-def _print_runtime_banner() -> None:
+def _print_runtime_header() -> None:
+    version = _agent_version()
     title = [
         " __  __  ____ ____      _    ____ ____ ___ ____ _____ _    _   _ _____ ",
         "|  \\/  |/ ___|  _ \\    / \\  / ___/ ___|_ _/ ___|_   _/ \\  | \\ | |_   _|",
         "| |\\/| | |   | |_) |  / _ \\ \\___ \\___ \\| |\\___ \\ | |/ _ \\ |  \\| | | |  ",
         "| |  | | |___|  __/  / ___ \\ ___) |__) | | ___) || / ___ \\| |\\  | | |  ",
         "|_|  |_|\\____|_|    /_/   \\_\\____/____/___|____/ |_/_/   \\_\\_| \\_| |_|  ",
-        "                         MCP ASSISTANT PROXY",
+        f"                   {APP_TITLE}  v{version}",
     ]
     _console(_style("\n".join(title), color="36", bold=True))
     _console(_style("Tips:", color="35", bold=True))
@@ -89,7 +98,7 @@ def _print_runtime_banner() -> None:
 
 
 def _prompt_for_token() -> str:
-    _print_start_banner()
+    _print_start_prompt()
     _console(_style("No AGENT_JWT found in environment or config.", color="33", bold=True))
     while True:
         token = input("Paste AGENT_JWT token: ").strip()
@@ -107,6 +116,36 @@ def _prompt_text(label: str, default: str | None = None) -> str:
         if default:
             return default
         _console(_style(f"{label} is required.", color="31", bold=True))
+
+
+async def _run_with_spinner(task_label: str, awaitable: Any, interval_seconds: float = 0.12) -> Any:
+    done = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+    frames = ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"]
+    async def _ticker() -> None:
+        step = 0
+        while not done.is_set():
+            elapsed = loop.time() - start
+            icon = frames[step % len(frames)]
+            if _supports_color():
+                icon = _style(icon, color="36", bold=True)
+            message = f"\r{task_label} {icon} initializing {elapsed:.1f}s"
+            print(message, end="", flush=True)
+            step += 1
+            try:
+                await asyncio.wait_for(done.wait(), timeout=interval_seconds)
+            except TimeoutError:
+                continue
+
+    ticker_task = asyncio.create_task(_ticker())
+    try:
+        return await awaitable
+    finally:
+        done.set()
+        await ticker_task
+        # Clear spinner line before next normal log line.
+        print("\r" + " " * 120 + "\r", end="", flush=True)
 
 
 def _token_from_sources() -> str:
@@ -359,7 +398,7 @@ class LocalBridgeAgent:
             try:
                 start_at = asyncio.get_running_loop().time()
                 _console(f"[mcp] [{index}/{total}] starting '{name}' ...")
-                await managed.start()
+                await _run_with_spinner(f"[mcp] [{index}/{total}] '{name}'", managed.start())
                 self._mcp_servers[name] = managed
                 elapsed = asyncio.get_running_loop().time() - start_at
                 _console(f"[mcp] [{index}/{total}] ready '{name}' via stdio MCP client ({elapsed:.1f}s)")
@@ -487,8 +526,8 @@ class LocalBridgeAgent:
 
 async def _main() -> None:
     configure_logging()
+    _print_runtime_header()
     config = _load_config_with_prompt()
-    _print_runtime_banner()
     _console(_style(_frame([f"Agent: {config.agent_id}", f"WebSocket: {config.websocket_url}"]), color="32", bold=True))
     _console(f"[boot] loaded config: agent_id={config.agent_id} websocket={config.websocket_url}")
     _console(f"[boot] mcpServers keys: {list((config.mcp_servers or {}).keys())}")
@@ -532,3 +571,11 @@ def cli() -> None:
 
 if __name__ == "__main__":
     cli()
+
+
+
+
+
+
+
+

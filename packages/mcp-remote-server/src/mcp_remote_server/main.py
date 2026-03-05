@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -53,6 +54,38 @@ async def agent_details(_: AuthContext = Depends(authenticator.http_auth)) -> di
 async def get_agents_details() -> dict[str, list[dict[str, object]]]:
     agents = await connection_manager.connected_agents_details()
     return {"agents": agents}
+
+
+@app.get("/manage/agents/stream")
+async def stream_agents_details() -> StreamingResponse:
+    queue = await connection_manager.subscribe_agent_events()
+
+    async def _stream() -> object:
+        try:
+            # Emit immediately so clients/proxies establish SSE framing without delay.
+            yield ": connected\n\n"
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield f"event: {event.get('type', 'agents_updated')}\n"
+                    yield f"data: {json.dumps(event)}\n\n"
+                except TimeoutError:
+                    # Keep long-lived proxies/browsers from closing idle SSE connections.
+                    yield ": heartbeat\n\n"
+        except asyncio.CancelledError:
+            raise
+        finally:
+            await connection_manager.unsubscribe_agent_events(queue)
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/manage/jwt/issue")
@@ -170,7 +203,7 @@ async def _get_mcp_server_info(agent_id: str, mcp_server: str) -> dict[str, obje
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "mcp-remote-server-manage", "version": "1.0.0"},
+            "clientInfo": {"name": "remote-proxy-manager", "version": "1.0.0"},
         },
     }
     init_result = await connection_manager.invoke(

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException, WebSocket, status
@@ -23,7 +24,38 @@ class ConnectedAgent:
 class ConnectionManager:
     def __init__(self) -> None:
         self._agents: dict[str, ConnectedAgent] = {}
+        self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _ts() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    def _connected_agents_details_unlocked(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "agent_id": agent_id,
+                "capabilities": sorted(agent.capabilities),
+            }
+            for agent_id, agent in self._agents.items()
+        ]
+
+    def _broadcast_agents_updated_unlocked(self, reason: str, agent_id: str) -> None:
+        event = {
+            "type": "agents_updated",
+            "reason": reason,
+            "agent_id": agent_id,
+            "timestamp": self._ts(),
+            "agents": self._connected_agents_details_unlocked(),
+        }
+        stale: list[asyncio.Queue[dict[str, Any]]] = []
+        for queue in self._subscribers:
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                stale.append(queue)
+        for queue in stale:
+            self._subscribers.discard(queue)
 
     async def register(self, agent_id: str, websocket: WebSocket, capabilities: set[str]) -> None:
         async with self._lock:
@@ -39,6 +71,7 @@ class ConnectionManager:
                 "agent_registered",
                 extra={"agent_id": agent_id, "capabilities": sorted(capabilities)},
             )
+            self._broadcast_agents_updated_unlocked(reason="registered", agent_id=agent_id)
 
     async def unregister(self, agent_id: str, websocket: WebSocket | None = None) -> None:
         async with self._lock:
@@ -58,6 +91,7 @@ class ConnectionManager:
                     )
             self._agents.pop(agent_id, None)
             logger.info("agent_unregistered", extra={"agent_id": agent_id})
+            self._broadcast_agents_updated_unlocked(reason="unregistered", agent_id=agent_id)
 
     async def handle_result(self, agent_id: str, request_id: str, result: dict[str, Any]) -> None:
         async with self._lock:
@@ -122,10 +156,21 @@ class ConnectionManager:
 
     async def connected_agents_details(self) -> list[dict[str, Any]]:
         async with self._lock:
-            return [
+            return self._connected_agents_details_unlocked()
+
+    async def subscribe_agent_events(self) -> asyncio.Queue[dict[str, Any]]:
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
+        async with self._lock:
+            self._subscribers.add(queue)
+            queue.put_nowait(
                 {
-                    "agent_id": agent_id,
-                    "capabilities": sorted(agent.capabilities),
+                    "type": "agents_snapshot",
+                    "timestamp": self._ts(),
+                    "agents": self._connected_agents_details_unlocked(),
                 }
-                for agent_id, agent in self._agents.items()
-            ]
+            )
+        return queue
+
+    async def unsubscribe_agent_events(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
+        async with self._lock:
+            self._subscribers.discard(queue)
