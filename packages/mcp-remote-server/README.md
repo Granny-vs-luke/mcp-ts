@@ -40,8 +40,8 @@ uv run remote-proxy-deploy
 
 Optional flags:
 - `--host nexus`
-- `--remote-dir /home/ubuntu/remote-proxy`
-- `--service remote-proxy`
+- `--remote-dir /home/ubuntu/mcp-remote-server`
+- `--service mcp-remote-server`
 - `--skip-verify`
 
 This command packages local code (excluding `.venv` and `.env*`), uploads to your server, runs `uv sync`, restarts the systemd service, and checks health.
