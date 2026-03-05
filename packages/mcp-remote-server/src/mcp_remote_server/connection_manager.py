@@ -16,6 +16,7 @@ logger = logging.getLogger("mcp_remote_server.connection_manager")
 @dataclass
 class ConnectedAgent:
     agent_id: str
+    owner_id: str
     websocket: WebSocket
     capabilities: set[str]
     pending: dict[str, asyncio.Future[dict[str, Any]]] = field(default_factory=dict)
@@ -24,46 +25,48 @@ class ConnectedAgent:
 class ConnectionManager:
     def __init__(self) -> None:
         self._agents: dict[str, ConnectedAgent] = {}
-        self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
+        self._subscribers: dict[str, set[asyncio.Queue[dict[str, Any]]]] = {}
         self._lock = asyncio.Lock()
 
     @staticmethod
     def _ts() -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    def _connected_agents_details_unlocked(self) -> list[dict[str, Any]]:
+    def _connected_agents_details_unlocked(self, owner_id: str | None = None) -> list[dict[str, Any]]:
         return [
             {
                 "agent_id": agent_id,
                 "capabilities": sorted(agent.capabilities),
             }
             for agent_id, agent in self._agents.items()
+            if owner_id is None or agent.owner_id == owner_id
         ]
 
-    def _broadcast_agents_updated_unlocked(self, reason: str, agent_id: str) -> None:
+    def _broadcast_agents_updated_unlocked(self, reason: str, agent_id: str, owner_id: str) -> None:
         event = {
             "type": "agents_updated",
             "reason": reason,
             "agent_id": agent_id,
             "timestamp": self._ts(),
-            "agents": self._connected_agents_details_unlocked(),
+            "agents": self._connected_agents_details_unlocked(owner_id=owner_id),
         }
         stale: list[asyncio.Queue[dict[str, Any]]] = []
-        for queue in self._subscribers:
+        for queue in self._subscribers.get(owner_id, set()):
             try:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
                 stale.append(queue)
         for queue in stale:
-            self._subscribers.discard(queue)
+            self._subscribers.get(owner_id, set()).discard(queue)
 
-    async def register(self, agent_id: str, websocket: WebSocket, capabilities: set[str]) -> None:
+    async def register(self, agent_id: str, owner_id: str, websocket: WebSocket, capabilities: set[str]) -> None:
         async with self._lock:
             existing = self._agents.get(agent_id)
             if existing is not None:
                 await existing.websocket.close(code=1012, reason="superseded")
             self._agents[agent_id] = ConnectedAgent(
                 agent_id=agent_id,
+                owner_id=owner_id,
                 websocket=websocket,
                 capabilities=capabilities,
             )
@@ -71,7 +74,7 @@ class ConnectionManager:
                 "agent_registered",
                 extra={"agent_id": agent_id, "capabilities": sorted(capabilities)},
             )
-            self._broadcast_agents_updated_unlocked(reason="registered", agent_id=agent_id)
+            self._broadcast_agents_updated_unlocked(reason="registered", agent_id=agent_id, owner_id=owner_id)
 
     async def unregister(self, agent_id: str, websocket: WebSocket | None = None) -> None:
         async with self._lock:
@@ -91,7 +94,7 @@ class ConnectionManager:
                     )
             self._agents.pop(agent_id, None)
             logger.info("agent_unregistered", extra={"agent_id": agent_id})
-            self._broadcast_agents_updated_unlocked(reason="unregistered", agent_id=agent_id)
+            self._broadcast_agents_updated_unlocked(reason="unregistered", agent_id=agent_id, owner_id=agent.owner_id)
 
     async def handle_result(self, agent_id: str, request_id: str, result: dict[str, Any]) -> None:
         async with self._lock:
@@ -113,10 +116,13 @@ class ConnectionManager:
         payload: dict[str, Any],
         request_id: str,
         timeout_seconds: float,
+        owner_id: str | None = None,
     ) -> dict[str, Any]:
         async with self._lock:
             agent = self._agents.get(agent_id)
             if agent is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not connected")
+            if owner_id is not None and agent.owner_id != owner_id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not connected")
             if mcp_server not in agent.capabilities:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="MCP server not allowed for agent")
@@ -150,27 +156,33 @@ class ConnectionManager:
                     active.pending.pop(request_id, None)
             raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Agent response timed out") from exc
 
-    async def connected_agent_ids(self) -> list[str]:
+    async def connected_agent_ids(self, owner_id: str | None = None) -> list[str]:
         async with self._lock:
-            return list(self._agents.keys())
+            return [agent_id for agent_id, agent in self._agents.items() if owner_id is None or agent.owner_id == owner_id]
 
-    async def connected_agents_details(self) -> list[dict[str, Any]]:
+    async def connected_agents_details(self, owner_id: str | None = None) -> list[dict[str, Any]]:
         async with self._lock:
-            return self._connected_agents_details_unlocked()
+            return self._connected_agents_details_unlocked(owner_id=owner_id)
 
-    async def subscribe_agent_events(self) -> asyncio.Queue[dict[str, Any]]:
+    async def subscribe_agent_events(self, owner_id: str) -> asyncio.Queue[dict[str, Any]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
         async with self._lock:
-            self._subscribers.add(queue)
+            owner_subs = self._subscribers.setdefault(owner_id, set())
+            owner_subs.add(queue)
             queue.put_nowait(
                 {
                     "type": "agents_snapshot",
                     "timestamp": self._ts(),
-                    "agents": self._connected_agents_details_unlocked(),
+                    "agents": self._connected_agents_details_unlocked(owner_id=owner_id),
                 }
             )
         return queue
 
-    async def unsubscribe_agent_events(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
+    async def unsubscribe_agent_events(self, owner_id: str, queue: asyncio.Queue[dict[str, Any]]) -> None:
         async with self._lock:
-            self._subscribers.discard(queue)
+            owner_subs = self._subscribers.get(owner_id)
+            if owner_subs is None:
+                return
+            owner_subs.discard(queue)
+            if not owner_subs:
+                self._subscribers.pop(owner_id, None)
