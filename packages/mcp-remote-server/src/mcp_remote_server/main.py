@@ -51,14 +51,20 @@ async def agent_details(auth_ctx: AuthContext = Depends(authenticator.http_auth)
 
 
 @app.get("/manage/agents/details")
-async def get_agents_details(auth_ctx: AuthContext = Depends(authenticator.http_auth)) -> dict[str, list[dict[str, object]]]:
-    agents = await connection_manager.connected_agents_details(owner_id=auth_ctx.subject)
+async def get_agents_details(subject: str = "") -> dict[str, list[dict[str, object]]]:
+    owner_id = subject.strip()
+    if not owner_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="subject is required")
+    agents = await connection_manager.connected_agents_details(owner_id=owner_id)
     return {"agents": agents}
 
 
 @app.get("/manage/agents/stream")
-async def stream_agents_details(auth_ctx: AuthContext = Depends(authenticator.http_auth)) -> StreamingResponse:
-    queue = await connection_manager.subscribe_agent_events(owner_id=auth_ctx.subject)
+async def stream_agents_details(subject: str = "") -> StreamingResponse:
+    owner_id = subject.strip()
+    if not owner_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="subject is required")
+    queue = await connection_manager.subscribe_agent_events(owner_id=owner_id)
 
     async def _stream() -> object:
         try:
@@ -75,7 +81,7 @@ async def stream_agents_details(auth_ctx: AuthContext = Depends(authenticator.ht
         except asyncio.CancelledError:
             raise
         finally:
-            await connection_manager.unsubscribe_agent_events(auth_ctx.subject, queue)
+            await connection_manager.unsubscribe_agent_events(owner_id, queue)
 
     return StreamingResponse(
         _stream(),
