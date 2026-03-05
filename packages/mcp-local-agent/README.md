@@ -22,6 +22,10 @@ Set `START_MCP_SERVERS=false` if you only want the bridge process.
 
 Configuration can be provided through `.env` and/or `config.json`.
 
+If `config.json` does not exist, it is created automatically on first run with:
+- `remote_server_base_url` defaulting to `https://hub.linkos.in/agent`
+- a default `mcpServers.filesystem` entry scoped to your current working directory
+
 Minimal dynamic `.env`:
 
 ```env
