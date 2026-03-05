@@ -279,15 +279,30 @@ export function useMcp(options: UseMcpOptions): McpClient {
   const updateConnectionsFromEvent = useCallback((event: McpConnectionEvent) => {
     if (!isMountedRef.current) return;
 
+    const isTransientReconnectState = (state: McpConnectionState): boolean =>
+      state === 'INITIALIZING' ||
+      state === 'VALIDATING' ||
+      state === 'RECONNECTING' ||
+      state === 'CONNECTING' ||
+      state === 'CONNECTED' ||
+      state === 'DISCOVERING';
+
     setConnections((prev: McpConnection[]) => {
       switch (event.type) {
         case 'state_changed': {
           const existing = prev.find((c: McpConnection) => c.sessionId === event.sessionId);
           if (existing) {
+            // In stateless per-request transport, tool calls can emit transient reconnect states.
+            // Keep READY sticky to avoid UI flicker from READY -> CONNECTING -> CONNECTED.
+            const nextState =
+              existing.state === 'READY' && isTransientReconnectState(event.state)
+                ? existing.state
+                : event.state;
+
             return prev.map((c: McpConnection) =>
               c.sessionId === event.sessionId ? {
                 ...c,
-                state: event.state,
+                state: nextState,
                 // update createdAt if present in event, otherwise keep existing
                 createdAt: event.createdAt ? new Date(event.createdAt) : c.createdAt
               } : c
