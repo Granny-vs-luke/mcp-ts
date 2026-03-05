@@ -256,12 +256,18 @@ async def _get_mcp_server_info(agent_id: str, mcp_server: str, owner_id: str) ->
 async def get_mcp_server_info(
     agent_id: str,
     mcp_server: str,
-    auth_ctx: AuthContext = Depends(authenticator.http_auth),
+    subject: str = "",
+    auth_ctx: AuthContext | None = Depends(authenticator.optional_http_auth),
 ) -> JSONResponse:
-    if auth_ctx.subject != agent_id:
+    owner_id = subject.strip()
+    if not owner_id:
+        if auth_ctx is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+        owner_id = auth_ctx.subject
+    if auth_ctx is not None and not subject and auth_ctx.subject != agent_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Caller cannot access this agent")
     try:
-        data = await _get_mcp_server_info(agent_id=agent_id, mcp_server=mcp_server, owner_id=auth_ctx.subject)
+        data = await _get_mcp_server_info(agent_id=agent_id, mcp_server=mcp_server, owner_id=owner_id)
         return JSONResponse(content=data)
     except HTTPException as exc:
         return JSONResponse(
