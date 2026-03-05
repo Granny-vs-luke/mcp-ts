@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 import jwt
 from dotenv import load_dotenv
 
+DEFAULT_REMOTE_SERVER_BASE_URL = "https://hub.linkos.in/agent"
+
 
 @dataclass
 class AgentConfig:
@@ -77,6 +79,32 @@ def _load_config_file(path: Path) -> dict:
         return json.load(handle)
 
 
+def _default_config_template() -> dict[str, Any]:
+    return {
+        "remote_server_base_url": DEFAULT_REMOTE_SERVER_BASE_URL,
+        "mcpServers": {
+            "filesystem": {
+                "command": "npx",
+                "args": [
+                    "@modelcontextprotocol/server-filesystem",
+                    str(Path.cwd().resolve()),
+                ],
+            }
+        },
+    }
+
+
+def ensure_default_config(path: Path | None = None) -> Path:
+    target = path or _resolve_config_path()
+    if target.exists():
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8") as handle:
+        json.dump(_default_config_template(), handle, indent=2)
+        handle.write("\n")
+    return target
+
+
 def _load_env_files() -> None:
     cwd = Path.cwd().resolve()
     module_dir = Path(__file__).resolve().parent
@@ -125,12 +153,17 @@ def _is_local_ws(url: str) -> bool:
 def load_config() -> AgentConfig:
     _load_env_files()
     cfg_path = _resolve_config_path()
+    ensure_default_config(cfg_path)
     file_cfg = _load_config_file(cfg_path)
 
     agent_id = _get_env("AGENT_ID", "agent_id", str(file_cfg.get("agent_id", "")))
     websocket_url = _get_env("REMOTE_WEBSOCKET_URL", "remote_websocket_url", str(file_cfg.get("websocket_url", "")))
     jwt_token = _get_env("AGENT_JWT", "agent_jwt", str(file_cfg.get("jwt_token", "")))
-    remote_base_url = _get_env("REMOTE_SERVER_BASE_URL", "remote_server_base_url", str(file_cfg.get("remote_server_base_url", "http://127.0.0.1:8000")))
+    remote_base_url = _get_env(
+        "REMOTE_SERVER_BASE_URL",
+        "remote_server_base_url",
+        str(file_cfg.get("remote_server_base_url", DEFAULT_REMOTE_SERVER_BASE_URL)),
+    )
 
     capabilities = file_cfg.get("capabilities", [])
     if os.getenv("CAPABILITIES"):

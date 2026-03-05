@@ -38,7 +38,7 @@ def _run(cmd: list[str]) -> None:
 
 
 def _package_source(source_dir: Path) -> Path:
-    fd, temp_path = tempfile.mkstemp(prefix='mcp-remote-server-', suffix='.tar.gz')
+    fd, temp_path = tempfile.mkstemp(prefix='remote-proxy-', suffix='.tar.gz')
     os.close(fd)
     tar_path = Path(temp_path)
 
@@ -107,10 +107,10 @@ def deploy(host: str, remote_dir: str, service: str, skip_verify: bool) -> None:
 
 
 def run() -> None:
-    parser = argparse.ArgumentParser(description='Deploy mcp-remote-server package to EC2 host')
+    parser = argparse.ArgumentParser(description='Deploy remote-proxy package to EC2 host')
     parser.add_argument('--host', default='nexus', help='SSH host alias (default: nexus)')
-    parser.add_argument('--remote-dir', default='/home/ubuntu/mcp-remote-server', help='Remote project directory')
-    parser.add_argument('--service', default='mcp-remote-server', help='Systemd service name')
+    parser.add_argument('--remote-dir', default='/home/ubuntu/remote-proxy', help='Remote project directory')
+    parser.add_argument('--service', default='remote-proxy', help='Systemd service name')
     parser.add_argument('--skip-verify', action='store_true', help='Skip post-deploy health checks')
     args = parser.parse_args()
 

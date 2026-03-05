@@ -1,4 +1,4 @@
-# mcp-local-agent
+# mcpassistant-gateway
 
 Async local bridge that connects outbound to the remote MCP bridge over WSS and forwards invoke requests to local MCP servers using the MCP Python client library.
 
@@ -6,10 +6,10 @@ Async local bridge that connects outbound to the remote MCP bridge over WSS and 
 
 ```bash
 pip install -e .
-mcp-local-agent
+mcpassistant-gateway
 ```
 
-`mcp-local-agent` initializes MCP client sessions for configured `mcpServers` (stdio) and opens the outbound bridge connection to the remote server.
+`mcpassistant-gateway` initializes MCP client sessions for configured `mcpServers` (stdio) and opens the outbound bridge connection to the remote server.
 
 Startup token behavior:
 - If `AGENT_JWT` is already configured (env or `config.json`), startup continues without prompting.
@@ -18,14 +18,13 @@ Startup token behavior:
 - `AGENT_ID` is auto-derived from JWT claims (or token fingerprint fallback), so no manual `AGENT_ID` prompt.
 - Prompted values are saved into resolved `config.json`, so next runs do not ask again.
 
-Terminal UX:
-- Branded startup banner (`MCP ASSISTANT PROXY`).
-- Progress-style startup logs for MCP server initialization with per-server steps.
-- Connection attempt counters for bridge reconnect flow.
-
 Set `START_MCP_SERVERS=false` if you only want the bridge process.
 
 Configuration can be provided through `.env` and/or `config.json`.
+
+If `config.json` does not exist, it is created automatically on first run with:
+- `remote_server_base_url` defaulting to `https://hub.linkos.in/agent`
+- a default `mcpServers.filesystem` entry scoped to your current working directory
 
 Minimal dynamic `.env`:
 
@@ -39,7 +38,7 @@ With this mode:
 - `AGENT_ID` and `CAPABILITIES` are derived from JWT claims (`sub`, `capabilities`) if not explicitly set
 - Local MCP calls are handled via MCP client sessions for `mcpServers`
 
-## mcpServers + bridgeserver
+## mcpServers + mcpassistant-gateway-bridge
 
 You can run MCP servers from config (supergateway-style) and derive local HTTP endpoints:
 
@@ -58,27 +57,13 @@ You can run MCP servers from config (supergateway-style) and derive local HTTP e
 Run one server:
 
 ```bash
-bridgeserver --config ./config.json --name filesystem
+mcpassistant-gateway-bridge --config ./config.json --name filesystem
 ```
 
 Run all servers in config:
 
 ```bash
-bridgeserver --config ./config.json
+mcpassistant-gateway-bridge --config ./config.json
 ```
 
-## Streamlit Dashboard
 
-```bash
-mcp-local-dashboard
-```
-
-Environment variables:
-- `LOCAL_DASHBOARD_HOST` (default: `0.0.0.0`)
-- `LOCAL_DASHBOARD_PORT` (default: `8502`)
-
-The dashboard shows resolved agent config and can probe local MCP capability endpoints.
-
-Auto-discovery settings:
-- `AUTO_DISCOVER_LOCAL_MCP=true` (default)
-- `MCP_DISCOVERY_CANDIDATES=http://127.0.0.1:3004/mcp,http://127.0.0.1:8080/mcp`
