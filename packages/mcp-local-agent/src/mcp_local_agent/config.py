@@ -12,6 +12,20 @@ import jwt
 from dotenv import load_dotenv
 
 DEFAULT_REMOTE_SERVER_BASE_URL = "https://hub.linkos.in/agent"
+CONFIG_KEY_ORDER = [
+    "agent_id",
+    "jwt_token",
+    "remote_server_base_url",
+    "websocket_url",
+    "request_timeout_seconds",
+    "reconnect_initial_delay_seconds",
+    "reconnect_max_delay_seconds",
+    "auto_discover_local_mcp",
+    "discovery_candidates",
+    "capabilities",
+    "local_capability_endpoints",
+    "mcpServers",
+]
 
 
 @dataclass
@@ -79,8 +93,19 @@ def _load_config_file(path: Path) -> dict:
         return json.load(handle)
 
 
+def _ordered_config(data: dict[str, Any]) -> dict[str, Any]:
+    ordered: dict[str, Any] = {}
+    for key in CONFIG_KEY_ORDER:
+        if key in data:
+            ordered[key] = data[key]
+    for key, value in data.items():
+        if key not in ordered:
+            ordered[key] = value
+    return ordered
+
+
 def _default_config_template() -> dict[str, Any]:
-    return {
+    return _ordered_config({
         "remote_server_base_url": DEFAULT_REMOTE_SERVER_BASE_URL,
         "mcpServers": {
             "filesystem": {
@@ -91,7 +116,7 @@ def _default_config_template() -> dict[str, Any]:
                 ],
             }
         },
-    }
+    })
 
 
 def ensure_default_config(path: Path | None = None) -> Path:
@@ -254,8 +279,9 @@ def save_config_updates(updates: dict[str, Any], path: Path | None = None) -> Pa
     existing = _load_config_file(target)
     merged = existing if isinstance(existing, dict) else {}
     merged.update(updates)
+    ordered = _ordered_config(merged)
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8") as handle:
-        json.dump(merged, handle, indent=2)
+        json.dump(ordered, handle, indent=2)
         handle.write("\n")
     return target

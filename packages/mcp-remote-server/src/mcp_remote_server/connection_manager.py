@@ -154,6 +154,10 @@ class ConnectionManager:
                 active = self._agents.get(agent_id)
                 if active is not None:
                     active.pending.pop(request_id, None)
+            logger.warning(
+                "invoke_timeout",
+                extra={"agent_id": agent_id, "mcp_server": mcp_server, "request_id": request_id, "timeout_seconds": timeout_seconds},
+            )
             raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Agent response timed out") from exc
 
     async def connected_agent_ids(self, owner_id: str | None = None) -> list[str]:

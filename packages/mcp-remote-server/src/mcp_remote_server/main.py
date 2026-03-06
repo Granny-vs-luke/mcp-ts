@@ -191,7 +191,6 @@ async def _invoke_core(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Caller missing MCP server scope")
 
     request_id = str(uuid4())
-    logger.info("invoke_request", extra={"agent_id": agent_id, "mcp_server": mcp_server, "request_id": request_id})
     result = await connection_manager.invoke(
         agent_id=agent_id,
         mcp_server=mcp_server,

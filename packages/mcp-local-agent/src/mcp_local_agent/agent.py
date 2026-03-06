@@ -63,6 +63,13 @@ def _supports_color() -> bool:
     return term not in {"", "dumb"}
 
 
+def _supports_unicode_output() -> bool:
+    encoding = (getattr(sys.stdout, "encoding", None) or "").lower()
+    if not encoding:
+        return False
+    return "utf" in encoding
+
+
 def _style(text: str, *, color: str = "", bold: bool = False) -> str:
     if not _supports_color():
         return text
@@ -158,10 +165,17 @@ def _prompt_text(label: str, default: str | None = None) -> str:
 
 
 async def _run_with_spinner(task_label: str, awaitable: Any, interval_seconds: float = 0.12) -> Any:
+    if not sys.stdout.isatty():
+        return await awaitable
+
     done = asyncio.Event()
     loop = asyncio.get_running_loop()
     start = loop.time()
-    frames = ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"]
+    frames = (
+        ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"]
+        if _supports_unicode_output()
+        else ["-", "\\", "|", "/"]
+    )
     async def _ticker() -> None:
         step = 0
         while not done.is_set():
@@ -371,6 +385,8 @@ class LocalBridgeAgent:
         self._stop_event = asyncio.Event()
         self._mcp_servers: dict[str, ManagedMCPServer] = {}
         self._generic_mcp_endpoint: str | None = None
+        self._send_lock = asyncio.Lock()
+        self._inflight_tasks: set[asyncio.Task[None]] = set()
 
     async def run(self) -> None:
         await self._start_mcp_servers_if_configured()
@@ -414,7 +430,12 @@ class LocalBridgeAgent:
             async for raw in websocket:
                 if self._stop_event.is_set():
                     break
-                await self._handle_message(websocket, raw)
+                task = asyncio.create_task(self._handle_message(websocket, raw))
+                self._inflight_tasks.add(task)
+                task.add_done_callback(self._inflight_tasks.discard)
+
+        if self._inflight_tasks:
+            await asyncio.gather(*list(self._inflight_tasks), return_exceptions=True)
 
     def _announced_mcp_servers(self) -> list[str]:
         if self.config.mcp_servers:
@@ -501,17 +522,49 @@ class LocalBridgeAgent:
         request_id = str(message.get("request_id", ""))
         mcp_server = str(message.get("mcp_server", message.get("capability", "")))
         payload = message.get("payload", {})
+        started = asyncio.get_running_loop().time()
         logger.info("invoke received request_id=%s mcp_server=%s", request_id, mcp_server)
 
-        result = await self._invoke_local_mcp_server(mcp_server, payload)
-        await websocket.send(json.dumps({"type": "result", "request_id": request_id, "result": result}))
-        logger.info("result sent request_id=%s mcp_server=%s", request_id, mcp_server)
+        try:
+            result = await self._invoke_local_mcp_server(request_id, mcp_server, payload)
+        except Exception as exc:
+            logger.exception("invoke failed request_id=%s mcp_server=%s", request_id, mcp_server)
+            result = self._error_result(payload, str(exc))
 
-    async def _invoke_local_mcp_server(self, mcp_server: str, payload: dict[str, Any]) -> dict[str, Any]:
+        elapsed = asyncio.get_running_loop().time() - started
+        logger.info("invoke finished request_id=%s mcp_server=%s elapsed=%.3fs", request_id, mcp_server, elapsed)
+        await self._send_result(websocket, request_id, result)
+
+    async def _send_result(self, websocket: Any, request_id: str, result: dict[str, Any]) -> None:
+        async with self._send_lock:
+            await websocket.send(json.dumps({"type": "result", "request_id": request_id, "result": result}))
+        logger.info("result sent request_id=%s", request_id)
+
+    def _error_result(self, payload: Any, message: str) -> dict[str, Any]:
+        request_id = payload.get("id") if isinstance(payload, dict) else None
+        if request_id is None:
+            return {"ok": False, "error": message}
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": -32000, "message": message},
+        }
+
+    async def _invoke_local_mcp_server(self, request_id: str, mcp_server: str, payload: dict[str, Any]) -> dict[str, Any]:
         managed = self._mcp_servers.get(mcp_server)
         if managed is not None:
             if isinstance(payload, dict):
-                return await managed.handle_jsonrpc(payload)
+                timeout_seconds = max(1.0, self.config.request_timeout_seconds - 1.0)
+                try:
+                    return await asyncio.wait_for(managed.handle_jsonrpc(payload), timeout=timeout_seconds)
+                except TimeoutError:
+                    logger.warning(
+                        "managed_mcp_timeout request_id=%s mcp_server=%s timeout=%.1fs",
+                        request_id,
+                        mcp_server,
+                        timeout_seconds,
+                    )
+                    return self._error_result(payload, f"Local MCP server '{mcp_server}' timed out after {timeout_seconds:.1f}s")
             return {"ok": False, "error": "Invalid payload format for MCP request"}
 
         endpoint = self.config.local_capability_endpoints.get(mcp_server)
