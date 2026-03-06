@@ -8,7 +8,7 @@ import packageJson from '../package.json';
 const config: Config = {
   title: 'mcp-ts',
   tagline: 'Lightweight MCP client library for JavaScript applications',
-  favicon: 'img/favicon-mcp-ts.svg',
+  favicon: 'img/favicon.ico',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {

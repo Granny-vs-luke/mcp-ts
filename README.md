@@ -360,12 +360,16 @@ graph LR
     end
 
     subgraph Bridge["Remote Bridge Flow (mcp-local-agent)"]
+        direction TB
+        Spacer[" "]
         Agent[Local Agent Runtime]
         Remote[Remote Bridge Server]
         LocalMcp[Local MCP Servers]
 
+        Spacer --- Agent
         Agent -- "WSS /connect (outbound)" --> Remote
         Agent <--> LocalMcp
+        style Spacer fill:transparent,stroke:transparent,color:transparent
     end
 ```
 
