@@ -15,7 +15,7 @@ logger = logging.getLogger("mcp_remote_server.connection_manager")
 
 @dataclass
 class ConnectedAgent:
-    agent_id: str
+    subject: str
     owner_id: str
     websocket: WebSocket
     capabilities: set[str]
@@ -24,7 +24,7 @@ class ConnectedAgent:
 
 class ConnectionManager:
     def __init__(self) -> None:
-        self._agents: dict[str, ConnectedAgent] = {}
+        self._subjects: dict[str, ConnectedAgent] = {}
         self._subscribers: dict[str, set[asyncio.Queue[dict[str, Any]]]] = {}
         self._lock = asyncio.Lock()
 
@@ -32,23 +32,23 @@ class ConnectionManager:
     def _ts() -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    def _connected_agents_details_unlocked(self, owner_id: str | None = None) -> list[dict[str, Any]]:
+    def _connected_subjects_details_unlocked(self, owner_id: str | None = None) -> list[dict[str, Any]]:
         return [
             {
-                "agent_id": agent_id,
+                "subject": subject,
                 "capabilities": sorted(agent.capabilities),
             }
-            for agent_id, agent in self._agents.items()
+            for subject, agent in self._subjects.items()
             if owner_id is None or agent.owner_id == owner_id
         ]
 
-    def _broadcast_agents_updated_unlocked(self, reason: str, agent_id: str, owner_id: str) -> None:
+    def _broadcast_agents_updated_unlocked(self, reason: str, subject: str, owner_id: str) -> None:
         event = {
             "type": "agents_updated",
             "reason": reason,
-            "agent_id": agent_id,
+            "subject": subject,
             "timestamp": self._ts(),
-            "agents": self._connected_agents_details_unlocked(owner_id=owner_id),
+            "agents": self._connected_subjects_details_unlocked(owner_id=owner_id),
         }
         stale: list[asyncio.Queue[dict[str, Any]]] = []
         for queue in self._subscribers.get(owner_id, set()):
@@ -59,26 +59,26 @@ class ConnectionManager:
         for queue in stale:
             self._subscribers.get(owner_id, set()).discard(queue)
 
-    async def register(self, agent_id: str, owner_id: str, websocket: WebSocket, capabilities: set[str]) -> None:
+    async def register(self, subject: str, owner_id: str, websocket: WebSocket, capabilities: set[str]) -> None:
         async with self._lock:
-            existing = self._agents.get(agent_id)
+            existing = self._subjects.get(subject)
             if existing is not None:
                 await existing.websocket.close(code=1012, reason="superseded")
-            self._agents[agent_id] = ConnectedAgent(
-                agent_id=agent_id,
+            self._subjects[subject] = ConnectedAgent(
+                subject=subject,
                 owner_id=owner_id,
                 websocket=websocket,
                 capabilities=capabilities,
             )
             logger.info(
                 "agent_registered",
-                extra={"agent_id": agent_id, "capabilities": sorted(capabilities)},
+                extra={"subject": subject, "capabilities": sorted(capabilities)},
             )
-            self._broadcast_agents_updated_unlocked(reason="registered", agent_id=agent_id, owner_id=owner_id)
+            self._broadcast_agents_updated_unlocked(reason="registered", subject=subject, owner_id=owner_id)
 
-    async def unregister(self, agent_id: str, websocket: WebSocket | None = None) -> None:
+    async def unregister(self, subject: str, websocket: WebSocket | None = None) -> None:
         async with self._lock:
-            agent = self._agents.get(agent_id)
+            agent = self._subjects.get(subject)
             if agent is None:
                 return
             if websocket is not None and agent.websocket is not websocket:
@@ -92,26 +92,26 @@ class ConnectionManager:
                             detail="Agent disconnected",
                         )
                     )
-            self._agents.pop(agent_id, None)
-            logger.info("agent_unregistered", extra={"agent_id": agent_id})
-            self._broadcast_agents_updated_unlocked(reason="unregistered", agent_id=agent_id, owner_id=agent.owner_id)
+            self._subjects.pop(subject, None)
+            logger.info("agent_unregistered", extra={"subject": subject})
+            self._broadcast_agents_updated_unlocked(reason="unregistered", subject=subject, owner_id=agent.owner_id)
 
-    async def handle_result(self, agent_id: str, request_id: str, result: dict[str, Any]) -> None:
+    async def handle_result(self, subject: str, request_id: str, result: dict[str, Any]) -> None:
         async with self._lock:
-            agent = self._agents.get(agent_id)
+            agent = self._subjects.get(subject)
             if agent is None:
-                logger.warning("result_for_unknown_agent", extra={"agent_id": agent_id, "request_id": request_id})
+                logger.warning("result_for_unknown_agent", extra={"subject": subject, "request_id": request_id})
                 return
             future = agent.pending.pop(request_id, None)
             if future is None:
-                logger.warning("orphan_result", extra={"agent_id": agent_id, "request_id": request_id})
+                logger.warning("orphan_result", extra={"subject": subject, "request_id": request_id})
                 return
             if not future.done():
                 future.set_result(result)
 
     async def invoke(
         self,
-        agent_id: str,
+        subject: str,
         mcp_server: str,
         payload: dict[str, Any],
         request_id: str,
@@ -119,7 +119,7 @@ class ConnectionManager:
         owner_id: str | None = None,
     ) -> dict[str, Any]:
         async with self._lock:
-            agent = self._agents.get(agent_id)
+            agent = self._subjects.get(subject)
             if agent is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not connected")
             if owner_id is not None and agent.owner_id != owner_id:
@@ -142,7 +142,7 @@ class ConnectionManager:
             await websocket.send_text(json.dumps(invoke_message))
         except Exception as exc:
             async with self._lock:
-                pending = self._agents.get(agent_id)
+                pending = self._subjects.get(subject)
                 if pending is not None:
                     pending.pending.pop(request_id, None)
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Failed to reach agent") from exc
@@ -151,22 +151,22 @@ class ConnectionManager:
             return await asyncio.wait_for(future, timeout=timeout_seconds)
         except TimeoutError as exc:
             async with self._lock:
-                active = self._agents.get(agent_id)
+                active = self._subjects.get(subject)
                 if active is not None:
                     active.pending.pop(request_id, None)
             logger.warning(
                 "invoke_timeout",
-                extra={"agent_id": agent_id, "mcp_server": mcp_server, "request_id": request_id, "timeout_seconds": timeout_seconds},
+                extra={"subject": subject, "mcp_server": mcp_server, "request_id": request_id, "timeout_seconds": timeout_seconds},
             )
             raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Agent response timed out") from exc
 
-    async def connected_agent_ids(self, owner_id: str | None = None) -> list[str]:
+    async def connected_subjects(self, owner_id: str | None = None) -> list[str]:
         async with self._lock:
-            return [agent_id for agent_id, agent in self._agents.items() if owner_id is None or agent.owner_id == owner_id]
+            return [subject for subject, agent in self._subjects.items() if owner_id is None or agent.owner_id == owner_id]
 
     async def connected_agents_details(self, owner_id: str | None = None) -> list[dict[str, Any]]:
         async with self._lock:
-            return self._connected_agents_details_unlocked(owner_id=owner_id)
+            return self._connected_subjects_details_unlocked(owner_id=owner_id)
 
     async def subscribe_agent_events(self, owner_id: str) -> asyncio.Queue[dict[str, Any]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
@@ -177,7 +177,7 @@ class ConnectionManager:
                 {
                     "type": "agents_snapshot",
                     "timestamp": self._ts(),
-                    "agents": self._connected_agents_details_unlocked(owner_id=owner_id),
+                    "agents": self._connected_subjects_details_unlocked(owner_id=owner_id),
                 }
             )
         return queue

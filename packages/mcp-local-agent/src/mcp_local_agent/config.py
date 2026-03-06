@@ -13,10 +13,11 @@ from dotenv import load_dotenv
 
 DEFAULT_REMOTE_SERVER_BASE_URL = "https://hub.linkos.in/agent"
 CONFIG_KEY_ORDER = [
-    "agent_id",
+    "subject",
     "jwt_token",
     "remote_server_base_url",
     "websocket_url",
+    "published_endpoints",
     "request_timeout_seconds",
     "reconnect_initial_delay_seconds",
     "reconnect_max_delay_seconds",
@@ -30,7 +31,7 @@ CONFIG_KEY_ORDER = [
 
 @dataclass
 class AgentConfig:
-    agent_id: str
+    subject: str
     websocket_url: str
     jwt_token: str
     capabilities: list[str]
@@ -56,17 +57,17 @@ def _decode_unverified_claims(token: str) -> dict:
     return jwt.decode(token, options={"verify_signature": False, "verify_exp": False})
 
 
-def _derive_agent_id(token: str, claims: dict[str, Any] | None = None) -> str:
+def _derive_subject(token: str, claims: dict[str, Any] | None = None) -> str:
     if claims:
         sub = str(claims.get("sub", "")).strip()
         if sub:
             return sub
-        for key in ("agent_id", "agentId", "jti", "iss"):
+        for key in ("subject", "sub", "jti", "iss"):
             value = str(claims.get(key, "")).strip()
             if value:
-                return f"agent-{value}"
+                return f"subject-{value}"
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
-    return f"agent-{digest}"
+    return f"subject-{digest}"
 
 
 def _get_env(primary: str, fallback: str, default: str = "") -> str:
@@ -181,7 +182,9 @@ def load_config() -> AgentConfig:
     ensure_default_config(cfg_path)
     file_cfg = _load_config_file(cfg_path)
 
-    agent_id = _get_env("AGENT_ID", "agent_id", str(file_cfg.get("agent_id", "")))
+    file_identity = str(file_cfg.get("subject", ""))
+    subject = _get_env("SUBJECT", "subject", file_identity)
+    resolved_subject = subject
     websocket_url = _get_env("REMOTE_WEBSOCKET_URL", "remote_websocket_url", str(file_cfg.get("websocket_url", "")))
     jwt_token = _get_env("AGENT_JWT", "agent_jwt", str(file_cfg.get("jwt_token", "")))
     remote_base_url = _get_env(
@@ -202,8 +205,8 @@ def load_config() -> AgentConfig:
             claims = _decode_unverified_claims(jwt_token)
         except Exception as exc:
             raise RuntimeError("AGENT_JWT is not a valid JWT format") from exc
-        if not agent_id:
-            agent_id = _derive_agent_id(jwt_token, claims)
+        if not resolved_subject:
+            resolved_subject = _derive_subject(jwt_token, claims)
         if not capabilities:
             capabilities = [str(item) for item in claims.get("capabilities", [])]
 
@@ -243,8 +246,8 @@ def load_config() -> AgentConfig:
         raise RuntimeError("Missing REMOTE_WEBSOCKET_URL/REMOTE_SERVER_BASE_URL")
     if not jwt_token:
         raise RuntimeError("Missing AGENT_JWT. Local bridge requires AGENT_JWT token explicitly.")
-    if not agent_id:
-        agent_id = _derive_agent_id(jwt_token, {})
+    if not resolved_subject:
+        resolved_subject = _derive_subject(jwt_token, {})
 
     if websocket_url.startswith("ws://") and not _is_local_ws(websocket_url):
         raise RuntimeError("REMOTE_WEBSOCKET_URL must use wss:// in production")
@@ -255,7 +258,7 @@ def load_config() -> AgentConfig:
         raise RuntimeError("Provide local_capability_endpoints or enable AUTO_DISCOVER_LOCAL_MCP=true")
 
     return AgentConfig(
-        agent_id=agent_id,
+        subject=resolved_subject,
         websocket_url=websocket_url,
         jwt_token=jwt_token,
         capabilities=capabilities,

@@ -9,6 +9,40 @@ pip install -e .
 mcpassistant-gateway
 ```
 
+`mcpassistant-gateway` now opens an interactive menu by default.
+Use `/run` inside the menu to start the gateway in the same terminal and view realtime logs.
+Press `Ctrl+C` while running to stop and return to the menu.
+
+You can also use the built-in CLI helpers instead of editing `config.json` manually:
+
+```bash
+mcpassistant-gateway run
+mcpassistant-gateway menu
+mcpassistant-gateway settings
+mcpassistant-gateway config show
+mcpassistant-gateway config set --request-timeout-seconds 120
+mcpassistant-gateway run --request-timeout-seconds 120
+```
+
+Inside `mcpassistant-gateway menu`, use slash commands:
+
+```text
+/help
+/login
+/logout
+/show
+/set request_timeout_seconds 120
+/settings
+/run
+```
+
+`/login` behavior:
+- OAuth-first: starts remote OAuth session, opens browser, receives localhost callback, exchanges code, and saves JWT on success.
+- Legacy fallback: if OAuth endpoints are unavailable, falls back to `POST /manage/jwt/issue`.
+
+For OAuth localhost callback, ensure your auth provider allows:
+- `http://127.0.0.1:43110/callback`
+
 `mcpassistant-gateway` initializes MCP client sessions for configured `mcpServers` (stdio) and opens the outbound bridge connection to the remote server.
 
 Startup token behavior:
