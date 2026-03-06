@@ -10,18 +10,43 @@ import { Boxes } from '../components/BackgroundBoxes';
 
 import styles from './index.module.css';
 
+const showcaseDemos = [
+  {
+    title: 'AI SDK + remote MCP servers',
+    description: 'Watch a Vercel AI SDK app call remote MCP tools through mcp-ts with session management and realtime transport.',
+    videoSrc: '/mcp-ts/vid/mcp-ts.mp4',
+    tags: ['Remote tools', 'AI SDK'],
+    autoPlay: true,
+    icon: { src: '/mcp-ts/img/framework/vercel.svg', alt: 'Vercel', width: 16, height: 16 },
+  },
+  {
+    title: 'AG-UI middleware',
+    description: 'Streaming middleware that connects LangChain agents to AG-UI with an interaction model built for responsive interfaces.',
+    videoSrc: '/mcp-ts/vid/langchain-agui.mp4',
+    tags: ['LangChain', 'AG-UI', 'Streaming'],
+    icon: { src: '/mcp-ts/img/agent-framework/langchain.svg', alt: 'LangChain', width: 18, height: 18 },
+  },
+  {
+    title: 'MCP Apps',
+    description: 'Tool-driven interfaces that expose MCP capabilities through focused, interactive application surfaces.',
+    videoSrc: '/mcp-ts/vid/mcp-apps-ext.mp4',
+    tags: ['Interactive UI', 'Tooling', 'Apps'],
+    icon: { src: '/mcp-ts/img/logo-mark-red.svg', alt: 'mcp-ts', width: 16, height: 16 },
+  },
+];
+
 const InstallationExample = () => (
   <Terminal>
     <AnimatedSpan delay={0} className={styles.command}>npm install @mcp-ts/sdk</AnimatedSpan>
     <TypingAnimation delay={1000} duration={50}>
       Installing dependencies...
     </TypingAnimation>
-    <AnimatedSpan delay={2500} className={styles.success}>✓ Package installed successfully</AnimatedSpan>
-    <AnimatedSpan delay={3000} className={styles.command}>node server.js</AnimatedSpan>
+    <AnimatedSpan delay={2500} className={styles.success}>OK Package installed successfully</AnimatedSpan>
+    <AnimatedSpan delay={3000} className={styles.command}>import {'{'} useMcp {'}'} from '@mcp-ts/sdk/client'</AnimatedSpan>
     <TypingAnimation delay={4000} duration={40}>
-      Starting MCP server...
+      React hook ready for client-side MCP sessions...
     </TypingAnimation>
-    <AnimatedSpan delay={5500} className={styles.success}>🚀 Server ready at http://localhost:3000</AnimatedSpan>
+    <AnimatedSpan delay={5500} className={styles.success}>Ready to use useMcp in your app</AnimatedSpan>
   </Terminal>
 );
 
@@ -36,13 +61,17 @@ function HomepageHeader() {
       <div className="container" style={{ position: 'relative', zIndex: 20 }}>
         <div className="row">
           <div className={clsx('col col--6', styles.heroText)}>
+            <div className={styles.eyebrow}>TypeScript MCP toolkit</div>
             <div className={styles.logoTitle}>
-              <img src="/mcp-ts/img/logo.svg" alt="mcp-ts logo" width="60" height="60" />
-              <Heading as="h1" className="hero__title">
+              <img className={styles.logoMark} src="/mcp-ts/img/logo-mark-red.svg" alt="mcp-ts logo" width="64" height="64" />
+              <Heading as="h1" className={styles.heroTitle}>
                 {siteConfig.title}
               </Heading>
             </div>
-            <p className="hero__subtitle">{siteConfig.tagline}</p>
+            <p className={styles.heroSubtitle}>{siteConfig.tagline}</p>
+            <p className={styles.heroLead}>
+              Build AI-facing apps with a lean SDK for transport, sessions, and realtime MCP flows without hauling in framework-heavy abstractions.
+            </p>
             <div className={styles.buttons}>
               <Link
                 className={clsx('button button--secondary button--lg', styles.heroButton)}
@@ -56,7 +85,7 @@ function HomepageHeader() {
               </Link>
             </div>
           </div>
-          <div className={clsx('col col--6', styles.heroTerminal)}>
+          <div className={clsx('col col--6', styles.heroTerminalColumn)}>
             <InstallationExample />
           </div>
         </div>
@@ -73,71 +102,118 @@ export default function Home(): ReactNode {
       description="Lightweight MCP client library for JavaScript applications with Redis sessions and SSE support">
       <HomepageHeader />
       <main>
-        <div className="container" style={{ marginTop: '4rem', marginBottom: '4rem' }}>
-          <div className="row">
-            <div className="col col--8 col--offset-2">
-              <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                <Heading as="h2">See it in Action</Heading>
-                <div style={{ fontSize: '1.2rem', marginTop: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                  Demonstration of interaction between remote MCP servers and the
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <img src="/mcp-ts/img/framework/vercel.svg" alt="Vercel" width="16" height="16" /> AI SDK.
+        <section className={styles.showcaseSection}>
+          <div className="container">
+            <div className={styles.sectionHeading}>
+              <div className={styles.sectionEyebrow}>Product demos</div>
+              <Heading as="h2" className={styles.sectionTitle}>Example demos</Heading>
+              <p className={styles.sectionDescription}>
+                A featured walkthrough followed by focused examples for agent UIs, middleware, and MCP-powered app experiences.
+              </p>
+            </div>
+
+            <article className={styles.featuredDemoCard}>
+              <div className={styles.demoContent}>
+                <div className={styles.demoMetaRow}>
+                  <span className={styles.demoMetaIcon}>
+                    <img
+                      src={showcaseDemos[0].icon.src}
+                      alt={showcaseDemos[0].icon.alt}
+                      width={showcaseDemos[0].icon.width}
+                      height={showcaseDemos[0].icon.height}
+                    />
+                    Vercel AI SDK
                   </span>
                 </div>
+                <Heading as="h3" className={styles.demoTitle}>{showcaseDemos[0].title}</Heading>
+                <p className={styles.demoDescription}>{showcaseDemos[0].description}</p>
+                <div className={styles.demoTagRow}>
+                  {showcaseDemos[0].tags.map((tag) => (
+                    <span key={tag} className={styles.demoTag}>{tag}</span>
+                  ))}
+                </div>
               </div>
-              <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}>
+              <div className={styles.demoFrameLarge}>
                 <video
-                  src="/mcp-ts/vid/mcp-ts.mp4"
+                  src={showcaseDemos[0].videoSrc}
                   width="100%"
                   controls
-                  autoPlay
+                  autoPlay={showcaseDemos[0].autoPlay}
                   muted
                   loop
-                  style={{ display: 'block' }}
+                  playsInline
+                  className={styles.demoVideo}
                 />
               </div>
+            </article>
 
-              <div id="ag-ui-demo" style={{ textAlign: 'center', marginBottom: '2rem', marginTop: '4rem' }}>
-                <Heading as="h2">AG-UI Middleware</Heading>
-                <div style={{ fontSize: '1.2rem', marginTop: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                  Powering <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <img src="/mcp-ts/img/agent-framework/langchain.svg" alt="LangChain" width="20" height="20" /> LangChain
-                  </span> (create_agent) +
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <img src="/mcp-ts/img/agent-framework/agui.webp" alt="AG-UI" width="20" height="20" /> AG-UI
+            <div className={styles.demoGrid}>
+              <article id="ag-ui-demo" className={styles.demoCard}>
+                <div className={styles.demoCardHeader}>
+                  <span className={styles.demoMetaIcon}>
+                    <img
+                      src={showcaseDemos[1].icon.src}
+                      alt={showcaseDemos[1].icon.alt}
+                      width={showcaseDemos[1].icon.width}
+                      height={showcaseDemos[1].icon.height}
+                    />
+                    LangChain + AG-UI
                   </span>
                 </div>
-              </div>
-              <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}>
-                <video
-                  src="/mcp-ts/vid/langchain-agui.mp4"
-                  width="100%"
-                  controls
-                  muted
-                  loop
-                  style={{ display: 'block' }}
-                />
-              </div>
-
-              <div style={{ textAlign: 'center', marginBottom: '2rem', marginTop: '4rem' }}>
-                <Heading as="h2">MCP Apps</Heading>
-                <div style={{ fontSize: '1.2rem', marginTop: '1rem' }}>
-                  Interactive UIs for MCP tools
+                <Heading as="h3" className={styles.demoCardTitle}>{showcaseDemos[1].title}</Heading>
+                <p className={styles.demoCardDescription}>{showcaseDemos[1].description}</p>
+                <div className={styles.demoFrame}>
+                  <video
+                    src={showcaseDemos[1].videoSrc}
+                    width="100%"
+                    controls
+                    muted
+                    loop
+                    playsInline
+                    className={styles.demoVideo}
+                  />
                 </div>
-              </div>
-              <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}>
-                <video
-                  src="/mcp-ts/vid/mcp-apps-ext.mp4"
-                  width="100%"
-                  controls
-                  muted
-                  loop
-                  style={{ display: 'block' }}
-                />
-              </div>
+                <div className={styles.demoTagRow}>
+                  {showcaseDemos[1].tags.map((tag) => (
+                    <span key={tag} className={styles.demoTag}>{tag}</span>
+                  ))}
+                </div>
+              </article>
+
+              <article className={styles.demoCard}>
+                <div className={styles.demoCardHeader}>
+                  <span className={styles.demoMetaIcon}>
+                    <img
+                      src={showcaseDemos[2].icon.src}
+                      alt={showcaseDemos[2].icon.alt}
+                      width={showcaseDemos[2].icon.width}
+                      height={showcaseDemos[2].icon.height}
+                    />
+                    mcp-ts apps
+                  </span>
+                </div>
+                <Heading as="h3" className={styles.demoCardTitle}>{showcaseDemos[2].title}</Heading>
+                <p className={styles.demoCardDescription}>{showcaseDemos[2].description}</p>
+                <div className={styles.demoFrame}>
+                  <video
+                    src={showcaseDemos[2].videoSrc}
+                    width="100%"
+                    controls
+                    muted
+                    loop
+                    playsInline
+                    className={styles.demoVideo}
+                  />
+                </div>
+                <div className={styles.demoTagRow}>
+                  {showcaseDemos[2].tags.map((tag) => (
+                    <span key={tag} className={styles.demoTag}>{tag}</span>
+                  ))}
+                </div>
+              </article>
             </div>
           </div>
-        </div>
+        </section>
         <section className={styles.features}>
           <div className="container">
             <div className="row">
@@ -229,7 +305,7 @@ function MyComponent() {
                 <div style={{ marginBottom: '2rem' }}>
                   <Heading as="h3">Is this compatible with the Vercel AI SDK?</Heading>
                   <p>
-                    Absolutely. <code>mcp-ts</code> is designed to plug directly into the AI SDK's <code>streamText</code> and
+                    Absolutely. <code>mcp-ts</code> is designed to plug directly into the AI SDK&apos;s <code>streamText</code> and
                     <code>generateText</code> functions, allowing LLMs to use MCP tools seamlessly.
                   </p>
                 </div>

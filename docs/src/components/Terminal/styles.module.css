@@ -1,7 +1,7 @@
 .terminal {
     background-color: #0d0d0e;
     border-radius: 12px;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.08);
     overflow: hidden;
     font-family: 'SF Mono', Monaco, Menlo, Consolas, 'Ubuntu Mono', monospace;
     font-size: 14px;
@@ -105,4 +105,34 @@
     50% {
         opacity: 0;
     }
+}
+
+[data-theme='light'] .terminal {
+    background-color: #fffdfc;
+    box-shadow: 0 14px 32px rgba(216, 44, 32, 0.08), 0 0 0 1px rgba(216, 44, 32, 0.08);
+}
+
+[data-theme='light'] .header {
+    background-color: rgba(216, 44, 32, 0.04);
+    border-bottom: 1px solid rgba(216, 44, 32, 0.08);
+}
+
+[data-theme='light'] .content {
+    color: #2b1d1b;
+}
+
+[data-theme='light'] .command {
+    color: #1d1615;
+}
+
+[data-theme='light'] .command::before {
+    color: #a55a52;
+}
+
+[data-theme='light'] .output {
+    color: #7b5b55;
+}
+
+[data-theme='light'] .cursor {
+    background-color: #1d1615;
 }

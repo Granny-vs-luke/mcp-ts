@@ -1,43 +1,58 @@
-.boxes {
+.background {
   position: absolute;
-  inset: -100px;
-  z-index: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+  inset: 0;
   overflow: hidden;
 }
 
-.row {
-  display: flex;
-  gap: 1px;
-  flex-shrink: 0;
+.grid,
+.particle {
+  position: absolute;
 }
 
-.box {
-  width: 50px;
-  height: 50px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  flex-shrink: 0;
-  transition: all 0.3s ease;
+.grid {
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.14) 1px, transparent 1px);
+  background-size: 72px 72px;
+  opacity: 0.55;
 }
 
-.box:hover {
-  background: var(--box-color, rgba(224, 69, 57, 0.3));
-  border-color: var(--box-color, rgba(224, 69, 57, 0.5));
-  transform: scale(1.1);
+.particle {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.38);
+  animation-name: floatParticle;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
 }
 
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0);
+@keyframes floatParticle {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.35;
   }
   50% {
-    transform: translateY(-20px);
+    transform: translate3d(0, -18px, 0);
+    opacity: 1;
   }
 }
 
-.boxes {
-  animation: float 20s ease-in-out infinite;
+@media (max-width: 996px) {
+  .background {
+    inset: 0;
+  }
+}
+
+[data-theme='light'] .grid {
+  background-image:
+    linear-gradient(rgba(216, 44, 32, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(216, 44, 32, 0.12) 1px, transparent 1px);
+  opacity: 1;
+}
+
+[data-theme='light'] .particle {
+  background: rgba(216, 44, 32, 0.18);
 }

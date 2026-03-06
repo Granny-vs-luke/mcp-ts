@@ -1,34 +1,29 @@
-import React from "react";
-import styles from "./styles.module.css";
+import React from 'react';
+import styles from './styles.module.css';
+
+const particles = Array.from({ length: 18 }, (_, index) => ({
+  id: index,
+  left: `${6 + ((index * 11) % 82)}%`,
+  top: `${8 + ((index * 7) % 68)}%`,
+  duration: `${16 + (index % 5) * 3}s`,
+  delay: `${(index % 6) * 0.8}s`,
+}));
 
 export const Boxes = () => {
-  const rows = new Array(150).fill(1);
-  const cols = new Array(100).fill(1);
-  const colors = [
-    "--red-300",
-    "--red-400",
-    "--red-500",
-    "--red-600",
-  ];
-
-  const getRandomColor = () => {
-    return colors[Math.floor(Math.random() * colors.length)];
-  };
-
   return (
-    <div className={styles.boxes}>
-      {rows.map((_, i) => (
-        <div key={`row` + i} className={styles.row}>
-          {cols.map((_, j) => (
-            <div
-              key={`col` + j}
-              className={styles.box}
-              style={{
-                "--box-color": `var(${getRandomColor()})`,
-              } as React.CSSProperties}
-            />
-          ))}
-        </div>
+    <div className={styles.background} aria-hidden="true">
+      <div className={styles.grid} />
+      {particles.map((particle) => (
+        <span
+          key={particle.id}
+          className={styles.particle}
+          style={{
+            left: particle.left,
+            top: particle.top,
+            animationDuration: particle.duration,
+            animationDelay: particle.delay,
+          }}
+        />
       ))}
     </div>
   );
