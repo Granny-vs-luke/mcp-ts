@@ -118,6 +118,7 @@ class ConnectionManager:
         timeout_seconds: float,
         owner_id: str | None = None,
     ) -> dict[str, Any]:
+        payload_method = str(payload.get("method", "")) if isinstance(payload, dict) else ""
         async with self._lock:
             agent = self._subjects.get(subject)
             if agent is None:
@@ -131,6 +132,14 @@ class ConnectionManager:
             future: asyncio.Future[dict[str, Any]] = loop.create_future()
             agent.pending[request_id] = future
             websocket = agent.websocket
+            logger.debug(
+                "invoke_dispatched request_id=%s subject=%s owner_id=%s mcp_server=%s method=%s",
+                request_id,
+                subject,
+                owner_id or "",
+                mcp_server,
+                payload_method,
+            )
 
         invoke_message = {
             "type": "invoke",
@@ -148,7 +157,15 @@ class ConnectionManager:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Failed to reach agent") from exc
 
         try:
-            return await asyncio.wait_for(future, timeout=timeout_seconds)
+            result = await asyncio.wait_for(future, timeout=timeout_seconds)
+            logger.debug(
+                "invoke_result_received request_id=%s subject=%s mcp_server=%s has_error=%s",
+                request_id,
+                subject,
+                mcp_server,
+                isinstance(result, dict) and bool(result.get("error")),
+            )
+            return result
         except TimeoutError as exc:
             async with self._lock:
                 active = self._subjects.get(subject)

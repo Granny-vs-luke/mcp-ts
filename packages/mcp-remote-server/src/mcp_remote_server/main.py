@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from uuid import uuid4
 
 import uvicorn
@@ -44,6 +45,44 @@ ALLOW_UNAUTH_MCP_TRANSPORT = os.getenv("ALLOW_UNAUTH_MCP_TRANSPORT", "true").str
 oauth_manager = SupabaseOAuthManager()
 jwt_fallback = JWTFallbackService(authenticator)
 refresh_sessions = RefreshSessionStore()
+
+
+def _header_value(request: Request, name: str) -> str:
+    return str(request.headers.get(name, "")).strip()
+
+
+def _should_trace_http(path: str) -> bool:
+    return path.endswith("/mcp") or path.endswith("/sse") or path.startswith("/manage/")
+
+
+@app.middleware("http")
+async def trace_http_requests(request: Request, call_next: object) -> object:
+    path = request.url.path
+    if not _should_trace_http(path) or not logger.isEnabledFor(logging.DEBUG):
+        return await call_next(request)  # type: ignore[misc]
+
+    trace_id = str(uuid4())[:8]
+    started = time.perf_counter()
+    logger.debug(
+        "http_trace_in trace_id=%s method=%s path=%s query=%s accept=%r content_type=%r user_agent=%r",
+        trace_id,
+        request.method,
+        path,
+        request.url.query,
+        _header_value(request, "accept"),
+        _header_value(request, "content-type"),
+        _header_value(request, "user-agent"),
+    )
+    response = await call_next(request)  # type: ignore[misc]
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+    logger.debug(
+        "http_trace_out trace_id=%s status=%s response_content_type=%r elapsed_ms=%.1f",
+        trace_id,
+        getattr(response, "status_code", "unknown"),
+        str(getattr(response, "headers", {}).get("content-type", "")).strip(),
+        elapsed_ms,
+    )
+    return response
 
 
 @app.get("/healthz")
@@ -350,6 +389,15 @@ async def _invoke_core(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Caller missing MCP server scope")
 
     request_id = str(uuid4())
+    method = str(payload.get("method", "")) if isinstance(payload, dict) else ""
+    logger.debug(
+        "invoke_core_dispatch request_id=%s subject=%s mcp_server=%s method=%s owner=%s",
+        request_id,
+        subject,
+        mcp_server,
+        method,
+        auth_ctx.subject,
+    )
     result = await connection_manager.invoke(
         subject=subject,
         mcp_server=mcp_server,
@@ -444,26 +492,72 @@ async def invoke_capability_streamable_http(
     request: Request,
     auth_ctx: AuthContext | None = Depends(authenticator.optional_http_auth),
 ) -> JSONResponse:
-    if auth_ctx is None and not ALLOW_UNAUTH_MCP_TRANSPORT:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
-    body = await request.json()
-    payload = body.get("payload", body) if isinstance(body, dict) else {}
-    if auth_ctx is not None:
-        result = await _invoke_core(subject=subject, mcp_server=mcp_server, payload=payload, auth_ctx=auth_ctx)
-        return JSONResponse(content=result)
-    request_id = str(uuid4())
-    result = await connection_manager.invoke(
-        subject=subject,
-        mcp_server=mcp_server,
-        payload=payload,
-        request_id=request_id,
-        timeout_seconds=REQUEST_TIMEOUT_SECONDS,
-    )
-    return JSONResponse(content=result)
+    # Streamable HTTP endpoint should always return JSON. Some clients send mixed
+    # Accept headers including text/event-stream and then fail to parse SSE here.
+    # Use /sse for event-stream responses.
+    accept = _header_value(request, "accept")
+    if "text/event-stream" in accept:
+        logger.debug(
+            "mcp_route_accept_mismatch path=%s accept=%r forcing='application/json'",
+            request.url.path,
+            accept,
+        )
+    result: dict[str, object] | None = None
+    status_code = status.HTTP_200_OK
+    try:
+        if auth_ctx is None and not ALLOW_UNAUTH_MCP_TRANSPORT:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+        try:
+            body = await request.json()
+        except Exception as exc:
+            logger.debug("mcp_route_bad_json path=%s error=%s", request.url.path, exc)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON request body") from exc
+        payload = body.get("payload", body) if isinstance(body, dict) else {}
+        logger.debug(
+            "mcp_route_payload subject=%s mcp_server=%s payload_type=%s payload_keys=%s",
+            subject,
+            mcp_server,
+            type(payload).__name__,
+            sorted(list(payload.keys())) if isinstance(payload, dict) else [],
+        )
+        if auth_ctx is not None:
+            result = await _invoke_core(subject=subject, mcp_server=mcp_server, payload=payload, auth_ctx=auth_ctx)
+        else:
+            request_id = str(uuid4())
+            result = await connection_manager.invoke(
+                subject=subject,
+                mcp_server=mcp_server,
+                payload=payload,
+                request_id=request_id,
+                timeout_seconds=REQUEST_TIMEOUT_SECONDS,
+            )
+    except HTTPException as exc:
+        status_code = exc.status_code
+        result = {"ok": False, "error": str(exc.detail)}
+    except Exception as exc:
+        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        result = {"ok": False, "error": str(exc)}
+
+    return JSONResponse(content=result or {}, status_code=status_code)
 
 
 @app.get("/{subject}/{mcp_server}/mcp")
-async def mcp_transport_info(subject: str, mcp_server: str) -> JSONResponse:
+async def mcp_transport_info(subject: str, mcp_server: str, request: Request) -> JSONResponse:
+    accept = _header_value(request, "accept")
+    if "text/event-stream" in accept:
+        logger.debug("mcp_get_sse_compat path=%s subject=%s mcp_server=%s", request.url.path, subject, mcp_server)
+
+        async def _stream_transport() -> object:
+            payload = {
+                "transport": "streamable-http",
+                "subject": subject,
+                "mcp_server": mcp_server,
+                "methods": ["POST"],
+            }
+            yield f"event: info\ndata: {json.dumps(payload)}\n\n"
+            yield "event: done\ndata: {}\n\n"
+
+        return StreamingResponse(_stream_transport(), media_type="text/event-stream")
     return JSONResponse(
         content={
             "transport": "streamable-http",
@@ -483,7 +577,18 @@ async def invoke_capability_sse(
 ) -> StreamingResponse:
     if auth_ctx is None and not ALLOW_UNAUTH_MCP_TRANSPORT:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
-    body = await request.json()
+    logger.debug(
+        "sse_route_request subject=%s mcp_server=%s accept=%r content_type=%r",
+        subject,
+        mcp_server,
+        _header_value(request, "accept"),
+        _header_value(request, "content-type"),
+    )
+    try:
+        body = await request.json()
+    except Exception as exc:
+        logger.debug("sse_route_bad_json path=%s error=%s", request.url.path, exc)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON request body") from exc
     payload = body.get("payload", body) if isinstance(body, dict) else {}
     if auth_ctx is not None:
         result_payload = await _invoke_core(subject=subject, mcp_server=mcp_server, payload=payload, auth_ctx=auth_ctx)

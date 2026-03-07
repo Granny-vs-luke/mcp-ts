@@ -35,7 +35,7 @@ from websockets.exceptions import ConnectionClosed
 from .bridge_runtime import LocalBridgeAgent
 from .cli_args import apply_cli_overrides, config_updates_from_args, parse_cli_args
 from .cli_auth import AuthMenuService
-from .config import AgentConfig, ensure_default_config, load_config, load_config_file, resolve_config_path, save_config_updates
+from .config import DEFAULT_REMOTE_SERVER_BASE_URL, AgentConfig, ensure_default_config, load_config, load_config_file, resolve_config_path, save_config_updates
 
 
 def configure_logging() -> None:
@@ -278,7 +278,7 @@ def _manage_base_url_from_current(current: dict[str, Any]) -> str:
         return "https://" + ws.removeprefix("wss://").removesuffix("/connect")
     if ws.startswith("ws://"):
         return "http://" + ws.removeprefix("ws://").removesuffix("/connect")
-    return ""
+    return DEFAULT_REMOTE_SERVER_BASE_URL.rstrip("/")
 
 
 def _refresh_jwt_from_config(
@@ -364,7 +364,7 @@ def _load_config_with_prompt() -> AgentConfig:
                     os.environ["SUBJECT"] = new_subject
 
             if "Missing REMOTE_WEBSOCKET_URL/REMOTE_SERVER_BASE_URL" in message:
-                base_url = _prompt_text("Enter remote server base URL", "http://127.0.0.1:8000")
+                base_url = _prompt_text("Enter remote server base URL", DEFAULT_REMOTE_SERVER_BASE_URL)
                 updates["remote_server_base_url"] = base_url
                 os.environ["REMOTE_SERVER_BASE_URL"] = base_url
 

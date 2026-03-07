@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import httpx
 
-from .config import load_config_file, save_config_updates
+from .config import DEFAULT_REMOTE_SERVER_BASE_URL, load_config_file, save_config_updates
 
 
 class AuthMenuService:
@@ -160,7 +160,7 @@ class AuthMenuService:
             return "https://" + ws.removeprefix("wss://").removesuffix("/connect")
         if ws.startswith("ws://"):
             return "http://" + ws.removeprefix("ws://").removesuffix("/connect")
-        return ""
+        return DEFAULT_REMOTE_SERVER_BASE_URL.rstrip("/")
 
     def _menu_capabilities(self, current: dict[str, Any]) -> list[str]:
         configured = current.get("capabilities")

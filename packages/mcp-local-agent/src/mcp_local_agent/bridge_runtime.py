@@ -21,6 +21,7 @@ from .config import AgentConfig, resolve_config_path, save_config_updates
 
 logger = logging.getLogger("mcp_local_agent")
 DEFAULT_PROTOCOL_VERSION = os.getenv("MCP_PROTOCOL_VERSION", "2025-11-25")
+VERBOSE_INVOKE_LOGS = os.getenv("MCP_LOCAL_VERBOSE_LOGS", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _http_base_from_websocket_url(websocket_url: str) -> str:
@@ -113,6 +114,35 @@ class ManagedMCPServer:
         method = str(payload.get("method", ""))
         params = payload.get("params", {}) if isinstance(payload.get("params", {}), dict) else {}
         requested_protocol = str(params.get("protocolVersion", "")).strip() or None
+        tool_name = str(params.get("name", "")).strip() if isinstance(params, dict) else ""
+        arguments = params.get("arguments", {}) if isinstance(params, dict) else {}
+        argument_keys = sorted(list(arguments.keys())) if isinstance(arguments, dict) else []
+        if VERBOSE_INVOKE_LOGS:
+            logger.debug(
+                "managed_mcp_request_details server=%s request_id=%s payload_type=%s jsonrpc=%s method=%s id=%s param_keys=%s%s%s",
+                self.name,
+                request_id,
+                type(payload).__name__,
+                str(payload.get("jsonrpc", "") if isinstance(payload, dict) else ""),
+                method,
+                request_id,
+                sorted(list(params.keys())) if isinstance(params, dict) else [],
+                f" tool_name={tool_name}" if tool_name else "",
+                f" argument_keys={argument_keys}" if argument_keys else "",
+            )
+            if tool_name.lower() == "shell" and isinstance(arguments, dict):
+                command = str(arguments.get("command", "")).strip().replace("\n", " ")
+                timeout = arguments.get("timeout")
+                if command:
+                    if len(command) > 180:
+                        command = command[:180] + "...(truncated)"
+                logger.info(
+                    "managed_mcp_shell_request server=%s request_id=%s command=%r timeout=%s",
+                    self.name,
+                    request_id,
+                        command,
+                        timeout,
+                    )
 
         try:
             if method == "initialize":
@@ -133,6 +163,22 @@ class ManagedMCPServer:
             return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32000, "message": str(exc)}}
 
         response_payload = _to_jsonable(result)
+        if VERBOSE_INVOKE_LOGS:
+            if isinstance(response_payload, dict):
+                logger.debug(
+                    "managed_mcp_result server=%s request_id=%s has_error=%s result_keys=%s",
+                    self.name,
+                    request_id,
+                    bool(response_payload.get("error")),
+                    sorted(list(response_payload.keys())),
+                )
+            else:
+                logger.debug(
+                    "managed_mcp_result server=%s request_id=%s response_type=%s",
+                    self.name,
+                    request_id,
+                    type(response_payload).__name__,
+                )
         if request_id is None:
             return response_payload if isinstance(response_payload, dict) else {"result": response_payload}
         return {"jsonrpc": "2.0", "id": request_id, "result": response_payload}
@@ -340,6 +386,22 @@ class LocalBridgeAgent:
         request_id = str(message.get("request_id", ""))
         mcp_server = str(message.get("mcp_server", message.get("capability", "")))
         payload = message.get("payload", {})
+        if VERBOSE_INVOKE_LOGS:
+            method = str(payload.get("method", "")) if isinstance(payload, dict) else ""
+            params = payload.get("params", {}) if isinstance(payload, dict) else {}
+            param_keys = sorted(list(params.keys())) if isinstance(params, dict) else []
+            tool_name = str(params.get("name", "")).strip() if isinstance(params, dict) else ""
+            logger.debug(
+                "invoke_details request_id=%s mcp_server=%s payload_type=%s jsonrpc=%s method=%s id=%s param_keys=%s%s",
+                request_id,
+                mcp_server,
+                type(payload).__name__,
+                str(payload.get("jsonrpc", "") if isinstance(payload, dict) else ""),
+                method,
+                payload.get("id") if isinstance(payload, dict) else None,
+                param_keys,
+                f" tool_name={tool_name}" if tool_name else "",
+            )
         started = asyncio.get_running_loop().time()
         logger.debug("invoke received request_id=%s mcp_server=%s", request_id, mcp_server)
         try:
