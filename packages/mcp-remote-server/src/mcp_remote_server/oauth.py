@@ -190,6 +190,12 @@ class SupabaseOAuthManager:
         )
         return claims if isinstance(claims, dict) else {}
 
+    @staticmethod
+    def _normalize_subject(subject: str) -> str:
+        """Normalize bridge subject to the last 10 chars for stable short routing IDs."""
+        value = subject.strip()
+        return value[-10:] if len(value) > 10 else value
+
     async def complete(
         self,
         *,
@@ -221,6 +227,7 @@ class SupabaseOAuthManager:
                     or str(claims.get("sub", "")).strip()
                     or email
                 )
+            resolved_subject = self._normalize_subject(resolved_subject)
             if not resolved_subject:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to derive subject from OAuth profile")
             if self.allowed_domains:

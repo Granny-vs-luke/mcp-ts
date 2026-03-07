@@ -79,7 +79,7 @@ def _console(msg: str) -> None:
     print(msg, flush=True)
 
 
-def _log(tag: str, message: str, *, color: str = "36", bold: bool = False) -> None:
+def _log(tag: str, message: str, *, color: str = "34", bold: bool = False) -> None:
     prefix = _style(f"[{tag}]", color=color, bold=bold)
     _console(f"{prefix} {message}")
 
@@ -243,14 +243,14 @@ def _token_from_sources() -> str:
 
 def _persist_updates(updates: dict[str, str]) -> None:
     path = save_config_updates(updates)
-    _console(_style(f"Saved startup settings to {path}", color="36"))
+    _console(_style(f"Saved startup settings to {path}", color="34"))
 
 
 def _print_config_tip(config: AgentConfig) -> None:
     cfg_path = resolve_config_path()
     server_count = len(config.mcp_servers or {})
-    _log("tip", f"config: {cfg_path}", color="36")
-    _log("tip", f"edit mcpServers in config.json to add MCP servers (current: {server_count})", color="36")
+    _log("tip", f"config: {cfg_path}", color="34")
+    _log("tip", f"edit mcpServers in config.json to add MCP servers (current: {server_count})", color="34")
 
 
 def _derive_subject_from_token(token: str) -> str:
@@ -340,7 +340,7 @@ def _load_config_with_prompt() -> AgentConfig:
 
             token = _token_from_sources()
             if "AGENT_JWT is not a valid JWT format" in message:
-                refreshed = _refresh_jwt_from_config(resolve_config_path(), on_message=lambda m: _console(_style(m, color="36", bold=True)))
+                refreshed = _refresh_jwt_from_config(resolve_config_path(), on_message=lambda m: _console(_style(m, color="34", bold=True)))
                 if refreshed:
                     continue
                 _console(_style("Current AGENT_JWT is invalid.", color="31", bold=True))
@@ -352,7 +352,7 @@ def _load_config_with_prompt() -> AgentConfig:
                     updates["subject"] = new_subject
                     os.environ["SUBJECT"] = new_subject
             elif "Missing AGENT_JWT" in message:
-                refreshed = _refresh_jwt_from_config(resolve_config_path(), on_message=lambda m: _console(_style(m, color="36", bold=True)))
+                refreshed = _refresh_jwt_from_config(resolve_config_path(), on_message=lambda m: _console(_style(m, color="34", bold=True)))
                 if refreshed:
                     continue
                 token = _prompt_for_token()
@@ -408,7 +408,7 @@ def _interactive_settings_editor() -> None:
     current = load_config_file(cfg_path)
     updates: dict[str, Any] = {}
 
-    _console(_style(f"Editing settings in {cfg_path}", color="36", bold=True))
+    _console(_style(f"Editing settings in {cfg_path}", color="34", bold=True))
     updates["subject"] = _prompt_setting(current, "subject", "Subject")
     updates["jwt_token"] = _prompt_setting(current, "jwt_token", "JWT token", secret=True)
     updates["remote_server_base_url"] = _prompt_setting(current, "remote_server_base_url", "Remote server base URL")
@@ -425,13 +425,13 @@ def _interactive_settings_editor() -> None:
 
 
 def _bridge_on_log(tag: str, message: str) -> None:
-    color = "36"
+    color = "34"
     if tag == "bridge":
         color = "32"
     elif tag == "mcp":
         color = "35"
     elif tag == "url":
-        color = "36"
+        color = "34"
     elif tag == "boot":
         color = "33"
     _log(tag, message, color=color, bold=False)
@@ -497,15 +497,15 @@ async def _run_menu_bridge_until_stopped(stop_event: Event) -> None:
     _print_config_tip(config)
     short_subject = _display_subject(config.subject)
     _console(_style(_frame([f"Subject: {short_subject}", f"WebSocket: {config.websocket_url}"]), color="32", bold=True))
-    _log("boot", f"loaded config: subject={short_subject} websocket={config.websocket_url}", color="36")
-    _log("boot", f"mcpServers keys: {list((config.mcp_servers or {}).keys())}", color="36")
+    _log("boot", f"loaded config: subject={short_subject} websocket={config.websocket_url}", color="34")
+    _log("boot", f"mcpServers keys: {list((config.mcp_servers or {}).keys())}", color="34")
     try:
         claims = jwt.decode(config.jwt_token, options={"verify_signature": False, "verify_exp": False})
         _log(
             "boot",
             "jwt summary: sub=%s role=%s mcp_servers=%s"
             % (claims.get("sub", ""), claims.get("role", ""), len(claims.get("capabilities", []) or [])),
-            color="36",
+            color="34",
         )
     except Exception:
         _log("boot", "unable to parse AGENT_JWT claims", color="33")
@@ -533,6 +533,7 @@ async def _run_menu_bridge_until_stopped(stop_event: Event) -> None:
 
 def _run_menu() -> None:
     configure_logging()
+    global _MENU_PROMPT_SESSION, _MENU_PROMPT_STYLE
 
     def _render_shell_header() -> list[str]:
         version = _agent_version()
@@ -544,27 +545,21 @@ def _run_menu() -> None:
             "|_|  |_|\\____|_|    /_/   \\_\\____/____/___|____/ |_/_/   \\_\\_| \\_| |_|  ",
             f"                   {APP_TITLE}  v{version}",
             "",
-            "Tips:",
-            "1. Use /help to list commands.",
-            "2. Use /show to inspect current config.",
-            "3. Use /set <key> <value> for quick updates.",
-            "4. Use /start to launch the bridge.",
-            "",
         ]
         return title
 
     def _status_lines(cfg_path: Any) -> list[str]:
         current = load_config_file(cfg_path)
         cwd_label = f"{os.path.basename(os.getcwd()) or os.getcwd()}  menu  {cfg_path}"
-        lines = [cwd_label]
+        lines: list[str] = []
         token = str(current.get("jwt_token", "")).strip()
         profile = current.get("auth_profile", {}) if isinstance(current.get("auth_profile", {}), dict) else {}
         if token:
             subject = str(profile.get("subject") or current.get("subject") or "").strip()
             email = str(profile.get("email") or "").strip()
-            auth_mode = str(profile.get("mode") or "jwt").strip()
-            profile_line = f"[auth] Logged in via {auth_mode}: {_display_subject(subject)}" + (f" ({email})" if email else "")
+            profile_line = f"Hello there! {email or '-'}, subject:{_display_subject(subject)}"
             lines.append(profile_line)
+            lines.append("")
             published = current.get("published_endpoints")
             if isinstance(published, dict) and published:
                 for server_name, urls in published.items():
@@ -574,7 +569,8 @@ def _run_menu() -> None:
                     if mcp_url:
                         lines.append(f"[url] {server_name} -> {mcp_url}")
         else:
-            lines.append("[auth] Not logged in. Use /login oauth (or /login jwt) before /start.")
+            lines.append("[auth] Requires login. Please login using /login command before /start.")
+        lines.append(cwd_label)
         lines.append("")
         return lines
 
@@ -589,17 +585,41 @@ def _run_menu() -> None:
         header = _render_shell_header()
         _console(_gradient_style("\n".join(header[:6]), (255, 64, 64), (255, 255, 255), bold=True))
         for line in header[6:]:
-            _console(_style(line, color="37"))
+            if line:
+                _console(_style(line, color="37"))
+            else:
+                _console("")
+        current = load_config_file(cfg_path)
+        logged_in = bool(str(current.get("jwt_token", "")).strip())
+        login_or_logout = "/logout" if logged_in else "/login"
+        _console(_style("Tips:", color="35", bold=True))
+        _console(f"1. Use {_style(login_or_logout, color='31', bold=True)} to authenticate.")
+        _console(f"2. Use {_style('/start', color='31', bold=True)} to launch the bridge.")
+        _console(f"3. Use {_style('/help', color='31', bold=True)} to list commands.")
+        _console(f"4. Use {_style('/show', color='31', bold=True)} to inspect current config.")
+        _console("")
         for line in _status_lines(cfg_path):
-            color = "36"
+            color = "34"
             bold = False
-            if line.startswith("[auth]") and "Not logged in" in line:
+            if line.startswith("Hello there! "):
+                email_part, sep, subject_part = line[len("Hello there! ") :].partition(", subject:")
+                if sep:
+                    _console(
+                        _style("Hello there! ", color="37")
+                        + _style(email_part, color="32", bold=True)
+                        + _style(", subject:", color="37")
+                        + _style(subject_part, color="32", bold=True)
+                    )
+                else:
+                    _console(_style(line, color="32", bold=True))
+                continue
+            if line.startswith("[auth]") and "Requires login" in line:
                 color = "33"
                 bold = True
             elif line.startswith("[auth]"):
                 color = "32"
             elif line.startswith("[url]"):
-                color = "36"
+                color = "34"
             elif " menu " in line:
                 color = "90"
             _console(_style(line, color=color, bold=bold))
@@ -650,20 +670,8 @@ def _run_menu() -> None:
                     refreshed = _refresh_jwt_from_config(cfg_path, on_message=lambda m: history.append(m))
                     if refreshed:
                         continue
-                    history.append("JWT is missing/invalid. Paste a valid token to continue /start.")
-                    token = _prompt_for_token().strip()
-                    if not token:
-                        history.append("Token entry cancelled.")
-                        return False
-                    updates: dict[str, str] = {"jwt_token": token}
-                    os.environ["AGENT_JWT"] = token
-                    subject = _derive_subject_from_token(token).strip()
-                    if subject:
-                        updates["subject"] = subject
-                        os.environ["SUBJECT"] = subject
-                    save_config_updates(updates, cfg_path)
-                    history.append("Token saved. Re-validating configuration...")
-                    continue
+                    history.append("Unauthorized: login required. Use /login before /start.")
+                    return False
                 history.append(f"/start failed: {message}")
                 return False
 
@@ -746,7 +754,9 @@ def _run_menu() -> None:
             if line.startswith("Unknown command"):
                 color = "31"
             elif line.startswith(">>>"):
-                color = "35"
+                color = "31"
+            elif line == "Login flow completed.":
+                color = "32"
             elif line.startswith("[log]"):
                 color = "90"
             _console(_style(line, color=color))
@@ -766,15 +776,15 @@ def _run_menu() -> None:
                         _print_config_tip(config)
                         short_subject = _display_subject(config.subject)
                         _console(_style(_frame([f"Subject: {short_subject}", f"WebSocket: {config.websocket_url}"]), color="32", bold=True))
-                        _log("boot", f"loaded config: subject={short_subject} websocket={config.websocket_url}", color="36")
-                        _log("boot", f"mcpServers keys: {list((config.mcp_servers or {}).keys())}", color="36")
+                        _log("boot", f"loaded config: subject={short_subject} websocket={config.websocket_url}", color="34")
+                        _log("boot", f"mcpServers keys: {list((config.mcp_servers or {}).keys())}", color="34")
                         try:
                             claims = jwt.decode(config.jwt_token, options={"verify_signature": False, "verify_exp": False})
                             _log(
                                 "boot",
                                 "jwt summary: sub=%s role=%s mcp_servers=%s"
                                 % (claims.get("sub", ""), claims.get("role", ""), len(claims.get("capabilities", []) or [])),
-                                color="36",
+                                color="34",
                             )
                         except Exception:
                             _log("boot", "unable to parse AGENT_JWT claims", color="33")
@@ -845,7 +855,18 @@ def _run_menu() -> None:
         if raw in {"/stop", "stop"}:
             if _bridge_is_running() and bridge_stop_event is not None:
                 bridge_stop_event.set()
-                history.append("Stopping gateway...")
+                if bridge_thread is not None and bridge_thread.is_alive():
+                    bridge_thread.join(timeout=6.0)
+                if bridge_thread is not None and bridge_thread.is_alive():
+                    history.append("Stop signal sent. Gateway is still shutting down...")
+                else:
+                    history.append("Gateway stopped.")
+                bridge_running_reported = False
+                bridge_stop_event = None
+                bridge_thread = None
+                bridge_ready_event = None
+                _MENU_PROMPT_SESSION = None
+                _MENU_PROMPT_STYLE = None
                 continue
             history.append("Gateway is not running.")
             continue
@@ -998,11 +1019,11 @@ async def _main(show_runtime_header: bool = True) -> None:
     _print_config_tip(config)
     short_subject = _display_subject(config.subject)
     _console(_style(_frame([f"Subject: {short_subject}", f"WebSocket: {config.websocket_url}"]), color="32", bold=True))
-    _log("boot", f"loaded config: subject={short_subject} websocket={config.websocket_url}", color="36")
-    _log("boot", f"mcpServers keys: {list((config.mcp_servers or {}).keys())}", color="36")
+    _log("boot", f"loaded config: subject={short_subject} websocket={config.websocket_url}", color="34")
+    _log("boot", f"mcpServers keys: {list((config.mcp_servers or {}).keys())}", color="34")
     try:
         claims = jwt.decode(config.jwt_token, options={"verify_signature": False, "verify_exp": False})
-        _log("boot", "jwt summary: sub=%s role=%s mcp_servers=%s" % (claims.get("sub", ""), claims.get("role", ""), len(claims.get("capabilities", []) or [])), color="36")
+        _log("boot", "jwt summary: sub=%s role=%s mcp_servers=%s" % (claims.get("sub", ""), claims.get("role", ""), len(claims.get("capabilities", []) or [])), color="34")
     except Exception:
         _log("boot", "unable to parse AGENT_JWT claims", color="33")
 

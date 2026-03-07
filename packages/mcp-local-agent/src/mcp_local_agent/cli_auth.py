@@ -5,6 +5,7 @@ import socket
 import sys
 import time
 import webbrowser
+import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from typing import Any, Callable
@@ -39,7 +40,7 @@ class AuthMenuService:
         except Exception:
             msvcrt = None
         options: list[tuple[str, str]] = [
-            ("oauth", "OAuth (Google via Supabase)"),
+            ("oauth", "Continue with Google (MCP Assistant Web)"),
             ("jwt", "JWT fallback (manual subject token issue)"),
             ("back", "Back"),
         ]
@@ -56,7 +57,7 @@ class AuthMenuService:
                         print(f"\x1b[{rendered_lines}F", end="")
                     else:
                         self._console("")
-                self._console(self._style("Select login mode (Up/Down/PageUp/PageDown + Enter, Esc to go back):", color="36", bold=True))
+                self._console(self._style("Select login mode (Up/Down/PageUp/PageDown + Enter, Esc to go back):", color="34", bold=True))
                 for idx, (_, label) in enumerate(options):
                     prefix = "> " if idx == selected else "  "
                     color = "32" if idx == selected else "37"
@@ -75,8 +76,8 @@ class AuthMenuService:
                         selected = (selected + 1) % len(options)
                 continue
 
-        self._console(self._style("Login mode:", color="36", bold=True))
-        self._console(self._style("1. OAuth (Google via Supabase)", color="37"))
+        self._console(self._style("Login mode:", color="34", bold=True))
+        self._console(self._style("1. Continue with Google (MCP Assistant Web)", color="37"))
         self._console(self._style("2. JWT fallback (manual subject token issue)", color="37"))
         self._console(self._style("3. Back", color="37"))
         while True:
@@ -110,17 +111,16 @@ class AuthMenuService:
                 subject = self._derive_subject_from_token(token)
         caps = self._menu_capabilities(current)
         if mode == "oauth":
-            oauth_handled = self._menu_login_oauth(base=base, subject=subject, expiry=expiry, caps=caps, cfg_path=cfg_path)
+            # OAuth mode must not inherit a stale/manual local subject from JWT mode.
+            oauth_handled = self._menu_login_oauth(base=base, subject="", expiry=expiry, caps=caps, cfg_path=cfg_path)
             if oauth_handled:
                 return
             self._console(self._style("OAuth endpoint unavailable. Falling back to legacy token issue.", color="33", bold=True))
         else:
             self._console(self._style("Using JWT fallback login mode.", color="33", bold=True))
         if not subject:
-            subject = input("Subject: ").strip()
-        if not subject:
-            self._console(self._style("Subject is required for legacy token issue.", color="31", bold=True))
-            return
+            subject = self._auto_subject()
+            self._console(self._style(f"Using auto-generated subject: {subject}", color="34", bold=True))
         self._menu_login_legacy(base=base, subject=subject, expiry=expiry, caps=caps, cfg_path=cfg_path)
 
     def logout(self, cfg_path: Any) -> None:
@@ -173,13 +173,17 @@ class AuthMenuService:
 
     def _menu_prompt_expiry(self, expiry_minutes: int | None = None) -> int | None:
         default_expiry = expiry_minutes if expiry_minutes is not None else 1440
-        expiry_raw = input(f"Expiry minutes [{default_expiry}]: ").strip()
+        expiry_raw = input(f"Expiry minutes (leave empty for default {default_expiry}): ").strip()
         try:
             expiry = int(expiry_raw) if expiry_raw else int(default_expiry)
         except ValueError:
             self._console(self._style("Expiry minutes must be an integer.", color="31", bold=True))
             return None
         return max(1, expiry)
+
+    def _auto_subject(self) -> str:
+        """Generate a fresh 10-char unique subject for JWT fallback logins."""
+        return secrets.token_hex(5)
 
     def _menu_login_legacy(self, base: str, subject: str, expiry: int, caps: list[str], cfg_path: Any) -> None:
         endpoint = f"{base}/manage/jwt/issue"
@@ -310,7 +314,7 @@ class AuthMenuService:
             callback_server.shutdown(); callback_server.server_close(); callback_thread.join(timeout=2.0)
             self._console(self._style("/login failed: OAuth redirect mismatch. Retry /login.", color="31", bold=True))
             return True
-        self._console(self._style("Opening browser for Supabase login (localhost callback)...", color="36", bold=True))
+        self._console(self._style("Opening browser for Supabase login (localhost callback)...", color="34", bold=True))
         self._console(self._style(f"Authorization URL: {auth_url}", color="37"))
         webbrowser.open(auth_url)
         self._console(self._style(f"Waiting for callback on {callback_url} ...", color="35"))
