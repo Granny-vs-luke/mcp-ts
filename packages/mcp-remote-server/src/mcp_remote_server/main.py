@@ -11,11 +11,19 @@ from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSock
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 
-from .auth import AuthContext, JWTAuthenticator
+from .auth import AuthContext, JWTAuthenticator, JWTFallbackService, RefreshSessionStore
 from .connection_manager import ConnectionManager
-from .models import IssueTokenRequest, OAuthCompleteRequest, OAuthStartRequest, RevokeTokenRequest, RegisterMessage, ResultMessage
+from .models import (
+    IssueTokenRequest,
+    OAuthCompleteRequest,
+    OAuthLogoutRequest,
+    OAuthRefreshRequest,
+    OAuthStartRequest,
+    RevokeTokenRequest,
+    RegisterMessage,
+    ResultMessage,
+)
 from .oauth import SupabaseOAuthManager
-from .token_fallback import JWTFallbackService
 
 load_dotenv()
 
@@ -35,6 +43,7 @@ REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20"))
 ALLOW_UNAUTH_MCP_TRANSPORT = os.getenv("ALLOW_UNAUTH_MCP_TRANSPORT", "true").strip().lower() in {"1", "true", "yes", "on"}
 oauth_manager = SupabaseOAuthManager()
 jwt_fallback = JWTFallbackService(authenticator)
+refresh_sessions = RefreshSessionStore()
 
 
 @app.get("/healthz")
@@ -246,12 +255,43 @@ async def oauth_complete(payload: OAuthCompleteRequest) -> dict[str, object]:
         code=payload.code.strip(),
         issue_bridge_token=jwt_fallback.issue_token_string,
     )
+    refresh = await refresh_sessions.issue(
+        subject=str(completed.get("subject", "")),
+        email=str(completed.get("email", "")),
+        capabilities=[str(item) for item in (completed.get("capabilities") or ["*"])],
+        bridge_expiry_minutes=int(completed.get("expiry_minutes", 60) or 60),
+    )
     return {
         "status": "complete",
         "token": str(completed.get("token", "")),
         "subject": str(completed.get("subject", "")),
         "email": str(completed.get("email", "")),
+        "refresh_token": str(refresh.get("refresh_token", "")),
+        "refresh_expires_at": int(refresh.get("refresh_expires_at", 0) or 0),
+        "auth_mode": "oauth_refresh",
     }
+
+
+@app.post("/manage/oauth/refresh")
+async def oauth_refresh(payload: OAuthRefreshRequest) -> dict[str, object]:
+    refreshed = await refresh_sessions.refresh(
+        refresh_token=payload.refresh_token.strip(),
+        expiry_minutes=payload.expiry_minutes,
+        issue_bridge_token=jwt_fallback.issue_token_string,
+    )
+    return {
+        "status": "ok",
+        "token": str(refreshed.get("token", "")),
+        "subject": str(refreshed.get("subject", "")),
+        "email": str(refreshed.get("email", "")),
+        "auth_mode": "oauth_refresh",
+    }
+
+
+@app.post("/manage/oauth/logout")
+async def oauth_logout(payload: OAuthLogoutRequest) -> dict[str, bool]:
+    revoked = await refresh_sessions.revoke(payload.refresh_token.strip())
+    return {"revoked": revoked}
 
 
 @app.websocket("/connect")

@@ -52,7 +52,7 @@ def _package_source(source_dir: Path) -> Path:
     return tar_path
 
 
-def deploy(host: str, remote_dir: str, service: str, skip_verify: bool) -> None:
+def deploy(host: str, remote_dir: str, service: str, skip_verify: bool, env_file: str = "") -> None:
     package_root = Path(__file__).resolve().parents[2]
     if not package_root.exists():
         raise RuntimeError(f'Package root not found: {package_root}')
@@ -75,6 +75,13 @@ def deploy(host: str, remote_dir: str, service: str, skip_verify: bool) -> None:
                 f"rm -f {remote_tar}"
             ),
         ])
+
+        if env_file:
+            env_path = Path(env_file).expanduser().resolve()
+            if not env_path.exists():
+                raise RuntimeError(f'env file not found: {env_path}')
+            print(f'[deploy] uploading env file {env_path} -> {remote_dir}/.env')
+            _run(['scp', str(env_path), f'{host}:{remote_dir}/.env'])
 
         print('[deploy] syncing dependencies and restarting service')
         _run([
@@ -112,10 +119,11 @@ def run() -> None:
     parser.add_argument('--remote-dir', default='/home/ubuntu/mcp-remote-server', help='Remote project directory')
     parser.add_argument('--service', default='mcp-remote-server', help='Systemd service name')
     parser.add_argument('--skip-verify', action='store_true', help='Skip post-deploy health checks')
+    parser.add_argument('--env-file', default='', help='Optional local env file to upload as remote .env before restart')
     args = parser.parse_args()
 
     try:
-        deploy(args.host, args.remote_dir, args.service, args.skip_verify)
+        deploy(args.host, args.remote_dir, args.service, args.skip_verify, args.env_file)
     except subprocess.CalledProcessError as exc:
         print(f'[deploy] failed at command: {exc.cmd}', file=sys.stderr)
         sys.exit(exc.returncode)

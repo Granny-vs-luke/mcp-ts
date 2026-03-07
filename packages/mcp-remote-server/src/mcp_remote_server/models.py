@@ -41,3 +41,12 @@ class OAuthStartRequest(BaseModel):
 class OAuthCompleteRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=512)
     code: str = Field(min_length=1, max_length=4096)
+
+
+class OAuthRefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=4096)
+    expiry_minutes: int | None = Field(default=None, ge=1, le=1440)
+
+
+class OAuthLogoutRequest(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=4096)

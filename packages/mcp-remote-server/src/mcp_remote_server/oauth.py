@@ -30,6 +30,7 @@ def _pkce_pair() -> tuple[str, str]:
 
 @dataclass
 class OAuthSession:
+    """Ephemeral PKCE login session tracked between /start and /complete."""
     session_id: str
     code_verifier: str
     subject: str
@@ -45,6 +46,8 @@ class OAuthSession:
 
 
 class SupabaseOAuthManager:
+    """Supabase OAuth orchestrator for browser login and code exchange."""
+
     def __init__(self) -> None:
         self.supabase_url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
         self.supabase_anon_key = os.getenv("SUPABASE_ANON_KEY", "").strip()
@@ -92,6 +95,7 @@ class SupabaseOAuthManager:
         capabilities: list[str],
         redirect_uri: str = "",
     ) -> dict[str, Any]:
+        """Create PKCE session and return Supabase authorization URL."""
         if not self.enabled:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -123,6 +127,13 @@ class SupabaseOAuthManager:
             }
         )
         auth_url = f"{self.supabase_url}/auth/v1/authorize?{query}"
+        logger.info(
+            "oauth_start session_id=%s provider=%s supabase_url=%s redirect_to=%s",
+            session_id,
+            self.provider,
+            self.supabase_url,
+            callback_with_session,
+        )
 
         async with self._lock:
             await self._prune_expired()
@@ -186,6 +197,7 @@ class SupabaseOAuthManager:
         code: str,
         issue_bridge_token: Any,
     ) -> dict[str, Any]:
+        """Finalize OAuth code exchange and mint a bridge JWT."""
         async with self._lock:
             await self._prune_expired()
             session = self._sessions_by_id.get(session_id)
@@ -224,7 +236,13 @@ class SupabaseOAuthManager:
             async with self._lock:
                 active = self._sessions_by_id.get(session.session_id)
                 if active is None:
-                    return {"token": token, "subject": resolved_subject, "email": email}
+                    return {
+                        "token": token,
+                        "subject": resolved_subject,
+                        "email": email,
+                        "capabilities": session.capabilities,
+                        "expiry_minutes": session.expiry_minutes,
+                    }
                 active.subject = resolved_subject
                 active.status = "complete"
                 active.token = token
@@ -233,6 +251,8 @@ class SupabaseOAuthManager:
                 "token": token,
                 "subject": resolved_subject,
                 "email": email or str(claims.get("email", "")).strip().lower(),
+                "capabilities": session.capabilities,
+                "expiry_minutes": session.expiry_minutes,
             }
         except HTTPException as exc:
             async with self._lock:

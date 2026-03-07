@@ -54,5 +54,6 @@ Optional flags:
 - `--remote-dir /home/ubuntu/mcp-remote-server`
 - `--service mcp-remote-server`
 - `--skip-verify`
+- `--env-file .env.production` (uploads this file as remote `.env` before restart)
 
 This command packages local code (excluding `.venv` and `.env*`), uploads to your server, runs `uv sync`, restarts the systemd service, and checks health.

@@ -15,6 +15,7 @@ DEFAULT_REMOTE_SERVER_BASE_URL = "https://hub.linkos.in/agent"
 CONFIG_KEY_ORDER = [
     "subject",
     "jwt_token",
+    "refresh_token",
     "remote_server_base_url",
     "websocket_url",
     "published_endpoints",
