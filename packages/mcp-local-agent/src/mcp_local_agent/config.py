@@ -106,24 +106,48 @@ def _ordered_config(data: dict[str, Any]) -> dict[str, Any]:
     return ordered
 
 
+def _default_mcp_servers() -> dict[str, Any]:
+    return {
+        "filesystem": {
+            "command": "npx",
+            "args": [
+                "@modelcontextprotocol/server-filesystem",
+                str(Path.cwd().resolve()),
+            ],
+        }
+    }
+
+
+def _ensure_default_mcp_servers(data: dict[str, Any]) -> dict[str, Any]:
+    servers = data.get("mcpServers")
+    default_servers = _default_mcp_servers()
+    if not isinstance(servers, dict) or not servers:
+        data["mcpServers"] = default_servers
+        return data
+    if "filesystem" not in servers:
+        merged = dict(servers)
+        merged["filesystem"] = default_servers["filesystem"]
+        data["mcpServers"] = merged
+    return data
+
+
 def _default_config_template() -> dict[str, Any]:
-    return _ordered_config({
+    return _ordered_config(_ensure_default_mcp_servers({
         "remote_server_base_url": DEFAULT_REMOTE_SERVER_BASE_URL,
-        "mcpServers": {
-            "filesystem": {
-                "command": "npx",
-                "args": [
-                    "@modelcontextprotocol/server-filesystem",
-                    str(Path.cwd().resolve()),
-                ],
-            }
-        },
-    })
+    }))
 
 
 def ensure_default_config(path: Path | None = None) -> Path:
     target = path or _resolve_config_path()
     if target.exists():
+        existing = _load_config_file(target)
+        if isinstance(existing, dict):
+            updated = _ordered_config(_ensure_default_mcp_servers(dict(existing)))
+            if updated != existing:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with target.open("w", encoding="utf-8") as handle:
+                    json.dump(updated, handle, indent=2)
+                    handle.write("\n")
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8") as handle:
@@ -283,7 +307,7 @@ def save_config_updates(updates: dict[str, Any], path: Path | None = None) -> Pa
     existing = _load_config_file(target)
     merged = existing if isinstance(existing, dict) else {}
     merged.update(updates)
-    ordered = _ordered_config(merged)
+    ordered = _ordered_config(_ensure_default_mcp_servers(merged))
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8") as handle:
         json.dump(ordered, handle, indent=2)
