@@ -322,16 +322,7 @@ export class SSEConnectionManager {
       await client.connect();
 
       // Fetch tools
-      const tools = await client.listTools();
-
-      this.emitConnectionEvent({
-        type: 'tools_discovered',
-        sessionId,
-        serverId,
-        toolCount: tools.tools.length,
-        tools: tools.tools,
-        timestamp: Date.now(),
-      });
+      await client.listTools();
 
       return {
         sessionId,
@@ -468,15 +459,6 @@ export class SSEConnectionManager {
 
       const tools = await client.listTools();
 
-      this.emitConnectionEvent({
-        type: 'tools_discovered',
-        sessionId,
-        serverId: session.serverId ?? 'unknown',
-        toolCount: tools.tools.length,
-        tools: tools.tools,
-        timestamp: Date.now(),
-      });
-
       return { success: true, toolCount: tools.tools.length };
     } catch (error) {
       this.emitConnectionEvent({
@@ -526,15 +508,6 @@ export class SSEConnectionManager {
       this.clients.set(sessionId, client);
 
       const tools = await client.listTools();
-
-      this.emitConnectionEvent({
-        type: 'tools_discovered',
-        sessionId,
-        serverId: session.serverId ?? 'unknown',
-        toolCount: tools.tools.length,
-        tools: tools.tools,
-        timestamp: Date.now(),
-      });
 
       return { success: true, toolCount: tools.tools.length };
     } catch (error) {

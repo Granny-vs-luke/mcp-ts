@@ -12,6 +12,13 @@ export { RedisStorageBackend, MemoryStorageBackend, FileStorageBackend, SqliteSt
 let storageInstance: StorageBackend | null = null;
 let storagePromise: Promise<StorageBackend> | null = null;
 
+async function initializeStorage<T extends StorageBackend>(store: T): Promise<T> {
+    if (typeof store.init === 'function') {
+        await store.init();
+    }
+    return store;
+}
+
 async function createStorage(): Promise<StorageBackend> {
     const type = process.env.MCP_TS_STORAGE_TYPE?.toLowerCase();
 
@@ -38,17 +45,13 @@ async function createStorage(): Promise<StorageBackend> {
             console.warn('[Storage] MCP_TS_STORAGE_TYPE is "file" but MCP_TS_STORAGE_FILE is missing');
         }
         console.log(`[Storage] Using File storage (${filePath}) (Explicit)`);
-        const store = new FileStorageBackend({ path: filePath });
-        store.init().catch(err => console.error('[Storage] Failed to initialize file storage:', err));
-        return store;
+        return await initializeStorage(new FileStorageBackend({ path: filePath }));
     }
 
     if (type === 'sqlite') {
         const dbPath = process.env.MCP_TS_STORAGE_SQLITE_PATH;
         console.log(`[Storage] Using SQLite storage (${dbPath || 'default'}) (Explicit)`);
-        const store = new SqliteStorage({ path: dbPath });
-        store.init().catch(err => console.error('[Storage] Failed to initialize SQLite storage:', err));
-        return store;
+        return await initializeStorage(new SqliteStorage({ path: dbPath }));
     }
 
     if (type === 'memory') {
@@ -72,16 +75,12 @@ async function createStorage(): Promise<StorageBackend> {
 
     if (process.env.MCP_TS_STORAGE_FILE) {
         console.log(`[Storage] Auto-detected MCP_TS_STORAGE_FILE. Using File storage (${process.env.MCP_TS_STORAGE_FILE}).`);
-        const store = new FileStorageBackend({ path: process.env.MCP_TS_STORAGE_FILE });
-        store.init().catch(err => console.error('[Storage] Failed to initialize file storage:', err));
-        return store;
+        return await initializeStorage(new FileStorageBackend({ path: process.env.MCP_TS_STORAGE_FILE }));
     }
 
     if (process.env.MCP_TS_STORAGE_SQLITE_PATH) {
         console.log(`[Storage] Auto-detected MCP_TS_STORAGE_SQLITE_PATH. Using SQLite storage (${process.env.MCP_TS_STORAGE_SQLITE_PATH}).`);
-        const store = new SqliteStorage({ path: process.env.MCP_TS_STORAGE_SQLITE_PATH });
-        store.init().catch(err => console.error('[Storage] Failed to initialize SQLite storage:', err));
-        return store;
+        return await initializeStorage(new SqliteStorage({ path: process.env.MCP_TS_STORAGE_SQLITE_PATH }));
     }
 
     console.log('[Storage] No storage configured. Using In-Memory storage (Default).');
@@ -94,7 +93,10 @@ async function getStorage(): Promise<StorageBackend> {
     }
 
     if (!storagePromise) {
-        storagePromise = createStorage();
+        storagePromise = createStorage().catch((error) => {
+            storagePromise = null;
+            throw error;
+        });
     }
 
     storageInstance = await storagePromise;

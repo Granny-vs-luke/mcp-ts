@@ -582,7 +582,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
 
     const isServerConnected = (serverId: string) => {
         const conn = getConnectionByServerId(serverId);
-        return conn?.state === 'CONNECTED';
+        return conn ? conn.state === 'CONNECTED' || conn.state === 'DISCOVERING' || conn.state === 'READY' : false;
     };
 
     const getTools = (sessionId: string) => {

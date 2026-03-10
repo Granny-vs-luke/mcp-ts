@@ -143,5 +143,59 @@ test.describe('RedisStorageBackend', () => {
             const sessions = await storage.getIdentitySessionsData('unknown-identity');
             expect(sessions).toEqual([]);
         });
+
+        test('should prune stale session ids from the identity index', async () => {
+            const session = createMockSession({ sessionId: 'stale-session' });
+            await storage.createSession(session);
+
+            await redis.del(`mcp:session:${session.identity}:${session.sessionId}`);
+
+            const sessions = await storage.getIdentitySessionsData(session.identity);
+            const indexedSessionIds = await redis.smembers(`mcp:identity:${session.identity}:sessions`);
+
+            expect(sessions).toEqual([]);
+            expect(indexedSessionIds).toEqual([]);
+        });
+    });
+
+    test.describe('getAllSessionIds', () => {
+        test('should return plain session ids without identity prefixes', async () => {
+            const session = createMockSession({ sessionId: 'session-admin-view' });
+            await storage.createSession(session);
+
+            const sessionIds = await storage.getAllSessionIds();
+
+            expect(sessionIds).toContain('session-admin-view');
+            expect(sessionIds).not.toContain(`${session.identity}:${session.sessionId}`);
+        });
+    });
+
+    test.describe('clearAll', () => {
+        test('should delete both session keys and identity indexes', async () => {
+            const session = createMockSession({ sessionId: 'clear-all-session' });
+            await storage.createSession(session);
+
+            await storage.clearAll();
+
+            const sessionIds = await storage.getIdentityMcpSessions(session.identity);
+            const indexedSessionIds = await redis.smembers(`mcp:identity:${session.identity}:sessions`);
+
+            expect(sessionIds).toEqual([]);
+            expect(indexedSessionIds).toEqual([]);
+        });
+    });
+
+    test.describe('cleanupExpiredSessions', () => {
+        test('should remove stale identity indexes for missing session keys', async () => {
+            const session = createMockSession({ sessionId: 'expired-session' });
+            await storage.createSession(session);
+
+            await redis.del(`mcp:session:${session.identity}:${session.sessionId}`);
+
+            await storage.cleanupExpiredSessions();
+
+            const indexedSessionIds = await redis.smembers(`mcp:identity:${session.identity}:sessions`);
+            expect(indexedSessionIds).toEqual([]);
+        });
     });
 });

@@ -28,15 +28,18 @@ import {
   ReadResourceResult,
   ReadResourceResultSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { OAuthClientMetadata, OAuthTokens, OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { OAuthTokens, OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { StorageOAuthClientProvider, type AgentsOAuthProvider } from './storage-oauth-provider.js';
 import { sanitizeServerLabel } from '../../shared/utils.js';
 import { Emitter, type McpConnectionEvent, type McpObservabilityEvent, type McpConnectionState } from '../../shared/events.js';
 import { UnauthorizedError } from '../../shared/errors.js';
 import { storage } from '../storage/index.js';
-import { SESSION_TTL_SECONDS, STATE_EXPIRATION_MS } from '../../shared/constants.js';
-
-
+import {
+  MCP_CLIENT_NAME,
+  MCP_CLIENT_VERSION,
+  SESSION_TTL_SECONDS,
+  STATE_EXPIRATION_MS,
+} from '../../shared/constants.js';
 
 /**
  * Supported MCP transport types
@@ -300,49 +303,34 @@ export class MCPClient {
       throw new Error('Missing required connection metadata');
     }
 
-    const clientMetadata: OAuthClientMetadata = {
-      client_name: this.clientName || 'MCP Assistant',
-      redirect_uris: [this.callbackUrl],
-      grant_types: ['authorization_code', 'refresh_token'],
-      response_types: ['code'],
-      token_endpoint_auth_method: this.clientSecret ? 'client_secret_basic' : 'none',
-      client_uri: this.clientUri || 'https://mcp-assistant.in',
-      logo_uri: this.logoUri || 'https://mcp-assistant.in/logo.png',
-      policy_uri: this.policyUri || 'https://mcp-assistant.in/privacy',
-      software_id: '@mcp-ts',
-      software_version: '1.0.0-beta.4',
-      ...(this.clientId ? { client_id: this.clientId } : {}),
-      ...(this.clientSecret ? { client_secret: this.clientSecret } : {}),
-    };
-
     if (!this.oauthProvider) {
       if (!this.serverId) {
         throw new Error('serverId required for OAuth provider initialization');
       }
-
-      this.oauthProvider = new StorageOAuthClientProvider(
-        this.identity,
-        this.serverId,
-        this.sessionId,
-        clientMetadata.client_name ?? 'MCP Assistant',
-        this.callbackUrl,
-        (redirectUrl: string) => {
+      this.oauthProvider = new StorageOAuthClientProvider({
+        identity: this.identity,
+        serverId: this.serverId,
+        sessionId: this.sessionId,
+        redirectUrl: this.callbackUrl!,
+        clientName: this.clientName,
+        clientUri: this.clientUri,
+        logoUri: this.logoUri,
+        policyUri: this.policyUri,
+        clientId: this.clientId,
+        clientSecret: this.clientSecret,
+        onRedirect: (redirectUrl: string) => {
           if (this.onRedirect) {
             this.onRedirect(redirectUrl);
           }
         }
-      );
-
-      if (this.clientId && this.oauthProvider) {
-        this.oauthProvider.clientId = this.clientId;
-      }
+      });
     }
 
     if (!this.client) {
       this.client = new Client(
         {
-          name: 'mcp-ts-oauth-client',
-          version: '2.0',
+          name: MCP_CLIENT_NAME,
+          version: MCP_CLIENT_VERSION,
         },
         {
           capabilities: {
@@ -620,8 +608,8 @@ export class MCPClient {
 
         this.client = new Client(
           {
-            name: 'mcp-ts-oauth-client',
-            version: '2.0',
+            name: MCP_CLIENT_NAME,
+            version: MCP_CLIENT_VERSION,
           },
           {
             capabilities: {
@@ -980,8 +968,8 @@ export class MCPClient {
 
     this.client = new Client(
       {
-        name: 'mcp-ts-oauth-client',
-        version: '2.0',
+        name: MCP_CLIENT_NAME,
+        version: MCP_CLIENT_VERSION,
       },
       { capabilities: {} }
     );
