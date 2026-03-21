@@ -1,7 +1,7 @@
 
 import type { Redis } from 'ioredis';
 import { customAlphabet } from 'nanoid';
-import { StorageBackend, SessionData, SetClientOptions } from './types';
+import { StorageBackend, SessionData } from './types';
 import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
 
 /** first char: letters only (required by OpenAI) */
@@ -22,6 +22,8 @@ const rest = customAlphabet(
 export class RedisStorageBackend implements StorageBackend {
     private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
     private readonly KEY_PREFIX = 'mcp:session:';
+    private readonly IDENTITY_KEY_PREFIX = 'mcp:identity:';
+    private readonly IDENTITY_KEY_SUFFIX = ':sessions';
 
     constructor(private redis: Redis) { }
 
@@ -38,7 +40,42 @@ export class RedisStorageBackend implements StorageBackend {
      * @private
      */
     private getIdentityKey(identity: string): string {
-        return `mcp:identity:${identity}:sessions`;
+        return `${this.IDENTITY_KEY_PREFIX}${identity}${this.IDENTITY_KEY_SUFFIX}`;
+    }
+
+    private parseIdentityFromKey(identityKey: string): string {
+        return identityKey.slice(
+            this.IDENTITY_KEY_PREFIX.length,
+            identityKey.length - this.IDENTITY_KEY_SUFFIX.length
+        );
+    }
+
+    private async scanKeys(pattern: string): Promise<string[]> {
+        const redis = this.redis as Redis & {
+            scan?: (cursor: string, ...args: Array<string | number>) => Promise<[string, string[]]>;
+        };
+
+        if (typeof redis.scan !== 'function') {
+            return await this.redis.keys(pattern);
+        }
+
+        const keys = new Set<string>();
+        let cursor = '0';
+
+        try {
+            do {
+                const [nextCursor, batch] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+                cursor = nextCursor;
+                for (const key of batch) {
+                    keys.add(key);
+                }
+            } while (cursor !== '0');
+        } catch (error) {
+            console.warn('[RedisStorage] SCAN failed, falling back to KEYS:', error);
+            return await this.redis.keys(pattern);
+        }
+
+        return Array.from(keys);
     }
 
     generateSessionId(): string {
@@ -121,18 +158,14 @@ export class RedisStorageBackend implements StorageBackend {
     }
 
     async getIdentityMcpSessions(identity: string): Promise<string[]> {
-        const identityKey = this.getIdentityKey(identity);
-        try {
-            return await this.redis.smembers(identityKey);
-        } catch (error) {
-            console.error(`[RedisStorage] Failed to get sessions for ${identity}:`, error);
-            return [];
-        }
+        const sessions = await this.getIdentitySessionsData(identity);
+        return sessions.map((session) => session.sessionId);
     }
 
     async getIdentitySessionsData(identity: string): Promise<SessionData[]> {
         try {
-            const sessionIds = await this.redis.smembers(this.getIdentityKey(identity));
+            const identityKey = this.getIdentityKey(identity);
+            const sessionIds = await this.redis.smembers(identityKey);
             if (sessionIds.length === 0) return [];
 
             const results = await Promise.all(
@@ -141,6 +174,11 @@ export class RedisStorageBackend implements StorageBackend {
                     return data ? (JSON.parse(data) as SessionData) : null;
                 })
             );
+
+            const staleSessionIds = sessionIds.filter((_, index) => results[index] === null);
+            if (staleSessionIds.length > 0) {
+                await this.redis.srem(identityKey, ...staleSessionIds);
+            }
 
             return results.filter((session): session is SessionData => session !== null);
         } catch (error) {
@@ -163,9 +201,24 @@ export class RedisStorageBackend implements StorageBackend {
 
     async getAllSessionIds(): Promise<string[]> {
         try {
-            const pattern = `${this.KEY_PREFIX}*`;
-            const keys = await this.redis.keys(pattern);
-            return keys.map((key) => key.replace(this.KEY_PREFIX, ''));
+            const keys = await this.scanKeys(`${this.KEY_PREFIX}*`);
+            const sessions = await Promise.all(
+                keys.map(async (key) => {
+                    const data = await this.redis.get(key);
+                    if (!data) {
+                        return null;
+                    }
+
+                    try {
+                        return (JSON.parse(data) as SessionData).sessionId;
+                    } catch (error) {
+                        console.error('[RedisStorage] Failed to parse session while listing all session IDs:', error);
+                        return null;
+                    }
+                })
+            );
+
+            return sessions.filter((sessionId): sessionId is string => sessionId !== null);
         } catch (error) {
             console.error('[RedisStorage] Failed to get all sessions:', error);
             return [];
@@ -174,10 +227,11 @@ export class RedisStorageBackend implements StorageBackend {
 
     async clearAll(): Promise<void> {
         try {
-            const pattern = `${this.KEY_PREFIX}*`;
-            const keys = await this.redis.keys(pattern);
-            if (keys.length > 0) {
-                await this.redis.del(...keys);
+            const keys = await this.scanKeys(`${this.KEY_PREFIX}*`);
+            const identityKeys = await this.scanKeys(`${this.IDENTITY_KEY_PREFIX}*${this.IDENTITY_KEY_SUFFIX}`);
+            const allKeys = [...keys, ...identityKeys];
+            if (allKeys.length > 0) {
+                await this.redis.del(...allKeys);
             }
         } catch (error) {
             console.error('[RedisStorage] Failed to clear sessions:', error);
@@ -186,13 +240,29 @@ export class RedisStorageBackend implements StorageBackend {
 
     async cleanupExpiredSessions(): Promise<void> {
         try {
-            const pattern = `${this.KEY_PREFIX}*`;
-            const keys = await this.redis.keys(pattern);
+            const identityKeys = await this.scanKeys(`${this.IDENTITY_KEY_PREFIX}*${this.IDENTITY_KEY_SUFFIX}`);
 
-            for (const key of keys) {
-                const ttl = await this.redis.ttl(key);
-                if (ttl <= 0) {
-                    await this.redis.del(key);
+            for (const identityKey of identityKeys) {
+                const identity = this.parseIdentityFromKey(identityKey);
+                const sessionIds = await this.redis.smembers(identityKey);
+
+                if (sessionIds.length === 0) {
+                    await this.redis.del(identityKey);
+                    continue;
+                }
+
+                const existenceChecks = await Promise.all(
+                    sessionIds.map((sessionId) => this.redis.exists(this.getSessionKey(identity, sessionId)))
+                );
+
+                const staleSessionIds = sessionIds.filter((_, index) => existenceChecks[index] === 0);
+                if (staleSessionIds.length > 0) {
+                    await this.redis.srem(identityKey, ...staleSessionIds);
+                }
+
+                const remainingCount = await this.redis.scard(identityKey);
+                if (remainingCount === 0) {
+                    await this.redis.del(identityKey);
                 }
             }
         } catch (error) {

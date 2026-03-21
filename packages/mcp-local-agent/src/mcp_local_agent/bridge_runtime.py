@@ -83,23 +83,33 @@ class ManagedMCPServer:
         self._initialize_result: dict[str, Any] = {}
 
     async def start(self) -> None:
-        command = str(self.server_cfg.get("command", "")).strip()
-        if not command:
-            raise RuntimeError(f"mcpServers.{self.name}.command is required")
+        # Important: ensure partial startup failures always close the entered
+        # async contexts from the same task that created them. Otherwise Python
+        # GC may finalize the async generator on a different task, which trips
+        # AnyIO's cancel scope ownership checks.
+        try:
+            command = str(self.server_cfg.get("command", "")).strip()
+            if not command:
+                raise RuntimeError(f"mcpServers.{self.name}.command is required")
 
-        resolved_command = shutil.which(command) if command in {"npx", "npm", "pnpm", "yarn"} else command
-        if resolved_command is None:
-            raise RuntimeError(f"Unable to resolve command for mcpServers.{self.name}: {command}")
+            resolved_command = shutil.which(command) if command in {"npx", "npm", "pnpm", "yarn"} else command
+            if resolved_command is None:
+                raise RuntimeError(f"Unable to resolve command for mcpServers.{self.name}: {command}")
 
-        args = [str(item) for item in self.server_cfg.get("args", [])]
-        env = {**os.environ, **{str(k): str(v) for k, v in self.server_cfg.get("env", {}).items()}}
+            args = [str(item) for item in self.server_cfg.get("args", [])]
+            env = {**os.environ, **{str(k): str(v) for k, v in self.server_cfg.get("env", {}).items()}}
 
-        server_params = StdioServerParameters(command=resolved_command, args=args, env=env)
-        transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-        read, write = transport
-        session = await self.exit_stack.enter_async_context(ClientSession(read, write))
-        self._initialize_result = _normalize_initialize_result(await session.initialize())
-        self.session = session
+            server_params = StdioServerParameters(command=resolved_command, args=args, env=env)
+            transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+            read, write = transport
+            session = await self.exit_stack.enter_async_context(ClientSession(read, write))
+            self._initialize_result = _normalize_initialize_result(await session.initialize())
+            self.session = session
+        except Exception:
+            await self.exit_stack.aclose()
+            self.session = None
+            self._initialize_result = {}
+            raise
 
     async def close(self) -> None:
         await self.exit_stack.aclose()
@@ -244,7 +254,9 @@ class LocalBridgeAgent:
                     await asyncio.sleep(backoff)
                     backoff = min(backoff * 2, self.config.reconnect_max_delay_seconds)
         finally:
-            await self._stop_mcp_servers()
+            # If the runner task is cancelled (Ctrl+C path), still close the MCP
+            # stdio sessions cleanly to avoid background task/generator teardown.
+            await asyncio.shield(self._stop_mcp_servers())
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -316,7 +328,18 @@ class LocalBridgeAgent:
                 self._mcp_servers[name] = managed
                 elapsed = asyncio.get_running_loop().time() - start_at
                 self._log("mcp", f"[{index}/{total}] ready '{name}' via stdio MCP client ({elapsed:.1f}s)")
+            except asyncio.CancelledError:
+                try:
+                    await managed.close()
+                except Exception as close_exc:
+                    logger.warning("error while cleaning up cancelled MCP server '%s': %s", name, close_exc)
+                raise
             except Exception as exc:
+                # Best-effort cleanup in the same task that attempted startup.
+                try:
+                    await managed.close()
+                except Exception as close_exc:
+                    logger.warning("error while cleaning up failed MCP server '%s': %s", name, close_exc)
                 self._log("mcp", f"[{index}/{total}] failed '{name}': {exc}")
 
     async def _stop_mcp_servers(self) -> None:

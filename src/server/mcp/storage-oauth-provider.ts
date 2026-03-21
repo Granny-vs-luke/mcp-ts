@@ -1,13 +1,20 @@
-
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
-    OAuthClientInformation,
     OAuthClientInformationFull,
+    OAuthClientInformationMixed,
     OAuthClientMetadata,
     OAuthTokens
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { storage, SessionData } from "../storage/index.js";
-import { TOKEN_EXPIRY_BUFFER_MS } from '../../shared/constants.js';
+import {
+    DEFAULT_CLIENT_NAME,
+    DEFAULT_CLIENT_URI,
+    DEFAULT_LOGO_URI,
+    DEFAULT_POLICY_URI,
+    SOFTWARE_ID,
+    SOFTWARE_VERSION,
+    TOKEN_EXPIRY_BUFFER_MS,
+} from '../../shared/constants.js';
 
 /**
  * Extension of OAuthClientProvider interface with additional methods
@@ -26,54 +33,72 @@ export interface AgentsOAuthProvider extends OAuthClientProvider {
     setTokenExpiresAt(expiresAt: number): void;
 }
 
+export interface StorageOAuthClientProviderOptions {
+    identity: string;
+    serverId: string;
+    sessionId: string;
+    redirectUrl: string;
+    clientName?: string;
+    clientUri?: string;
+    logoUri?: string;
+    policyUri?: string;
+    clientId?: string;
+    clientSecret?: string;
+    onRedirect?: (url: string) => void;
+}
+
 /**
  * Storage-backed OAuth provider implementation for MCP
  * Stores OAuth tokens, client information, and PKCE verifiers using the configured StorageBackend
  */
 export class StorageOAuthClientProvider implements AgentsOAuthProvider {
+    public readonly identity: string;
+    public readonly serverId: string;
+    public readonly sessionId: string;
+    public readonly redirectUrl: string;
+
+    private readonly clientName?: string;
+    private readonly clientUri?: string;
+    private readonly logoUri?: string;
+    private readonly policyUri?: string;
+    private readonly clientSecret?: string;
+
     private _authUrl: string | undefined;
     private _clientId: string | undefined;
     private onRedirectCallback?: (url: string) => void;
     private tokenExpiresAt?: number;
 
     /**
-     * Creates a new Storage-backed OAuth provider
-     * @param identity - User/Client identifier
-     * @param serverId - Server identifier (for tracking which server this OAuth session belongs to)
-     * @param sessionId - Session identifier (used as OAuth state)
-     * @param clientName - OAuth client name
-     * @param baseRedirectUrl - OAuth callback URL
-     * @param onRedirect - Optional callback when redirect to authorization is needed
+     * Creates a new storage-backed OAuth provider
+     * @param options - Provider configuration
      */
-    constructor(
-        public identity: string,
-        public serverId: string,
-        public sessionId: string,
-        public clientName: string,
-        public baseRedirectUrl: string,
-        onRedirect?: (url: string) => void
-    ) {
-        this.onRedirectCallback = onRedirect;
+    constructor(options: StorageOAuthClientProviderOptions) {
+        this.identity = options.identity;
+        this.serverId = options.serverId;
+        this.sessionId = options.sessionId;
+        this.redirectUrl = options.redirectUrl;
+        this.clientName = options.clientName;
+        this.clientUri = options.clientUri;
+        this.logoUri = options.logoUri;
+        this.policyUri = options.policyUri;
+        this._clientId = options.clientId;
+        this.clientSecret = options.clientSecret;
+        this.onRedirectCallback = options.onRedirect;
     }
 
     get clientMetadata(): OAuthClientMetadata {
         return {
-            client_name: this.clientName,
-            client_uri: this.clientUri,
+            client_name: this.clientName || DEFAULT_CLIENT_NAME,
+            client_uri: this.clientUri || DEFAULT_CLIENT_URI,
+            logo_uri: this.logoUri || DEFAULT_LOGO_URI,
+            policy_uri: this.policyUri || DEFAULT_POLICY_URI,
             grant_types: ["authorization_code", "refresh_token"],
             redirect_uris: [this.redirectUrl],
             response_types: ["code"],
-            token_endpoint_auth_method: "none",
-            ...(this._clientId ? { client_id: this._clientId } : {})
+            token_endpoint_auth_method: this.clientSecret ? "client_secret_basic" : "none",
+            software_id: SOFTWARE_ID,
+            software_version: SOFTWARE_VERSION,
         };
-    }
-
-    get clientUri() {
-        return new URL(this.redirectUrl).origin;
-    }
-
-    get redirectUrl() {
-        return this.baseRedirectUrl;
     }
 
     get clientId() {
@@ -91,7 +116,6 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     private async getSessionData(): Promise<SessionData> {
         const data = await storage.getSession(this.identity, this.sessionId);
         if (!data) {
-            // Return empty/partial object if not found
             return {} as SessionData;
         }
         return data;
@@ -110,14 +134,25 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     /**
      * Retrieves stored OAuth client information
      */
-    async clientInformation(): Promise<OAuthClientInformation | undefined> {
+    async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
         const data = await this.getSessionData();
 
         if (data.clientId && !this._clientId) {
             this._clientId = data.clientId;
         }
 
-        return data.clientInformation;
+        if (data.clientInformation) {
+            return data.clientInformation;
+        }
+
+        if (!this._clientId) {
+            return undefined;
+        }
+
+        return {
+            client_id: this._clientId,
+            ...(this.clientSecret ? { client_secret: this.clientSecret } : {}),
+        };
     }
 
     /**
@@ -152,7 +187,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         return this.sessionId;
     }
 
-    async checkState(state: string): Promise<{ valid: boolean; serverId?: string; error?: string }> {
+    async checkState(_state: string): Promise<{ valid: boolean; serverId?: string; error?: string }> {
         const data = await storage.getSession(this.identity, this.sessionId);
 
         if (!data) {
@@ -162,7 +197,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         return { valid: true, serverId: this.serverId };
     }
 
-    async consumeState(state: string): Promise<void> {
+    async consumeState(_state: string): Promise<void> {
         // No-op
     }
 
@@ -179,8 +214,6 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         if (scope === "all") {
             await storage.removeSession(this.identity, this.sessionId);
         } else {
-            const data = await this.getSessionData();
-            // Create a copy to modify
             const updates: Partial<SessionData> = {};
 
             if (scope === "client") {
