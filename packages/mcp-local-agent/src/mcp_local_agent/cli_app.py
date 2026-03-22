@@ -35,7 +35,7 @@ from websockets.exceptions import ConnectionClosed
 from .bridge_runtime import LocalBridgeAgent
 from .cli_args import apply_cli_overrides, config_updates_from_args, parse_cli_args
 from .cli_auth import AuthMenuService
-from .config import DEFAULT_REMOTE_SERVER_BASE_URL, AgentConfig, ensure_default_config, load_config, load_config_file, resolve_config_path, save_config_updates
+from .config import DEFAULT_REMOTE_SERVER_BASE_URL, AgentConfig, ensure_default_config, load_config, load_config_file, resolve_config_path, resolve_state_path, save_config_updates
 
 
 def configure_logging() -> None:
@@ -43,6 +43,8 @@ def configure_logging() -> None:
     for handler in logging.getLogger().handlers:
         if isinstance(handler, logging.StreamHandler):
             handler.setLevel(logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("websockets").setLevel(logging.INFO)
     logging.getLogger("websockets.client").setLevel(logging.INFO)
     logging.getLogger("asyncio").setLevel(logging.INFO)
@@ -243,14 +245,14 @@ def _token_from_sources() -> str:
 
 def _persist_updates(updates: dict[str, str]) -> None:
     path = save_config_updates(updates)
-    _console(_style(f"Saved startup settings to {path}", color="34"))
+    _console(_style(f"Saved runtime settings to {path}", color="34"))
 
 
 def _print_config_tip(config: AgentConfig) -> None:
     cfg_path = resolve_config_path()
     server_count = len(config.mcp_servers or {})
     _log("tip", f"config: {cfg_path}", color="34")
-    _log("tip", f"edit mcpServers in config.json to add MCP servers (current: {server_count})", color="34")
+    _log("tip", f"edit mcpServers in mcp.json to add MCP servers (current: {server_count})", color="34")
 
 
 def _derive_subject_from_token(token: str) -> str:
@@ -340,7 +342,7 @@ def _load_config_with_prompt() -> AgentConfig:
 
             token = _token_from_sources()
             if "AGENT_JWT is not a valid JWT format" in message:
-                refreshed = _refresh_jwt_from_config(resolve_config_path(), on_message=lambda m: _console(_style(m, color="34", bold=True)))
+                refreshed = _refresh_jwt_from_config(resolve_state_path(), on_message=lambda m: _console(_style(m, color="34", bold=True)))
                 if refreshed:
                     continue
                 _console(_style("Current AGENT_JWT is invalid.", color="31", bold=True))
@@ -352,7 +354,7 @@ def _load_config_with_prompt() -> AgentConfig:
                     updates["subject"] = new_subject
                     os.environ["SUBJECT"] = new_subject
             elif "Missing AGENT_JWT" in message:
-                refreshed = _refresh_jwt_from_config(resolve_config_path(), on_message=lambda m: _console(_style(m, color="34", bold=True)))
+                refreshed = _refresh_jwt_from_config(resolve_state_path(), on_message=lambda m: _console(_style(m, color="34", bold=True)))
                 if refreshed:
                     continue
                 token = _prompt_for_token()
@@ -388,7 +390,7 @@ def _config_updates_from_args(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _print_config_json() -> None:
-    cfg_path = resolve_config_path()
+    cfg_path = resolve_state_path()
     cfg = load_config_file(cfg_path)
     _console(json.dumps(cfg, indent=2))
 
@@ -403,12 +405,12 @@ def _prompt_setting(current: dict[str, Any], key: str, label: str, secret: bool 
 
 
 def _interactive_settings_editor() -> None:
-    cfg_path = resolve_config_path()
-    ensure_default_config(cfg_path)
+    cfg_path = resolve_state_path()
+    ensure_default_config(resolve_config_path())
     current = load_config_file(cfg_path)
     updates: dict[str, Any] = {}
 
-    _console(_style(f"Editing settings in {cfg_path}", color="34", bold=True))
+    _console(_style(f"Editing runtime settings in {cfg_path}", color="34", bold=True))
     updates["subject"] = _prompt_setting(current, "subject", "Subject")
     updates["jwt_token"] = _prompt_setting(current, "jwt_token", "JWT token", secret=True)
     updates["remote_server_base_url"] = _prompt_setting(current, "remote_server_base_url", "Remote server base URL")
@@ -421,7 +423,7 @@ def _interactive_settings_editor() -> None:
         updates["request_timeout_seconds"] = current_timeout
 
     save_config_updates(updates, cfg_path)
-    _console(_style(f"Saved settings to {cfg_path}", color="32", bold=True))
+    _console(_style(f"Saved runtime settings to {cfg_path}", color="32", bold=True))
 
 
 def _bridge_on_log(tag: str, message: str) -> None:
@@ -516,7 +518,7 @@ async def _run_menu_bridge_until_stopped(stop_event: Event) -> None:
         prompt_for_token=_prompt_for_token,
         derive_subject=_derive_subject_from_token,
         persist_updates=_persist_updates,
-        refresh_jwt=lambda: _refresh_jwt_from_config(resolve_config_path()),
+        refresh_jwt=lambda: _refresh_jwt_from_config(resolve_state_path()),
         enable_spinner=False,
     )
     runner = asyncio.create_task(agent.run())
@@ -773,24 +775,9 @@ def _run_menu() -> None:
                 with redirect_stdout(sys.stdout), redirect_stderr(sys.stderr):
                     async def _run() -> None:
                         config = load_config()
-                        _print_config_tip(config)
-                        short_subject = _display_subject(config.subject)
-                        _console(_style(_frame([f"Subject: {short_subject}", f"WebSocket: {config.websocket_url}"]), color="32", bold=True))
-                        _log("boot", f"loaded config: subject={short_subject} websocket={config.websocket_url}", color="34")
-                        _log("boot", f"mcpServers keys: {list((config.mcp_servers or {}).keys())}", color="34")
-                        try:
-                            claims = jwt.decode(config.jwt_token, options={"verify_signature": False, "verify_exp": False})
-                            _log(
-                                "boot",
-                                "jwt summary: sub=%s role=%s mcp_servers=%s"
-                                % (claims.get("sub", ""), claims.get("role", ""), len(claims.get("capabilities", []) or [])),
-                                color="34",
-                            )
-                        except Exception:
-                            _log("boot", "unable to parse AGENT_JWT claims", color="33")
                         agent = LocalBridgeAgent(
                             config,
-                            on_log=_bridge_on_log,
+                            on_log=lambda _tag, _message: None,
                             prompt_for_token=_prompt_for_token,
                             derive_subject=_derive_subject_from_token,
                             persist_updates=_persist_updates,
@@ -818,7 +805,7 @@ def _run_menu() -> None:
         bridge_thread.start()
         bridge_running_reported = True
 
-    cfg_path = resolve_config_path()
+    cfg_path = resolve_state_path()
     _print_shell_header(cfg_path)
     while True:
         try:
@@ -827,7 +814,7 @@ def _run_menu() -> None:
             if bridge_running_reported and not _bridge_is_running():
                 history.append("Bridge stopped. Use /start to start again.")
                 bridge_running_reported = False
-            cfg_path = resolve_config_path()
+            cfg_path = resolve_state_path()
             _print_history_delta()
             raw = _menu_input_box_fixed()
             if not raw:
@@ -846,7 +833,7 @@ def _run_menu() -> None:
             if _bridge_is_running():
                 history.append("Gateway is already running. Use /stop to stop it.")
                 continue
-            history.append("Starting gateway in background. Use /stop to stop.")
+            history.append("Starting gateway in background. Use /logs on if you want to watch logs.")
             _start_bridge_in_background()
             if bridge_ready_event is not None:
                 while not bridge_ready_event.is_set():
@@ -880,13 +867,13 @@ def _run_menu() -> None:
                 "Commands:",
                 "  /help                  Show this command list",
                 "  /clear                 Clear screen",
-                "  /show                  Show current config JSON",
-                "  /path                  Show resolved config path",
-                "  /init                  Create config if missing",
-                "  /settings              Open interactive settings editor",
-                "  /login [oauth|jwt] [minutes]  Login and save JWT in config",
+                "  /show                  Show current runtime state JSON",
+                "  /path                  Show resolved mcp.json path",
+                "  /init                  Create mcp.json if missing",
+                "  /settings              Open interactive runtime settings editor",
+                "  /login [oauth|jwt] [minutes]  Login and save JWT in runtime state",
                 "  /logout                Revoke token (best effort) and clear local JWT",
-                "  /set <key> <value>     Update one config key",
+                "  /set <key> <value>     Update one runtime state key",
                 "  /start                 Start gateway",
                 "  /stop                  Stop gateway",
                 "  /logs on|off|show      Monitor verbose logs",
@@ -899,6 +886,8 @@ def _run_menu() -> None:
                 logs_follow = True
                 log_cursor = 0
                 logger.setLevel(logging.DEBUG)
+                logging.getLogger("httpx").setLevel(logging.WARNING)
+                logging.getLogger("httpcore").setLevel(logging.WARNING)
                 logging.getLogger("websockets").setLevel(logging.INFO)
                 logging.getLogger("websockets.client").setLevel(logging.INFO)
                 logging.getLogger("asyncio").setLevel(logging.INFO)
@@ -908,6 +897,8 @@ def _run_menu() -> None:
             if len(parts) > 1 and parts[1].lower() == "off":
                 logs_follow = False
                 logger.setLevel(logging.INFO)
+                logging.getLogger("httpx").setLevel(logging.WARNING)
+                logging.getLogger("httpcore").setLevel(logging.WARNING)
                 logging.getLogger("websockets").setLevel(logging.INFO)
                 logging.getLogger("websockets.client").setLevel(logging.INFO)
                 logging.getLogger("asyncio").setLevel(logging.INFO)
@@ -930,10 +921,10 @@ def _run_menu() -> None:
             _print_shell_header(cfg_path)
             continue
         if raw in {"/path", "path"}:
-            history.append(str(cfg_path))
+            history.append(str(resolve_config_path()))
             continue
         if raw in {"/init", "init"}:
-            history.extend(_capture_output(lambda: _console(_style(f"Config ready at {ensure_default_config(cfg_path)}", color="32", bold=True))))
+            history.extend(_capture_output(lambda: _console(_style(f"Config ready at {ensure_default_config(resolve_config_path())}", color="32", bold=True))))
             continue
         if raw in {"/settings", "settings"}:
             _interactive_settings_editor()
@@ -957,7 +948,6 @@ def _run_menu() -> None:
                     history.append("Usage: /login [oauth|jwt] [expiry_minutes]")
                     continue
             _menu_login(cfg_path, mode=login_mode, expiry_minutes=expiry)
-            history.append("Login flow completed.")
             continue
         if raw in {"/logout", "logout"}:
             history.extend(_capture_output(lambda: _menu_logout(cfg_path)))
@@ -997,7 +987,7 @@ def _handle_non_run_command(args: argparse.Namespace) -> bool:
             if not updates:
                 _console(_style("No config values provided.", color="33", bold=True))
                 return True
-            path = save_config_updates(updates, resolve_config_path())
+            path = save_config_updates(updates, resolve_state_path())
             _console(_style(f"Saved settings to {path}", color="32", bold=True))
             return True
     if args.command == "settings":
@@ -1019,7 +1009,7 @@ async def _main(show_runtime_header: bool = True) -> None:
     _print_config_tip(config)
     short_subject = _display_subject(config.subject)
     _console(_style(_frame([f"Subject: {short_subject}", f"WebSocket: {config.websocket_url}"]), color="32", bold=True))
-    _log("boot", f"loaded config: subject={short_subject} websocket={config.websocket_url}", color="34")
+    _log("boot", f"loaded runtime state: subject={short_subject} websocket={config.websocket_url}", color="34")
     _log("boot", f"mcpServers keys: {list((config.mcp_servers or {}).keys())}", color="34")
     try:
         claims = jwt.decode(config.jwt_token, options={"verify_signature": False, "verify_exp": False})
@@ -1033,7 +1023,7 @@ async def _main(show_runtime_header: bool = True) -> None:
         prompt_for_token=_prompt_for_token,
         derive_subject=_derive_subject_from_token,
         persist_updates=_persist_updates,
-        refresh_jwt=lambda: _refresh_jwt_from_config(resolve_config_path()),
+        refresh_jwt=lambda: _refresh_jwt_from_config(resolve_state_path()),
         enable_spinner=True,
     )
     loop = asyncio.get_running_loop()

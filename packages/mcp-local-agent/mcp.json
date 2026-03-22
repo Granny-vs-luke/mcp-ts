@@ -13,7 +13,5 @@
         "windows-mcp"
       ]
     }
-  },
-  "jwt_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJEMVdZQ0JOWkxFIiwicm9sZSI6ImFnZW50IiwiY2FwYWJpbGl0aWVzIjpbIioiXSwiZXhwIjoxNzcyNzM1MDkwfQ.mOEM-QrHKoJqPYjzKmBIjRfMjWOFIi06hNP-C8B3H5k",
-  "agent_id": "D1WYCBNZLE"
+  }
 }

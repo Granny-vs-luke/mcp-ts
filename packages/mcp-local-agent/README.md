@@ -10,10 +10,11 @@ mcpassistant-gateway
 ```
 
 `mcpassistant-gateway` now opens an interactive menu by default.
-Use `/run` inside the menu to start the gateway in the same terminal and view realtime logs.
+Use `/start` inside the menu to start the gateway in the background.
+Use `/logs on` only when you want to inspect realtime logs.
 Press `Ctrl+C` while running to stop and return to the menu.
 
-You can also use the built-in CLI helpers instead of editing `config.json` manually:
+You can also use the built-in CLI helpers instead of editing `mcp.json` manually:
 
 ```bash
 mcpassistant-gateway run
@@ -46,18 +47,18 @@ For OAuth localhost callback, ensure your auth provider allows:
 `mcpassistant-gateway` initializes MCP client sessions for configured `mcpServers` (stdio) and opens the outbound bridge connection to the remote server.
 
 Startup token behavior:
-- If `AGENT_JWT` is already configured (env or `config.json`), startup continues without prompting.
+- If `AGENT_JWT` is already configured (env or runtime state), startup continues without prompting.
 - If `AGENT_JWT` is missing, the CLI shows a styled prompt and asks you to paste the token.
 - If WebSocket auth fails with `HTTP 403`, the CLI asks for a fresh `AGENT_JWT` and retries immediately.
 - `AGENT_ID` is auto-derived from JWT claims (or token fingerprint fallback), so no manual `AGENT_ID` prompt.
-- Prompted values are saved into resolved `config.json`, so next runs do not ask again.
+- Prompted values are saved into the runtime state file, so next runs do not ask again.
 
 Set `START_MCP_SERVERS=false` if you only want the bridge process.
 
-Configuration can be provided through `.env` and/or `config.json`.
+Configuration can be provided through `.env`, runtime state, and `mcp.json`.
 
-If `config.json` does not exist, it is created automatically on first run with:
-- `remote_server_base_url` defaulting to `https://hub.linkos.in/agent`
+If `mcp.json` does not exist, it is created automatically on first run with:
+- only an `mcpServers` object
 - a default `mcpServers.filesystem` entry scoped to your current working directory
 
 Minimal dynamic `.env`:
@@ -91,13 +92,13 @@ You can run MCP servers from config (supergateway-style) and derive local HTTP e
 Run one server:
 
 ```bash
-mcpassistant-gateway-bridge --config ./config.json --name filesystem
+mcpassistant-gateway-bridge --config ./mcp.json --name filesystem
 ```
 
 Run all servers in config:
 
 ```bash
-mcpassistant-gateway-bridge --config ./config.json
+mcpassistant-gateway-bridge --config ./mcp.json
 ```
 
 

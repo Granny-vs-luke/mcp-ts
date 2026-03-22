@@ -13,27 +13,27 @@ def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     run_parser = subparsers.add_parser("run", help="Run the local MCP bridge agent")
     run_parser.set_defaults(command="run")
-    run_parser.add_argument("--config", default="", help="Path to config.json")
+    run_parser.add_argument("--config", default="", help="Path to mcp.json")
     run_parser.add_argument("--subject", default="", help="Override subject for this run")
     run_parser.add_argument("--jwt-token", default="", help="Override AGENT_JWT for this run")
     run_parser.add_argument("--remote-server-base-url", default="", help="Override remote server base URL")
     run_parser.add_argument("--websocket-url", default="", help="Override remote websocket URL")
     run_parser.add_argument("--request-timeout-seconds", type=float, default=None, help="Override local request timeout")
 
-    config_parser = subparsers.add_parser("config", help="Inspect or update config.json")
+    config_parser = subparsers.add_parser("config", help="Inspect the resolved mcp.json path or runtime state")
     config_subparsers = config_parser.add_subparsers(dest="config_command", required=True)
 
     config_path_parser = config_subparsers.add_parser("path", help="Print the resolved config path")
-    config_path_parser.add_argument("--config", default="", help="Path to config.json")
+    config_path_parser.add_argument("--config", default="", help="Path to mcp.json")
 
-    config_show_parser = config_subparsers.add_parser("show", help="Print the current config.json")
-    config_show_parser.add_argument("--config", default="", help="Path to config.json")
+    config_show_parser = config_subparsers.add_parser("show", help="Print the current runtime state file")
+    config_show_parser.add_argument("--config", default="", help="Path to mcp.json")
 
-    config_init_parser = config_subparsers.add_parser("init", help="Create config.json if it does not exist")
-    config_init_parser.add_argument("--config", default="", help="Path to config.json")
+    config_init_parser = config_subparsers.add_parser("init", help="Create mcp.json if it does not exist")
+    config_init_parser.add_argument("--config", default="", help="Path to mcp.json")
 
-    config_set_parser = config_subparsers.add_parser("set", help="Update config.json settings")
-    config_set_parser.add_argument("--config", default="", help="Path to config.json")
+    config_set_parser = config_subparsers.add_parser("set", help="Update runtime state settings")
+    config_set_parser.add_argument("--config", default="", help="Path to mcp.json")
     config_set_parser.add_argument("--subject", default="", help="Persist subject")
     config_set_parser.add_argument("--jwt-token", default="", help="Persist JWT token")
     config_set_parser.add_argument("--remote-server-base-url", default="", help="Persist remote server base URL")
@@ -41,10 +41,10 @@ def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
     config_set_parser.add_argument("--request-timeout-seconds", type=float, default=None, help="Persist local request timeout")
 
     settings_parser = subparsers.add_parser("settings", help="Interactive settings editor")
-    settings_parser.add_argument("--config", default="", help="Path to config.json")
+    settings_parser.add_argument("--config", default="", help="Path to mcp.json")
 
     menu_parser = subparsers.add_parser("menu", help="Open an interactive CLI menu")
-    menu_parser.add_argument("--config", default="", help="Path to config.json")
+    menu_parser.add_argument("--config", default="", help="Path to mcp.json")
 
     args = parser.parse_args(raw_argv)
     if args.command is None:
