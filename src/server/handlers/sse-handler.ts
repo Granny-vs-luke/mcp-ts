@@ -34,6 +34,8 @@ import type {
   CallToolResult,
 } from '../../shared/types.js';
 import { RpcErrorCodes } from '../../shared/errors.js';
+import { UnauthorizedError } from '../../shared/errors.js';
+import { isConnectionEvent, isRpcResponseEvent } from '../../shared/event-routing.js';
 import { MCPClient } from '../mcp/oauth-client.js';
 import { storage } from '../storage/index.js';
 
@@ -265,18 +267,6 @@ export class SSEConnectionManager {
     // Generate session ID
     const sessionId = await storage.generateSessionId();
 
-    // Emit connecting state
-    this.emitConnectionEvent({
-      type: 'state_changed',
-      sessionId,
-      serverId,
-      serverName,
-      serverUrl,
-      state: 'CONNECTING',
-      previousState: 'DISCONNECTED',
-      timestamp: Date.now(),
-    });
-
     try {
       // Get resolved client metadata
       const clientMetadata = await this.getResolvedClientMetadata();
@@ -291,16 +281,6 @@ export class SSEConnectionManager {
         callbackUrl,
         transportType,
         ...clientMetadata, // Spread client metadata (clientName, clientUri, logoUri, policyUri)
-        onRedirect: (authUrl) => {
-          // Emit auth required event
-          this.emitConnectionEvent({
-            type: 'auth_required',
-            sessionId,
-            serverId,
-            authUrl,
-            timestamp: Date.now(),
-          });
-        },
       });
 
       // Note: Session will be created by MCPClient after successful connection
@@ -329,6 +309,15 @@ export class SSEConnectionManager {
         success: true,
       };
     } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        // OAuth-required is a pending-auth state, not a failed connection.
+        this.clients.delete(sessionId);
+        return {
+          sessionId,
+          success: true,
+        };
+      }
+
       this.emitConnectionEvent({
         type: 'error',
         sessionId,
@@ -485,17 +474,6 @@ export class SSEConnectionManager {
       throw new Error('Session not found');
     }
 
-    this.emitConnectionEvent({
-      type: 'state_changed',
-      sessionId,
-      serverId: session.serverId ?? 'unknown',
-      serverName: session.serverName ?? 'Unknown',
-      serverUrl: session.serverUrl,
-      state: 'AUTHENTICATING',
-      previousState: 'DISCONNECTED',
-      timestamp: Date.now(),
-    });
-
     try {
       const client = new MCPClient({
         identity: this.identity,
@@ -610,9 +588,9 @@ export function createSSEHandler(options: SSEHandlerOptions) {
 
     // Create connection manager with event routing
     const manager = new SSEConnectionManager(options, (event) => {
-      if ('id' in event) {
+      if (isRpcResponseEvent(event)) {
         writeSSEEvent(res, 'rpc-response', event);
-      } else if ('type' in event && 'sessionId' in event) {
+      } else if (isConnectionEvent(event)) {
         writeSSEEvent(res, 'connection', event);
       } else {
         writeSSEEvent(res, 'observability', event);

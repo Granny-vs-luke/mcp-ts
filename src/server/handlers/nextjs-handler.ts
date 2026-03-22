@@ -7,11 +7,8 @@
 
 import { SSEConnectionManager, type ClientMetadata } from './sse-handler.js';
 import type { McpConnectionEvent, McpObservabilityEvent } from '../../shared/events.js';
+import { isConnectionEvent, isRpcResponseEvent } from '../../shared/event-routing.js';
 import type { McpRpcResponse } from '../../shared/types.js';
-
-function isRpcResponseEvent(event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse): event is McpRpcResponse {
-  return 'id' in event && ('result' in event || 'error' in event);
-}
 
 export interface NextMcpHandlerOptions {
   /**
@@ -145,7 +142,7 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
         (event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse) => {
           if (isRpcResponseEvent(event)) {
             sendSSE('rpc-response', event);
-          } else if ('type' in event && 'sessionId' in event) {
+          } else if (isConnectionEvent(event)) {
             sendSSE('connection', event);
           } else {
             sendSSE('observability', event);
