@@ -55,6 +55,8 @@ export interface SSEClientOptions {
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
+const CONNECTION_EVENT_INTERVAL_MS = 300;
+
 interface ToolUiMetadata {
   resourceUri?: string;
   uri?: string;
@@ -193,11 +195,19 @@ export class SSEClient {
       return this.parseRpcResponse<T>(data);
     }
 
-    const data = await this.readRpcResponseFromStream(response);
+    const data = await this.readRpcResponseFromStream(response, {
+      delayConnectionEvents:
+        method === 'connect' ||
+        method === 'restoreSession' ||
+        method === 'finishAuth',
+    });
     return this.parseRpcResponse<T>(data);
   }
 
-  private async readRpcResponseFromStream(response: Response): Promise<McpRpcResponse> {
+  private async readRpcResponseFromStream(
+    response: Response,
+    options: { delayConnectionEvents?: boolean } = {}
+  ): Promise<McpRpcResponse> {
     if (!response.body) {
       throw new Error('Streaming response body is missing');
     }
@@ -207,7 +217,7 @@ export class SSEClient {
     let buffer = '';
     let rpcResponse: McpRpcResponse | null = null;
 
-    const dispatchBlock = (block: string) => {
+    const dispatchBlock = async (block: string) => {
       const lines = block.split('\n');
       let eventName = 'message';
       const dataLines: string[] = [];
@@ -239,6 +249,9 @@ export class SSEClient {
           break;
         case 'connection':
           this.options.onConnectionEvent?.(payload as McpConnectionEvent);
+          if (options.delayConnectionEvents) {
+            await this.sleep(CONNECTION_EVENT_INTERVAL_MS);
+          }
           break;
         case 'observability':
           this.options.onObservabilityEvent?.(payload as McpObservabilityEvent);
@@ -262,13 +275,13 @@ export class SSEClient {
         const separatorLength = separatorMatch[0].length;
         const block = buffer.slice(0, separatorIndex);
         buffer = buffer.slice(separatorIndex + separatorLength);
-        dispatchBlock(block);
+        await dispatchBlock(block);
         separatorMatch = buffer.match(/\r?\n\r?\n/);
       }
     }
 
     if (buffer.trim()) {
-      dispatchBlock(buffer);
+      await dispatchBlock(buffer);
     }
 
     if (!rpcResponse) {
@@ -276,6 +289,10 @@ export class SSEClient {
     }
 
     return rpcResponse;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private parseRpcResponse<T>(data: McpRpcResponse): T {

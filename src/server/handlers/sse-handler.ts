@@ -265,18 +265,6 @@ export class SSEConnectionManager {
     // Generate session ID
     const sessionId = await storage.generateSessionId();
 
-    // Emit connecting state
-    this.emitConnectionEvent({
-      type: 'state_changed',
-      sessionId,
-      serverId,
-      serverName,
-      serverUrl,
-      state: 'CONNECTING',
-      previousState: 'DISCONNECTED',
-      timestamp: Date.now(),
-    });
-
     try {
       // Get resolved client metadata
       const clientMetadata = await this.getResolvedClientMetadata();
