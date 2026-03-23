@@ -175,10 +175,10 @@ class AuthMenuService:
         return ["*"]
 
     def _menu_prompt_expiry(self, expiry_minutes: int | None = None) -> int | None:
-        default_expiry = expiry_minutes if expiry_minutes is not None else 1440
-        expiry_raw = input(f"Expiry minutes (leave empty for default {default_expiry}): ").strip()
+        if expiry_minutes is None:
+            return 1440
         try:
-            expiry = int(expiry_raw) if expiry_raw else int(default_expiry)
+            expiry = int(expiry_minutes)
         except ValueError:
             self._console(self._style("Expiry minutes must be an integer.", color="31", bold=True))
             return None
@@ -317,8 +317,14 @@ class AuthMenuService:
             callback_server.shutdown(); callback_server.server_close(); callback_thread.join(timeout=2.0)
             self._console(self._style("/login failed: OAuth redirect mismatch. Retry /login.", color="31", bold=True))
             return True
-        self._console(self._style(f"Authorization URL: {auth_url}", color="36", bold=True))
-        webbrowser.open(auth_url)
+        self._console(self._style("Open this authorization URL to continue login:", color="36", bold=True))
+        self._console(self._style(auth_url, color="36", bold=True))
+        try:
+            opened = bool(webbrowser.open(auth_url))
+        except Exception:
+            opened = False
+        if not opened:
+            self._console(self._style("Browser did not open automatically.", color="33", bold=True))
         callback: dict[str, str] | None = None
         deadline = time.time() + 300
         while time.time() < deadline:

@@ -65,6 +65,21 @@ _MENU_PROMPT_STYLE: Any | None = None
 _MENU_LOG_BUFFER: deque[str] = deque(maxlen=1000)
 _MENU_LOG_LOCK = Lock()
 _WINDOWS_ANSI_ENABLED: bool | None = None
+_BLOCK_FONT: dict[str, tuple[str, ...]] = {
+    " ": ("00000", "00000", "00000", "00000", "00000", "00000"),
+    "A": ("01110", "10001", "10001", "11111", "10001", "10001"),
+    "C": ("01111", "10000", "10000", "10000", "10000", "01111"),
+    "I": ("11111", "00100", "00100", "00100", "00100", "11111"),
+    "M": ("10001", "11011", "10101", "10001", "10001", "10001"),
+    "N": ("10001", "11001", "10101", "10011", "10001", "10001"),
+    "O": ("01110", "10001", "10001", "10001", "10001", "01110"),
+    "P": ("11110", "10001", "10001", "11110", "10000", "10000"),
+    "R": ("11110", "10001", "10001", "11110", "10010", "10001"),
+    "S": ("01111", "10000", "10000", "01110", "00001", "11110"),
+    "T": ("11111", "00100", "00100", "00100", "00100", "00100"),
+    "X": ("10001", "01010", "00100", "00100", "01010", "10001"),
+    "Y": ("10001", "01010", "00100", "00100", "00100", "00100"),
+}
 
 
 class _MenuLogBufferHandler(logging.Handler):
@@ -182,6 +197,68 @@ def _gradient_style(text: str, start_rgb: tuple[int, int, int], end_rgb: tuple[i
     out.append("\x1b[0m")
     return "".join(out)
 
+def _render_block_text(text: str) -> list[str]:
+    empty = " "
+    levels = ["█", "▓", "▒", "░"]  # gradient levels
+
+    glyph_rows = len(next(iter(_BLOCK_FONT.values())))
+    glyph_cols = len(next(iter(_BLOCK_FONT.values()))[0])
+
+    letter_spacing = 2
+
+    total_cols = len(text) * (glyph_cols + letter_spacing)
+    total_rows = glyph_rows
+
+    canvas = [[0 for _ in range(total_cols)] for _ in range(total_rows)]
+
+    # --- STEP 1: build text ---
+    cursor_x = 0
+    for char in text.upper():
+        glyph = _BLOCK_FONT.get(char, _BLOCK_FONT[" "])
+
+        for r in range(glyph_rows):
+            for c in range(glyph_cols):
+                if glyph[r][c] == "1":
+                    canvas[r][cursor_x + c] = 1
+
+        cursor_x += glyph_cols + letter_spacing
+
+    # --- STEP 2: render with gradient + dithering ---
+    rendered = []
+
+    for r in range(total_rows):
+        line = []
+
+        # determine gradient level by vertical position
+        gradient_idx = int((r / total_rows) * (len(levels) - 1))
+
+        for c in range(total_cols):
+            if canvas[r][c] == 1:
+                char = levels[gradient_idx]
+
+                # --- dithering (checkerboard pattern) ---
+                if (r + c) % 2 == 0 and gradient_idx > 0:
+                    char = levels[gradient_idx]
+
+                line.append(char)
+            else:
+                line.append(empty)
+
+        rendered.append("".join(line).rstrip())
+
+    return rendered
+
+def _runtime_title_lines(version: str, *, include_blank_tail: bool = False) -> list[str]:
+    lines = [
+        *_render_block_text("MCP ASSISTANT"),
+        "",
+        f"   {APP_TITLE} v{version}",
+    ]
+
+    if include_blank_tail:
+        lines.append("")
+
+    return lines
 
 def _frame(lines: list[str]) -> str:
     width = max(len(line) for line in lines) if lines else 0
@@ -199,14 +276,7 @@ def _print_start_prompt() -> None:
 
 def _print_runtime_header() -> None:
     version = _agent_version()
-    title = [
-        " __  __  ____ ____      _    ____ ____ ___ ____ _____ _    _   _ _____ ",
-        "|  \\/  |/ ___|  _ \\    / \\  / ___/ ___|_ _/ ___|_   _/ \\  | \\ | |_   _|",
-        "| |\\/| | |   | |_) |  / _ \\ \\___ \\___ \\| |\\___ \\ | |/ _ \\ |  \\| | | |  ",
-        "| |  | | |___|  __/  / ___ \\ ___) |__) | | ___) || / ___ \\| |\\  | | |  ",
-        "|_|  |_|\\____|_|    /_/   \\_\\____/____/___|____/ |_/_/   \\_\\_| \\_| |_|  ",
-        f"                   {APP_TITLE}  v{version}",
-    ]
+    title = _runtime_title_lines(version)
     _console(_gradient_style("\n".join(title), (255, 64, 64), (255, 255, 255), bold=True))
     _console(_style("Tips:", color="35", bold=True))
     _console(_style("1. Keep AGENT_JWT valid for uninterrupted bridge sessions.", color="35"))
@@ -539,16 +609,7 @@ def _run_menu() -> None:
 
     def _render_shell_header() -> list[str]:
         version = _agent_version()
-        title = [
-            " __  __  ____ ____      _    ____ ____ ___ ____ _____ _    _   _ _____ ",
-            "|  \\/  |/ ___|  _ \\    / \\  / ___/ ___|_ _/ ___|_   _/ \\  | \\ | |_   _|",
-            "| |\\/| | |   | |_) |  / _ \\ \\___ \\___ \\| |\\___ \\ | |/ _ \\ |  \\| | | |  ",
-            "| |  | | |___|  __/  / ___ \\ ___) |__) | | ___) || / ___ \\| |\\  | | |  ",
-            "|_|  |_|\\____|_|    /_/   \\_\\____/____/___|____/ |_/_/   \\_\\_| \\_| |_|  ",
-            f"                   {APP_TITLE}  v{version}",
-            "",
-        ]
-        return title
+        return _runtime_title_lines(version, include_blank_tail=True)
 
     def _status_lines(cfg_path: Any) -> list[str]:
         current = load_config_file(cfg_path)
@@ -631,6 +692,26 @@ def _run_menu() -> None:
             os.system("cls")
         else:
             os.system("clear")
+
+    def _refresh_menu_view(cfg_path: Any) -> None:
+        nonlocal rendered_history_cursor
+        rendered_history_cursor = 0
+        _clear_terminal()
+        _print_shell_header(cfg_path)
+
+    def _reset_menu_prompt_session() -> None:
+        global _MENU_PROMPT_SESSION, _MENU_PROMPT_STYLE
+        _MENU_PROMPT_SESSION = None
+        _MENU_PROMPT_STYLE = None
+
+    def _prune_auth_history() -> None:
+        history[:] = [
+            line for line in history
+            if line not in {
+                "Login successful.",
+                "Logout successful. jwt_token/refresh_token cleared from config.",
+            }
+        ]
 
     def _set_value_from_menu(cfg_path: Any, key: str, value: str) -> None:
         normalized = key.strip().lower().replace("-", "_")
@@ -837,7 +918,12 @@ def _run_menu() -> None:
             _start_bridge_in_background()
             if bridge_ready_event is not None:
                 while not bridge_ready_event.is_set():
+                    if not _bridge_is_running():
+                        break
                     time.sleep(0.05)
+            if bridge_ready_event is not None and bridge_ready_event.is_set():
+                history.append("Gateway started.")
+                _refresh_menu_view(cfg_path)
             continue
         if raw in {"/stop", "stop"}:
             if _bridge_is_running() and bridge_stop_event is not None:
@@ -927,10 +1013,14 @@ def _run_menu() -> None:
             history.extend(_capture_output(lambda: _console(_style(f"Config ready at {ensure_default_config(resolve_config_path())}", color="32", bold=True))))
             continue
         if raw in {"/settings", "settings"}:
-            _interactive_settings_editor()
+            _reset_menu_prompt_session()
+            history.extend(_capture_output(_interactive_settings_editor))
             history.append("Settings updated.")
+            _refresh_menu_view(cfg_path)
             continue
         if raw.startswith("/login") or raw.startswith("login"):
+            _reset_menu_prompt_session()
+            _prune_auth_history()
             parts = raw.split()
             login_mode = "oauth"
             expiry: int | None = None
@@ -947,10 +1037,20 @@ def _run_menu() -> None:
                 except ValueError:
                     history.append("Usage: /login [oauth|jwt] [expiry_minutes]")
                     continue
+            before = load_config_file(cfg_path)
+            had_token_before = bool(str(before.get("jwt_token", "")).strip())
             _menu_login(cfg_path, mode=login_mode, expiry_minutes=expiry)
+            after = load_config_file(cfg_path)
+            has_token_after = bool(str(after.get("jwt_token", "")).strip())
+            if not had_token_before and has_token_after:
+                history.append("Login successful.")
+            _refresh_menu_view(cfg_path)
             continue
         if raw in {"/logout", "logout"}:
+            _reset_menu_prompt_session()
+            _prune_auth_history()
             history.extend(_capture_output(lambda: _menu_logout(cfg_path)))
+            _refresh_menu_view(cfg_path)
             continue
         if raw.startswith("/set ") or raw.startswith("set "):
             try:
@@ -964,6 +1064,8 @@ def _run_menu() -> None:
             key = parts[1]
             value = " ".join(parts[2:])
             history.extend(_capture_output(lambda: _set_value_from_menu(cfg_path, key, value)))
+            if key.strip().lower().replace("-", "_") in {"subject", "jwt_token", "refresh_token", "remote_server_base_url", "websocket_url"}:
+                _refresh_menu_view(cfg_path)
             continue
 
         history.append(f"Unknown command: {raw}")
