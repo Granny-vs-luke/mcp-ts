@@ -10,10 +10,14 @@ interface ConnectionItemProps {
 }
 
 const stateColors: Record<string, string> = {
+  INITIALIZING: 'bg-cyan-500/20 text-cyan-400',
+  VALIDATING: 'bg-sky-500/20 text-sky-400',
   CONNECTED: 'bg-green-500/20 text-green-400',
   CONNECTING: 'bg-yellow-500/20 text-yellow-400',
   AUTHENTICATING: 'bg-blue-500/20 text-blue-400',
+  AUTHENTICATED: 'bg-indigo-500/20 text-indigo-400',
   DISCOVERING: 'bg-purple-500/20 text-purple-400',
+  READY: 'bg-emerald-500/20 text-emerald-400',
   DISCONNECTED: 'bg-zinc-500/20 text-zinc-400',
   FAILED: 'bg-red-500/20 text-red-400',
 };
