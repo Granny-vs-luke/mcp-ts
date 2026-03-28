@@ -57,7 +57,7 @@ Set `START_MCP_SERVERS=false` if you only want the bridge process.
 
 Configuration can be provided through `.env`, runtime state, and `mcp.json`.
 
-If `mcp.json` does not exist, it is created automatically on first run with:
+If `mcp.json` does not exist, it is created automatically on first run at `.mcpassistant/mcp.json` with:
 - only an `mcpServers` object
 - a default `mcpServers.filesystem` entry scoped to your current working directory
 
@@ -92,13 +92,13 @@ You can run MCP servers from config (supergateway-style) and derive local HTTP e
 Run one server:
 
 ```bash
-mcpassistant-gateway-bridge --config ./mcp.json --name filesystem
+mcpassistant-gateway-bridge --config ./.mcpassistant/mcp.json --name filesystem
 ```
 
 Run all servers in config:
 
 ```bash
-mcpassistant-gateway-bridge --config ./mcp.json
+mcpassistant-gateway-bridge --config ./.mcpassistant/mcp.json
 ```
 
 

@@ -12,6 +12,7 @@ import jwt
 from dotenv import load_dotenv
 
 DEFAULT_REMOTE_SERVER_BASE_URL = "https://hub.linkos.in/agent"
+DEFAULT_CONFIG_DIR_NAME = ".mcpassistant"
 DEFAULT_MCP_CONFIG_NAME = "mcp.json"
 DEFAULT_STATE_CONFIG_NAME = ".mcpassistant.json"
 LEGACY_CONFIG_NAME = "config.json"
@@ -160,23 +161,43 @@ def _extract_mcp_config(data: dict[str, Any]) -> dict[str, Any]:
     })
 
 
+def _base_dirs() -> list[Path]:
+    cwd = Path.cwd().resolve()
+    return [cwd, *cwd.parents]
+
+
+def _default_config_dir(base_dir: Path | None = None) -> Path:
+    base = base_dir or Path.cwd().resolve()
+    return base / DEFAULT_CONFIG_DIR_NAME
+
+
+def _default_mcp_config_path(base_dir: Path | None = None) -> Path:
+    return _default_config_dir(base_dir) / DEFAULT_MCP_CONFIG_NAME
+
+
+def _default_state_config_path(base_dir: Path | None = None) -> Path:
+    return _default_config_dir(base_dir) / DEFAULT_STATE_CONFIG_NAME
+
+
 def _resolve_mcp_config_path() -> Path:
     env_path = os.getenv("AGENT_CONFIG_PATH")
     if env_path:
         return Path(env_path)
 
-    cwd = Path.cwd().resolve()
-    module_dir = Path(__file__).resolve().parent
-    candidates = [cwd / DEFAULT_MCP_CONFIG_NAME, module_dir / DEFAULT_MCP_CONFIG_NAME]
-    candidates.extend(parent / DEFAULT_MCP_CONFIG_NAME for parent in cwd.parents)
-    candidates.extend(parent / DEFAULT_MCP_CONFIG_NAME for parent in module_dir.parents)
-    candidates.extend([cwd / LEGACY_CONFIG_NAME, module_dir / LEGACY_CONFIG_NAME])
-    candidates.extend(parent / LEGACY_CONFIG_NAME for parent in cwd.parents)
-    candidates.extend(parent / LEGACY_CONFIG_NAME for parent in module_dir.parents)
-    for candidate in candidates:
+    base_dirs = _base_dirs()
+    for base in base_dirs:
+        candidate = base / DEFAULT_CONFIG_DIR_NAME / DEFAULT_MCP_CONFIG_NAME
         if candidate.exists():
             return candidate
-    return cwd / DEFAULT_MCP_CONFIG_NAME
+    for base in base_dirs:
+        candidate = base / DEFAULT_MCP_CONFIG_NAME
+        if candidate.exists():
+            return candidate
+    for base in base_dirs:
+        candidate = base / LEGACY_CONFIG_NAME
+        if candidate.exists():
+            return candidate
+    return _default_mcp_config_path()
 
 
 def _resolve_state_config_path() -> Path:
@@ -184,25 +205,38 @@ def _resolve_state_config_path() -> Path:
     if env_path:
         return Path(env_path)
 
-    cwd = Path.cwd().resolve()
-    module_dir = Path(__file__).resolve().parent
-    candidates = [cwd / DEFAULT_STATE_CONFIG_NAME, module_dir / DEFAULT_STATE_CONFIG_NAME]
-    candidates.extend(parent / DEFAULT_STATE_CONFIG_NAME for parent in cwd.parents)
-    candidates.extend(parent / DEFAULT_STATE_CONFIG_NAME for parent in module_dir.parents)
-    for candidate in candidates:
+    base_dirs = _base_dirs()
+    for base in base_dirs:
+        candidate = base / DEFAULT_CONFIG_DIR_NAME / DEFAULT_STATE_CONFIG_NAME
         if candidate.exists():
             return candidate
-    return cwd / DEFAULT_STATE_CONFIG_NAME
+    for base in base_dirs:
+        candidate = base / DEFAULT_STATE_CONFIG_NAME
+        if candidate.exists():
+            return candidate
+    return _default_state_config_path()
+
+
+def _default_dir_for_target(target: Path) -> Path:
+    if target.parent.name == DEFAULT_CONFIG_DIR_NAME:
+        return target.parent
+    return target.parent / DEFAULT_CONFIG_DIR_NAME
 
 
 def ensure_default_config(path: Path | None = None) -> Path:
     target = path or _resolve_mcp_config_path()
     state_target = _resolve_state_config_path()
+    explicit_config = bool(os.getenv("AGENT_CONFIG_PATH"))
+    explicit_state = bool(os.getenv("AGENT_STATE_PATH"))
+    default_dir = _default_dir_for_target(target)
+    default_mcp_target = default_dir / DEFAULT_MCP_CONFIG_NAME
+    default_state_target = default_dir / DEFAULT_STATE_CONFIG_NAME
 
     if target.name == LEGACY_CONFIG_NAME and target.exists():
         legacy = _load_config_file(target)
         if isinstance(legacy, dict):
-            mcp_target = target.with_name(DEFAULT_MCP_CONFIG_NAME)
+            mcp_target = default_mcp_target if not explicit_config else target.with_name(DEFAULT_MCP_CONFIG_NAME)
+            state_target = default_state_target if not explicit_state else state_target
             state_data = _extract_state_config(legacy)
             mcp_data = _extract_mcp_config(legacy)
             if not mcp_target.exists():
@@ -217,8 +251,22 @@ def ensure_default_config(path: Path | None = None) -> Path:
             updated = _extract_mcp_config(dict(existing))
             if updated != existing:
                 _write_json(target, updated)
+        if not explicit_config and target.parent.name != DEFAULT_CONFIG_DIR_NAME:
+            if not default_mcp_target.exists() and isinstance(existing, dict):
+                _write_json(default_mcp_target, _extract_mcp_config(dict(existing)))
+            target = default_mcp_target
+        if not explicit_state and state_target.parent.name != DEFAULT_CONFIG_DIR_NAME:
+            if state_target.exists() and not default_state_target.exists():
+                _write_json(default_state_target, _load_config_file(state_target))
+            state_target = default_state_target
+        if not state_target.exists():
+            _write_json(state_target, _default_config_template())
         return target
+    if not explicit_config and target.parent.name != DEFAULT_CONFIG_DIR_NAME:
+        target = default_mcp_target
     _write_json(target, _extract_mcp_config({}))
+    if not explicit_state and state_target.parent.name != DEFAULT_CONFIG_DIR_NAME:
+        state_target = default_state_target
     if not state_target.exists():
         _write_json(state_target, _default_config_template())
     return target

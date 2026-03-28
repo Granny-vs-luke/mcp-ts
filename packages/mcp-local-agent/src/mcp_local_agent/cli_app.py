@@ -315,7 +315,8 @@ def _token_from_sources() -> str:
 
 def _persist_updates(updates: dict[str, str]) -> None:
     path = save_config_updates(updates)
-    _console(_style(f"Saved runtime settings to {path}", color="34"))
+    mcp_path = resolve_config_path()
+    _console(_style(f"Saved runtime settings. Edit mcp.json to add MCP servers: {mcp_path}", color="34"))
 
 
 def _print_config_tip(config: AgentConfig) -> None:
@@ -480,7 +481,7 @@ def _interactive_settings_editor() -> None:
     current = load_config_file(cfg_path)
     updates: dict[str, Any] = {}
 
-    _console(_style(f"Editing runtime settings in {cfg_path}", color="34", bold=True))
+    _console(_style("Editing runtime settings.", color="34", bold=True))
     updates["subject"] = _prompt_setting(current, "subject", "Subject")
     updates["jwt_token"] = _prompt_setting(current, "jwt_token", "JWT token", secret=True)
     updates["remote_server_base_url"] = _prompt_setting(current, "remote_server_base_url", "Remote server base URL")
@@ -493,7 +494,8 @@ def _interactive_settings_editor() -> None:
         updates["request_timeout_seconds"] = current_timeout
 
     save_config_updates(updates, cfg_path)
-    _console(_style(f"Saved runtime settings to {cfg_path}", color="32", bold=True))
+    mcp_path = resolve_config_path()
+    _console(_style(f"Saved runtime settings. Edit mcp.json to add MCP servers: {mcp_path}", color="32", bold=True))
 
 
 def _bridge_on_log(tag: str, message: str) -> None:
@@ -613,7 +615,7 @@ def _run_menu() -> None:
 
     def _status_lines(cfg_path: Any) -> list[str]:
         current = load_config_file(cfg_path)
-        cwd_label = f"{os.path.basename(os.getcwd()) or os.getcwd()}  menu  {cfg_path}"
+        mcp_path = resolve_config_path()
         lines: list[str] = []
         token = str(current.get("jwt_token", "")).strip()
         profile = current.get("auth_profile", {}) if isinstance(current.get("auth_profile", {}), dict) else {}
@@ -633,7 +635,7 @@ def _run_menu() -> None:
                         lines.append(f"[url] {server_name} -> {mcp_url}")
         else:
             lines.append("[auth] Requires login. Please login using /login command before /start.")
-        lines.append(cwd_label)
+        lines.append(f"[config] Edit mcp.json to add MCP servers: {mcp_path}")
         lines.append("")
         return lines
 
@@ -683,6 +685,8 @@ def _run_menu() -> None:
                 color = "32"
             elif line.startswith("[url]"):
                 color = "34"
+            elif line.startswith("[config]"):
+                color = "90"
             elif " menu " in line:
                 color = "90"
             _console(_style(line, color=color, bold=bold))
@@ -1090,7 +1094,8 @@ def _handle_non_run_command(args: argparse.Namespace) -> bool:
                 _console(_style("No config values provided.", color="33", bold=True))
                 return True
             path = save_config_updates(updates, resolve_state_path())
-            _console(_style(f"Saved settings to {path}", color="32", bold=True))
+            mcp_path = resolve_config_path()
+            _console(_style(f"Saved runtime settings. Edit mcp.json to add MCP servers: {mcp_path}", color="32", bold=True))
             return True
     if args.command == "settings":
         _apply_cli_overrides(args)
