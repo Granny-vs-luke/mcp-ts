@@ -35,7 +35,7 @@ from websockets.exceptions import ConnectionClosed
 from .bridge_runtime import LocalBridgeAgent
 from .cli_args import apply_cli_overrides, config_updates_from_args, parse_cli_args
 from .cli_auth import AuthMenuService
-from .config import DEFAULT_REMOTE_SERVER_BASE_URL, AgentConfig, ensure_default_config, load_config, load_config_file, resolve_config_path, save_config_updates
+from .config import DEFAULT_REMOTE_SERVER_BASE_URL, AgentConfig, ensure_default_config, load_config, load_config_file, resolve_config_path, resolve_state_path, save_config_updates
 
 
 def configure_logging() -> None:
@@ -43,6 +43,8 @@ def configure_logging() -> None:
     for handler in logging.getLogger().handlers:
         if isinstance(handler, logging.StreamHandler):
             handler.setLevel(logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("websockets").setLevel(logging.INFO)
     logging.getLogger("websockets.client").setLevel(logging.INFO)
     logging.getLogger("asyncio").setLevel(logging.INFO)
@@ -63,6 +65,21 @@ _MENU_PROMPT_STYLE: Any | None = None
 _MENU_LOG_BUFFER: deque[str] = deque(maxlen=1000)
 _MENU_LOG_LOCK = Lock()
 _WINDOWS_ANSI_ENABLED: bool | None = None
+_BLOCK_FONT: dict[str, tuple[str, ...]] = {
+    " ": ("00000", "00000", "00000", "00000", "00000", "00000"),
+    "A": ("01110", "10001", "10001", "11111", "10001", "10001"),
+    "C": ("01111", "10000", "10000", "10000", "10000", "01111"),
+    "I": ("11111", "00100", "00100", "00100", "00100", "11111"),
+    "M": ("10001", "11011", "10101", "10001", "10001", "10001"),
+    "N": ("10001", "11001", "10101", "10011", "10001", "10001"),
+    "O": ("01110", "10001", "10001", "10001", "10001", "01110"),
+    "P": ("11110", "10001", "10001", "11110", "10000", "10000"),
+    "R": ("11110", "10001", "10001", "11110", "10010", "10001"),
+    "S": ("01111", "10000", "10000", "01110", "00001", "11110"),
+    "T": ("11111", "00100", "00100", "00100", "00100", "00100"),
+    "X": ("10001", "01010", "00100", "00100", "01010", "10001"),
+    "Y": ("10001", "01010", "00100", "00100", "00100", "00100"),
+}
 
 
 class _MenuLogBufferHandler(logging.Handler):
@@ -180,6 +197,68 @@ def _gradient_style(text: str, start_rgb: tuple[int, int, int], end_rgb: tuple[i
     out.append("\x1b[0m")
     return "".join(out)
 
+def _render_block_text(text: str) -> list[str]:
+    empty = " "
+    levels = ["█", "▓", "▒", "░"]  # gradient levels
+
+    glyph_rows = len(next(iter(_BLOCK_FONT.values())))
+    glyph_cols = len(next(iter(_BLOCK_FONT.values()))[0])
+
+    letter_spacing = 2
+
+    total_cols = len(text) * (glyph_cols + letter_spacing)
+    total_rows = glyph_rows
+
+    canvas = [[0 for _ in range(total_cols)] for _ in range(total_rows)]
+
+    # --- STEP 1: build text ---
+    cursor_x = 0
+    for char in text.upper():
+        glyph = _BLOCK_FONT.get(char, _BLOCK_FONT[" "])
+
+        for r in range(glyph_rows):
+            for c in range(glyph_cols):
+                if glyph[r][c] == "1":
+                    canvas[r][cursor_x + c] = 1
+
+        cursor_x += glyph_cols + letter_spacing
+
+    # --- STEP 2: render with gradient + dithering ---
+    rendered = []
+
+    for r in range(total_rows):
+        line = []
+
+        # determine gradient level by vertical position
+        gradient_idx = int((r / total_rows) * (len(levels) - 1))
+
+        for c in range(total_cols):
+            if canvas[r][c] == 1:
+                char = levels[gradient_idx]
+
+                # --- dithering (checkerboard pattern) ---
+                if (r + c) % 2 == 0 and gradient_idx > 0:
+                    char = levels[gradient_idx]
+
+                line.append(char)
+            else:
+                line.append(empty)
+
+        rendered.append("".join(line).rstrip())
+
+    return rendered
+
+def _runtime_title_lines(version: str, *, include_blank_tail: bool = False) -> list[str]:
+    lines = [
+        *_render_block_text("MCP ASSISTANT"),
+        "",
+        f"   {APP_TITLE} v{version}",
+    ]
+
+    if include_blank_tail:
+        lines.append("")
+
+    return lines
 
 def _frame(lines: list[str]) -> str:
     width = max(len(line) for line in lines) if lines else 0
@@ -197,14 +276,7 @@ def _print_start_prompt() -> None:
 
 def _print_runtime_header() -> None:
     version = _agent_version()
-    title = [
-        " __  __  ____ ____      _    ____ ____ ___ ____ _____ _    _   _ _____ ",
-        "|  \\/  |/ ___|  _ \\    / \\  / ___/ ___|_ _/ ___|_   _/ \\  | \\ | |_   _|",
-        "| |\\/| | |   | |_) |  / _ \\ \\___ \\___ \\| |\\___ \\ | |/ _ \\ |  \\| | | |  ",
-        "| |  | | |___|  __/  / ___ \\ ___) |__) | | ___) || / ___ \\| |\\  | | |  ",
-        "|_|  |_|\\____|_|    /_/   \\_\\____/____/___|____/ |_/_/   \\_\\_| \\_| |_|  ",
-        f"                   {APP_TITLE}  v{version}",
-    ]
+    title = _runtime_title_lines(version)
     _console(_gradient_style("\n".join(title), (255, 64, 64), (255, 255, 255), bold=True))
     _console(_style("Tips:", color="35", bold=True))
     _console(_style("1. Keep AGENT_JWT valid for uninterrupted bridge sessions.", color="35"))
@@ -243,14 +315,15 @@ def _token_from_sources() -> str:
 
 def _persist_updates(updates: dict[str, str]) -> None:
     path = save_config_updates(updates)
-    _console(_style(f"Saved startup settings to {path}", color="34"))
+    mcp_path = resolve_config_path()
+    _console(_style(f"Saved runtime settings. Edit mcp.json to add MCP servers: {mcp_path}", color="34"))
 
 
 def _print_config_tip(config: AgentConfig) -> None:
     cfg_path = resolve_config_path()
     server_count = len(config.mcp_servers or {})
     _log("tip", f"config: {cfg_path}", color="34")
-    _log("tip", f"edit mcpServers in config.json to add MCP servers (current: {server_count})", color="34")
+    _log("tip", f"edit mcpServers in mcp.json to add MCP servers (current: {server_count})", color="34")
 
 
 def _derive_subject_from_token(token: str) -> str:
@@ -340,7 +413,7 @@ def _load_config_with_prompt() -> AgentConfig:
 
             token = _token_from_sources()
             if "AGENT_JWT is not a valid JWT format" in message:
-                refreshed = _refresh_jwt_from_config(resolve_config_path(), on_message=lambda m: _console(_style(m, color="34", bold=True)))
+                refreshed = _refresh_jwt_from_config(resolve_state_path(), on_message=lambda m: _console(_style(m, color="34", bold=True)))
                 if refreshed:
                     continue
                 _console(_style("Current AGENT_JWT is invalid.", color="31", bold=True))
@@ -352,7 +425,7 @@ def _load_config_with_prompt() -> AgentConfig:
                     updates["subject"] = new_subject
                     os.environ["SUBJECT"] = new_subject
             elif "Missing AGENT_JWT" in message:
-                refreshed = _refresh_jwt_from_config(resolve_config_path(), on_message=lambda m: _console(_style(m, color="34", bold=True)))
+                refreshed = _refresh_jwt_from_config(resolve_state_path(), on_message=lambda m: _console(_style(m, color="34", bold=True)))
                 if refreshed:
                     continue
                 token = _prompt_for_token()
@@ -388,7 +461,7 @@ def _config_updates_from_args(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _print_config_json() -> None:
-    cfg_path = resolve_config_path()
+    cfg_path = resolve_state_path()
     cfg = load_config_file(cfg_path)
     _console(json.dumps(cfg, indent=2))
 
@@ -403,12 +476,12 @@ def _prompt_setting(current: dict[str, Any], key: str, label: str, secret: bool 
 
 
 def _interactive_settings_editor() -> None:
-    cfg_path = resolve_config_path()
-    ensure_default_config(cfg_path)
+    cfg_path = resolve_state_path()
+    ensure_default_config(resolve_config_path())
     current = load_config_file(cfg_path)
     updates: dict[str, Any] = {}
 
-    _console(_style(f"Editing settings in {cfg_path}", color="34", bold=True))
+    _console(_style("Editing runtime settings.", color="34", bold=True))
     updates["subject"] = _prompt_setting(current, "subject", "Subject")
     updates["jwt_token"] = _prompt_setting(current, "jwt_token", "JWT token", secret=True)
     updates["remote_server_base_url"] = _prompt_setting(current, "remote_server_base_url", "Remote server base URL")
@@ -421,7 +494,8 @@ def _interactive_settings_editor() -> None:
         updates["request_timeout_seconds"] = current_timeout
 
     save_config_updates(updates, cfg_path)
-    _console(_style(f"Saved settings to {cfg_path}", color="32", bold=True))
+    mcp_path = resolve_config_path()
+    _console(_style(f"Saved runtime settings. Edit mcp.json to add MCP servers: {mcp_path}", color="32", bold=True))
 
 
 def _bridge_on_log(tag: str, message: str) -> None:
@@ -516,7 +590,7 @@ async def _run_menu_bridge_until_stopped(stop_event: Event) -> None:
         prompt_for_token=_prompt_for_token,
         derive_subject=_derive_subject_from_token,
         persist_updates=_persist_updates,
-        refresh_jwt=lambda: _refresh_jwt_from_config(resolve_config_path()),
+        refresh_jwt=lambda: _refresh_jwt_from_config(resolve_state_path()),
         enable_spinner=False,
     )
     runner = asyncio.create_task(agent.run())
@@ -537,20 +611,11 @@ def _run_menu() -> None:
 
     def _render_shell_header() -> list[str]:
         version = _agent_version()
-        title = [
-            " __  __  ____ ____      _    ____ ____ ___ ____ _____ _    _   _ _____ ",
-            "|  \\/  |/ ___|  _ \\    / \\  / ___/ ___|_ _/ ___|_   _/ \\  | \\ | |_   _|",
-            "| |\\/| | |   | |_) |  / _ \\ \\___ \\___ \\| |\\___ \\ | |/ _ \\ |  \\| | | |  ",
-            "| |  | | |___|  __/  / ___ \\ ___) |__) | | ___) || / ___ \\| |\\  | | |  ",
-            "|_|  |_|\\____|_|    /_/   \\_\\____/____/___|____/ |_/_/   \\_\\_| \\_| |_|  ",
-            f"                   {APP_TITLE}  v{version}",
-            "",
-        ]
-        return title
+        return _runtime_title_lines(version, include_blank_tail=True)
 
     def _status_lines(cfg_path: Any) -> list[str]:
         current = load_config_file(cfg_path)
-        cwd_label = f"{os.path.basename(os.getcwd()) or os.getcwd()}  menu  {cfg_path}"
+        mcp_path = resolve_config_path()
         lines: list[str] = []
         token = str(current.get("jwt_token", "")).strip()
         profile = current.get("auth_profile", {}) if isinstance(current.get("auth_profile", {}), dict) else {}
@@ -570,7 +635,7 @@ def _run_menu() -> None:
                         lines.append(f"[url] {server_name} -> {mcp_url}")
         else:
             lines.append("[auth] Requires login. Please login using /login command before /start.")
-        lines.append(cwd_label)
+        lines.append(f"[config] Edit mcp.json to add MCP servers: {mcp_path}")
         lines.append("")
         return lines
 
@@ -620,6 +685,8 @@ def _run_menu() -> None:
                 color = "32"
             elif line.startswith("[url]"):
                 color = "34"
+            elif line.startswith("[config]"):
+                color = "90"
             elif " menu " in line:
                 color = "90"
             _console(_style(line, color=color, bold=bold))
@@ -629,6 +696,26 @@ def _run_menu() -> None:
             os.system("cls")
         else:
             os.system("clear")
+
+    def _refresh_menu_view(cfg_path: Any) -> None:
+        nonlocal rendered_history_cursor
+        rendered_history_cursor = 0
+        _clear_terminal()
+        _print_shell_header(cfg_path)
+
+    def _reset_menu_prompt_session() -> None:
+        global _MENU_PROMPT_SESSION, _MENU_PROMPT_STYLE
+        _MENU_PROMPT_SESSION = None
+        _MENU_PROMPT_STYLE = None
+
+    def _prune_auth_history() -> None:
+        history[:] = [
+            line for line in history
+            if line not in {
+                "Login successful.",
+                "Logout successful. jwt_token/refresh_token cleared from config.",
+            }
+        ]
 
     def _set_value_from_menu(cfg_path: Any, key: str, value: str) -> None:
         normalized = key.strip().lower().replace("-", "_")
@@ -773,24 +860,9 @@ def _run_menu() -> None:
                 with redirect_stdout(sys.stdout), redirect_stderr(sys.stderr):
                     async def _run() -> None:
                         config = load_config()
-                        _print_config_tip(config)
-                        short_subject = _display_subject(config.subject)
-                        _console(_style(_frame([f"Subject: {short_subject}", f"WebSocket: {config.websocket_url}"]), color="32", bold=True))
-                        _log("boot", f"loaded config: subject={short_subject} websocket={config.websocket_url}", color="34")
-                        _log("boot", f"mcpServers keys: {list((config.mcp_servers or {}).keys())}", color="34")
-                        try:
-                            claims = jwt.decode(config.jwt_token, options={"verify_signature": False, "verify_exp": False})
-                            _log(
-                                "boot",
-                                "jwt summary: sub=%s role=%s mcp_servers=%s"
-                                % (claims.get("sub", ""), claims.get("role", ""), len(claims.get("capabilities", []) or [])),
-                                color="34",
-                            )
-                        except Exception:
-                            _log("boot", "unable to parse AGENT_JWT claims", color="33")
                         agent = LocalBridgeAgent(
                             config,
-                            on_log=_bridge_on_log,
+                            on_log=lambda _tag, _message: None,
                             prompt_for_token=_prompt_for_token,
                             derive_subject=_derive_subject_from_token,
                             persist_updates=_persist_updates,
@@ -818,7 +890,7 @@ def _run_menu() -> None:
         bridge_thread.start()
         bridge_running_reported = True
 
-    cfg_path = resolve_config_path()
+    cfg_path = resolve_state_path()
     _print_shell_header(cfg_path)
     while True:
         try:
@@ -827,7 +899,7 @@ def _run_menu() -> None:
             if bridge_running_reported and not _bridge_is_running():
                 history.append("Bridge stopped. Use /start to start again.")
                 bridge_running_reported = False
-            cfg_path = resolve_config_path()
+            cfg_path = resolve_state_path()
             _print_history_delta()
             raw = _menu_input_box_fixed()
             if not raw:
@@ -846,11 +918,16 @@ def _run_menu() -> None:
             if _bridge_is_running():
                 history.append("Gateway is already running. Use /stop to stop it.")
                 continue
-            history.append("Starting gateway in background. Use /stop to stop.")
+            history.append("Starting gateway in background. Use /logs on if you want to watch logs.")
             _start_bridge_in_background()
             if bridge_ready_event is not None:
                 while not bridge_ready_event.is_set():
+                    if not _bridge_is_running():
+                        break
                     time.sleep(0.05)
+            if bridge_ready_event is not None and bridge_ready_event.is_set():
+                history.append("Gateway started.")
+                _refresh_menu_view(cfg_path)
             continue
         if raw in {"/stop", "stop"}:
             if _bridge_is_running() and bridge_stop_event is not None:
@@ -880,13 +957,13 @@ def _run_menu() -> None:
                 "Commands:",
                 "  /help                  Show this command list",
                 "  /clear                 Clear screen",
-                "  /show                  Show current config JSON",
-                "  /path                  Show resolved config path",
-                "  /init                  Create config if missing",
-                "  /settings              Open interactive settings editor",
-                "  /login [oauth|jwt] [minutes]  Login and save JWT in config",
+                "  /show                  Show current runtime state JSON",
+                "  /path                  Show resolved mcp.json path",
+                "  /init                  Create mcp.json if missing",
+                "  /settings              Open interactive runtime settings editor",
+                "  /login [oauth|jwt] [minutes]  Login and save JWT in runtime state",
                 "  /logout                Revoke token (best effort) and clear local JWT",
-                "  /set <key> <value>     Update one config key",
+                "  /set <key> <value>     Update one runtime state key",
                 "  /start                 Start gateway",
                 "  /stop                  Stop gateway",
                 "  /logs on|off|show      Monitor verbose logs",
@@ -899,6 +976,8 @@ def _run_menu() -> None:
                 logs_follow = True
                 log_cursor = 0
                 logger.setLevel(logging.DEBUG)
+                logging.getLogger("httpx").setLevel(logging.WARNING)
+                logging.getLogger("httpcore").setLevel(logging.WARNING)
                 logging.getLogger("websockets").setLevel(logging.INFO)
                 logging.getLogger("websockets.client").setLevel(logging.INFO)
                 logging.getLogger("asyncio").setLevel(logging.INFO)
@@ -908,6 +987,8 @@ def _run_menu() -> None:
             if len(parts) > 1 and parts[1].lower() == "off":
                 logs_follow = False
                 logger.setLevel(logging.INFO)
+                logging.getLogger("httpx").setLevel(logging.WARNING)
+                logging.getLogger("httpcore").setLevel(logging.WARNING)
                 logging.getLogger("websockets").setLevel(logging.INFO)
                 logging.getLogger("websockets.client").setLevel(logging.INFO)
                 logging.getLogger("asyncio").setLevel(logging.INFO)
@@ -930,16 +1011,20 @@ def _run_menu() -> None:
             _print_shell_header(cfg_path)
             continue
         if raw in {"/path", "path"}:
-            history.append(str(cfg_path))
+            history.append(str(resolve_config_path()))
             continue
         if raw in {"/init", "init"}:
-            history.extend(_capture_output(lambda: _console(_style(f"Config ready at {ensure_default_config(cfg_path)}", color="32", bold=True))))
+            history.extend(_capture_output(lambda: _console(_style(f"Config ready at {ensure_default_config(resolve_config_path())}", color="32", bold=True))))
             continue
         if raw in {"/settings", "settings"}:
-            _interactive_settings_editor()
+            _reset_menu_prompt_session()
+            history.extend(_capture_output(_interactive_settings_editor))
             history.append("Settings updated.")
+            _refresh_menu_view(cfg_path)
             continue
         if raw.startswith("/login") or raw.startswith("login"):
+            _reset_menu_prompt_session()
+            _prune_auth_history()
             parts = raw.split()
             login_mode = "oauth"
             expiry: int | None = None
@@ -956,11 +1041,20 @@ def _run_menu() -> None:
                 except ValueError:
                     history.append("Usage: /login [oauth|jwt] [expiry_minutes]")
                     continue
+            before = load_config_file(cfg_path)
+            had_token_before = bool(str(before.get("jwt_token", "")).strip())
             _menu_login(cfg_path, mode=login_mode, expiry_minutes=expiry)
-            history.append("Login flow completed.")
+            after = load_config_file(cfg_path)
+            has_token_after = bool(str(after.get("jwt_token", "")).strip())
+            if not had_token_before and has_token_after:
+                history.append("Login successful.")
+            _refresh_menu_view(cfg_path)
             continue
         if raw in {"/logout", "logout"}:
+            _reset_menu_prompt_session()
+            _prune_auth_history()
             history.extend(_capture_output(lambda: _menu_logout(cfg_path)))
+            _refresh_menu_view(cfg_path)
             continue
         if raw.startswith("/set ") or raw.startswith("set "):
             try:
@@ -974,6 +1068,8 @@ def _run_menu() -> None:
             key = parts[1]
             value = " ".join(parts[2:])
             history.extend(_capture_output(lambda: _set_value_from_menu(cfg_path, key, value)))
+            if key.strip().lower().replace("-", "_") in {"subject", "jwt_token", "refresh_token", "remote_server_base_url", "websocket_url"}:
+                _refresh_menu_view(cfg_path)
             continue
 
         history.append(f"Unknown command: {raw}")
@@ -997,8 +1093,9 @@ def _handle_non_run_command(args: argparse.Namespace) -> bool:
             if not updates:
                 _console(_style("No config values provided.", color="33", bold=True))
                 return True
-            path = save_config_updates(updates, resolve_config_path())
-            _console(_style(f"Saved settings to {path}", color="32", bold=True))
+            path = save_config_updates(updates, resolve_state_path())
+            mcp_path = resolve_config_path()
+            _console(_style(f"Saved runtime settings. Edit mcp.json to add MCP servers: {mcp_path}", color="32", bold=True))
             return True
     if args.command == "settings":
         _apply_cli_overrides(args)
@@ -1019,7 +1116,7 @@ async def _main(show_runtime_header: bool = True) -> None:
     _print_config_tip(config)
     short_subject = _display_subject(config.subject)
     _console(_style(_frame([f"Subject: {short_subject}", f"WebSocket: {config.websocket_url}"]), color="32", bold=True))
-    _log("boot", f"loaded config: subject={short_subject} websocket={config.websocket_url}", color="34")
+    _log("boot", f"loaded runtime state: subject={short_subject} websocket={config.websocket_url}", color="34")
     _log("boot", f"mcpServers keys: {list((config.mcp_servers or {}).keys())}", color="34")
     try:
         claims = jwt.decode(config.jwt_token, options={"verify_signature": False, "verify_exp": False})
@@ -1033,7 +1130,7 @@ async def _main(show_runtime_header: bool = True) -> None:
         prompt_for_token=_prompt_for_token,
         derive_subject=_derive_subject_from_token,
         persist_updates=_persist_updates,
-        refresh_jwt=lambda: _refresh_jwt_from_config(resolve_config_path()),
+        refresh_jwt=lambda: _refresh_jwt_from_config(resolve_state_path()),
         enable_spinner=True,
     )
     loop = asyncio.get_running_loop()

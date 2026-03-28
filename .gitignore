@@ -12,6 +12,7 @@ playwright-report/
 report.json
 .last-run.json
 error.txt
+.npm-cache/
 
 # Python
 __pycache__/

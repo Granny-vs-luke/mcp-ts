@@ -12,7 +12,11 @@ import jwt
 from dotenv import load_dotenv
 
 DEFAULT_REMOTE_SERVER_BASE_URL = "https://hub.linkos.in/agent"
-CONFIG_KEY_ORDER = [
+DEFAULT_CONFIG_DIR_NAME = ".mcpassistant"
+DEFAULT_MCP_CONFIG_NAME = "mcp.json"
+DEFAULT_STATE_CONFIG_NAME = ".mcpassistant.json"
+LEGACY_CONFIG_NAME = "config.json"
+STATE_KEY_ORDER = [
     "subject",
     "jwt_token",
     "refresh_token",
@@ -26,7 +30,7 @@ CONFIG_KEY_ORDER = [
     "discovery_candidates",
     "capabilities",
     "local_capability_endpoints",
-    "mcpServers",
+    "auth_profile",
 ]
 
 
@@ -97,7 +101,7 @@ def _load_config_file(path: Path) -> dict:
 
 def _ordered_config(data: dict[str, Any]) -> dict[str, Any]:
     ordered: dict[str, Any] = {}
-    for key in CONFIG_KEY_ORDER:
+    for key in STATE_KEY_ORDER:
         if key in data:
             ordered[key] = data[key]
     for key, value in data.items():
@@ -132,27 +136,139 @@ def _ensure_default_mcp_servers(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _default_config_template() -> dict[str, Any]:
-    return _ordered_config(_ensure_default_mcp_servers({
+    return _ordered_config({
         "remote_server_base_url": DEFAULT_REMOTE_SERVER_BASE_URL,
-    }))
+    })
+
+
+def _write_json(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+        handle.write("\n")
+
+
+def _extract_state_config(data: dict[str, Any]) -> dict[str, Any]:
+    return _ordered_config({
+        key: value for key, value in data.items()
+        if key != "mcpServers"
+    })
+
+
+def _extract_mcp_config(data: dict[str, Any]) -> dict[str, Any]:
+    return _ensure_default_mcp_servers({
+        "mcpServers": data.get("mcpServers", {}),
+    })
+
+
+def _base_dirs() -> list[Path]:
+    cwd = Path.cwd().resolve()
+    return [cwd, *cwd.parents]
+
+
+def _default_config_dir(base_dir: Path | None = None) -> Path:
+    base = base_dir or Path.cwd().resolve()
+    return base / DEFAULT_CONFIG_DIR_NAME
+
+
+def _default_mcp_config_path(base_dir: Path | None = None) -> Path:
+    return _default_config_dir(base_dir) / DEFAULT_MCP_CONFIG_NAME
+
+
+def _default_state_config_path(base_dir: Path | None = None) -> Path:
+    return _default_config_dir(base_dir) / DEFAULT_STATE_CONFIG_NAME
+
+
+def _resolve_mcp_config_path() -> Path:
+    env_path = os.getenv("AGENT_CONFIG_PATH")
+    if env_path:
+        return Path(env_path)
+
+    base_dirs = _base_dirs()
+    for base in base_dirs:
+        candidate = base / DEFAULT_CONFIG_DIR_NAME / DEFAULT_MCP_CONFIG_NAME
+        if candidate.exists():
+            return candidate
+    for base in base_dirs:
+        candidate = base / DEFAULT_MCP_CONFIG_NAME
+        if candidate.exists():
+            return candidate
+    for base in base_dirs:
+        candidate = base / LEGACY_CONFIG_NAME
+        if candidate.exists():
+            return candidate
+    return _default_mcp_config_path()
+
+
+def _resolve_state_config_path() -> Path:
+    env_path = os.getenv("AGENT_STATE_PATH")
+    if env_path:
+        return Path(env_path)
+
+    base_dirs = _base_dirs()
+    for base in base_dirs:
+        candidate = base / DEFAULT_CONFIG_DIR_NAME / DEFAULT_STATE_CONFIG_NAME
+        if candidate.exists():
+            return candidate
+    for base in base_dirs:
+        candidate = base / DEFAULT_STATE_CONFIG_NAME
+        if candidate.exists():
+            return candidate
+    return _default_state_config_path()
+
+
+def _default_dir_for_target(target: Path) -> Path:
+    if target.parent.name == DEFAULT_CONFIG_DIR_NAME:
+        return target.parent
+    return target.parent / DEFAULT_CONFIG_DIR_NAME
 
 
 def ensure_default_config(path: Path | None = None) -> Path:
-    target = path or _resolve_config_path()
+    target = path or _resolve_mcp_config_path()
+    state_target = _resolve_state_config_path()
+    explicit_config = bool(os.getenv("AGENT_CONFIG_PATH"))
+    explicit_state = bool(os.getenv("AGENT_STATE_PATH"))
+    default_dir = _default_dir_for_target(target)
+    default_mcp_target = default_dir / DEFAULT_MCP_CONFIG_NAME
+    default_state_target = default_dir / DEFAULT_STATE_CONFIG_NAME
+
+    if target.name == LEGACY_CONFIG_NAME and target.exists():
+        legacy = _load_config_file(target)
+        if isinstance(legacy, dict):
+            mcp_target = default_mcp_target if not explicit_config else target.with_name(DEFAULT_MCP_CONFIG_NAME)
+            state_target = default_state_target if not explicit_state else state_target
+            state_data = _extract_state_config(legacy)
+            mcp_data = _extract_mcp_config(legacy)
+            if not mcp_target.exists():
+                _write_json(mcp_target, mcp_data)
+            if state_data and not state_target.exists():
+                _write_json(state_target, state_data)
+            return mcp_target
+
     if target.exists():
         existing = _load_config_file(target)
         if isinstance(existing, dict):
-            updated = _ordered_config(_ensure_default_mcp_servers(dict(existing)))
+            updated = _extract_mcp_config(dict(existing))
             if updated != existing:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with target.open("w", encoding="utf-8") as handle:
-                    json.dump(updated, handle, indent=2)
-                    handle.write("\n")
+                _write_json(target, updated)
+        if not explicit_config and target.parent.name != DEFAULT_CONFIG_DIR_NAME:
+            if not default_mcp_target.exists() and isinstance(existing, dict):
+                _write_json(default_mcp_target, _extract_mcp_config(dict(existing)))
+            target = default_mcp_target
+        if not explicit_state and state_target.parent.name != DEFAULT_CONFIG_DIR_NAME:
+            if state_target.exists() and not default_state_target.exists():
+                _write_json(default_state_target, _load_config_file(state_target))
+            state_target = default_state_target
+        if not state_target.exists():
+            _write_json(state_target, _default_config_template())
         return target
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("w", encoding="utf-8") as handle:
-        json.dump(_default_config_template(), handle, indent=2)
-        handle.write("\n")
+    if not explicit_config and target.parent.name != DEFAULT_CONFIG_DIR_NAME:
+        target = default_mcp_target
+    _write_json(target, _extract_mcp_config({}))
+    if not explicit_state and state_target.parent.name != DEFAULT_CONFIG_DIR_NAME:
+        state_target = default_state_target
+    if not state_target.exists():
+        _write_json(state_target, _default_config_template())
     return target
 
 
@@ -172,24 +288,12 @@ def _load_env_files() -> None:
             load_dotenv(candidate, override=False)
 
 
-def _resolve_config_path() -> Path:
-    env_path = os.getenv("AGENT_CONFIG_PATH")
-    if env_path:
-        return Path(env_path)
-
-    cwd = Path.cwd().resolve()
-    module_dir = Path(__file__).resolve().parent
-    candidates = [cwd / "config.json", module_dir / "config.json"]
-    candidates.extend(parent / "config.json" for parent in cwd.parents)
-    candidates.extend(parent / "config.json" for parent in module_dir.parents)
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return cwd / "config.json"
-
-
 def resolve_config_path() -> Path:
-    return _resolve_config_path()
+    return _resolve_mcp_config_path()
+
+
+def resolve_state_path() -> Path:
+    return _resolve_state_config_path()
 
 
 def _is_local_ws(url: str) -> bool:
@@ -203,9 +307,10 @@ def _is_local_ws(url: str) -> bool:
 
 def load_config() -> AgentConfig:
     _load_env_files()
-    cfg_path = _resolve_config_path()
-    ensure_default_config(cfg_path)
-    file_cfg = _load_config_file(cfg_path)
+    mcp_cfg_path = ensure_default_config(_resolve_mcp_config_path())
+    state_cfg_path = _resolve_state_config_path()
+    file_cfg = load_config_file(state_cfg_path)
+    mcp_file_cfg = _load_config_file(mcp_cfg_path)
 
     file_identity = str(file_cfg.get("subject", ""))
     subject = _get_env("SUBJECT", "subject", file_identity)
@@ -236,7 +341,7 @@ def load_config() -> AgentConfig:
             capabilities = [str(item) for item in claims.get("capabilities", [])]
 
     endpoints = file_cfg.get("local_capability_endpoints", {})
-    mcp_servers_raw = file_cfg.get("mcpServers", file_cfg.get("mcp_servers", {}))
+    mcp_servers_raw = mcp_file_cfg.get("mcpServers", mcp_file_cfg.get("mcp_servers", {}))
     mcp_servers = mcp_servers_raw if isinstance(mcp_servers_raw, dict) else {}
     if not endpoints and mcp_servers:
         for server_name, server_cfg in mcp_servers.items():
@@ -298,18 +403,21 @@ def load_config() -> AgentConfig:
 
 
 def load_config_file(path: Path | None = None) -> dict[str, Any]:
-    target = path or _resolve_config_path()
+    target = path or _resolve_state_config_path()
     return _load_config_file(target)
 
 
 def save_config_updates(updates: dict[str, Any], path: Path | None = None) -> Path:
-    target = path or _resolve_config_path()
+    target = path or _resolve_state_config_path()
     existing = _load_config_file(target)
     merged = existing if isinstance(existing, dict) else {}
     merged.update(updates)
-    ordered = _ordered_config(_ensure_default_mcp_servers(merged))
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("w", encoding="utf-8") as handle:
-        json.dump(ordered, handle, indent=2)
-        handle.write("\n")
+    ordered = _ordered_config(merged)
+    _write_json(target, ordered)
     return target
+
+
+def load_mcp_config_file(path: Path | None = None) -> dict[str, Any]:
+    target = path or _resolve_mcp_config_path()
+    ensure_default_config(target)
+    return _load_config_file(target)

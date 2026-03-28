@@ -20,6 +20,30 @@ from websockets.exceptions import InvalidStatus
 from .config import AgentConfig, resolve_config_path, save_config_updates
 
 logger = logging.getLogger("mcp_local_agent")
+
+
+def _supports_ansi_output() -> bool:
+    if os.getenv("NO_COLOR"):
+        return False
+    if not sys.stdout.isatty():
+        return False
+    term = os.getenv("TERM", "").lower()
+    if os.name != "nt":
+        return term not in {"", "dumb"}
+    return True
+
+
+def _ansi(text: str, color_code: str = "", *, bold: bool = False) -> str:
+    if not _supports_ansi_output():
+        return text
+    codes: list[str] = []
+    if bold:
+        codes.append("1")
+    if color_code:
+        codes.append(color_code)
+    if not codes:
+        return text
+    return f"\x1b[{';'.join(codes)}m{text}\x1b[0m"
 DEFAULT_PROTOCOL_VERSION = os.getenv("MCP_PROTOCOL_VERSION", "2025-11-25")
 VERBOSE_INVOKE_LOGS = os.getenv("MCP_LOCAL_VERBOSE_LOGS", "false").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -231,14 +255,12 @@ class LocalBridgeAgent:
 
     async def run(self) -> None:
         await self._start_mcp_servers_if_configured()
-        self._log("bridge", f"starting: websocket={self.config.websocket_url} subject={_display_subject(self.config.subject)}")
         backoff = self.config.reconnect_initial_delay_seconds
         attempt = 0
         try:
             while not self._stop_event.is_set():
                 attempt += 1
                 try:
-                    self._log("bridge", f"connecting websocket (attempt {attempt})")
                     await self._session()
                     backoff = self.config.reconnect_initial_delay_seconds
                 except asyncio.CancelledError:
@@ -267,7 +289,7 @@ class LocalBridgeAgent:
             announced_servers = self._announced_mcp_servers()
             register_msg = {"type": "register", "subject": self.config.subject, "capabilities": announced_servers}
             await websocket.send(json.dumps(register_msg))
-            self._log("bridge", f"connected and registered mcp_servers={','.join(announced_servers)}")
+            self._log("bridge", f"connected mcp_servers={','.join(announced_servers)}")
             base = _http_base_from_websocket_url(self.config.websocket_url).rstrip("/")
             published = {
                 name: {
@@ -277,9 +299,7 @@ class LocalBridgeAgent:
                 }
                 for name in announced_servers
             }
-            save_config_updates({"published_endpoints": published}, resolve_config_path())
-            for name, urls in published.items():
-                self._log("url", f"{name} -> {urls['mcp']}")
+            save_config_updates({"published_endpoints": published})
             if self._on_registered is not None:
                 try:
                     self._on_registered()
@@ -312,7 +332,6 @@ class LocalBridgeAgent:
             self._log("mcp", "START_MCP_SERVERS=false; skipping mcpServers startup")
             return
         total = len(servers)
-        self._log("mcp", f"initializing {total} MCP server session(s)")
         for index, (name, cfg) in enumerate(servers.items(), start=1):
             if not isinstance(cfg, dict):
                 self._log("mcp", f"[{index}/{total}] skipping '{name}' (invalid config object)")
@@ -320,7 +339,6 @@ class LocalBridgeAgent:
             managed = ManagedMCPServer(name, cfg)
             try:
                 start_at = asyncio.get_running_loop().time()
-                self._log("mcp", f"[{index}/{total}] starting '{name}' ...")
                 if self._enable_spinner:
                     await self._run_with_spinner(f"[{index}/{total}] '{name}'", managed.start())
                 else:
@@ -533,7 +551,10 @@ class LocalBridgeAgent:
             while not done.is_set():
                 elapsed = loop.time() - start
                 icon = frames[step % len(frames)]
-                print(f"\r[mcp] {task_label} {icon} initializing {elapsed:.1f}s", end="", flush=True)
+                status = _ansi("initializing", "36")
+                spinner = _ansi(icon, "33", bold=True)
+                clear = "\r\x1b[2K" if _supports_ansi_output() else "\r"
+                print(f"{clear}{task_label} {spinner} {status} {elapsed:.1f}s", end="", flush=True)
                 step += 1
                 try:
                     await asyncio.wait_for(done.wait(), timeout=interval_seconds)
@@ -546,4 +567,5 @@ class LocalBridgeAgent:
         finally:
             done.set()
             await ticker_task
-            print("\r" + " " * 120 + "\r", end="", flush=True)
+            clear = "\r\x1b[2K" if _supports_ansi_output() else "\r" + " " * 120 + "\r"
+            print(clear, end="", flush=True)
