@@ -57,6 +57,7 @@ export interface MockSession {
         expires_in?: number;
         refresh_token?: string;
     };
+    headers?: Record<string, string>;
 }
 
 /**

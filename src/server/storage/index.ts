@@ -2,12 +2,17 @@
 import { RedisStorageBackend } from './redis-backend';
 import { MemoryStorageBackend } from './memory-backend';
 import { FileStorageBackend } from './file-backend';
-import { SqliteStorage } from './sqlite-backend';
-import type { StorageBackend } from './types';
+import { SqliteStorage } from './sqlite-backend.js';
+import { SupabaseStorageBackend } from './supabase-backend.js';
+import type { StorageBackend } from './types.js';
 
 // Re-export types
-export * from './types';
-export { RedisStorageBackend, MemoryStorageBackend, FileStorageBackend, SqliteStorage };
+export * from './types.js';
+export { RedisStorageBackend, MemoryStorageBackend, FileStorageBackend, SqliteStorage, SupabaseStorageBackend };
+
+export function createSupabaseStorageBackend(client: any): SupabaseStorageBackend {
+    return new SupabaseStorageBackend(client);
+}
 
 let storageInstance: StorageBackend | null = null;
 let storagePromise: Promise<StorageBackend> | null = null;
@@ -52,6 +57,26 @@ async function createStorage(): Promise<StorageBackend> {
         const dbPath = process.env.MCP_TS_STORAGE_SQLITE_PATH;
         console.log(`[Storage] Using SQLite storage (${dbPath || 'default'}) (Explicit)`);
         return await initializeStorage(new SqliteStorage({ path: dbPath }));
+    }
+
+    if (type === 'supabase') {
+        const url = process.env.SUPABASE_URL;
+        const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+        
+        if (!url || !key) {
+            console.warn('[Storage] MCP_TS_STORAGE_TYPE is "supabase" but SUPABASE_URL and a key are missing');
+        } else {
+            try {
+                const { createClient } = await import('@supabase/supabase-js');
+                const client = createClient(url, key);
+                console.log('[Storage] Using Supabase storage (Explicit)');
+                return new SupabaseStorageBackend(client as any);
+            } catch (error: any) {
+                console.error('[Storage] Failed to initialize Supabase:', error.message);
+                console.log('[Storage] Falling back to In-Memory storage');
+                return new MemoryStorageBackend();
+            }
+        }
     }
 
     if (type === 'memory') {
