@@ -13,6 +13,7 @@ export default defineConfig({
     'adapters/mastra-adapter': 'src/adapters/mastra-adapter.ts',
     'adapters/agui-adapter': 'src/adapters/agui-adapter.ts',
     'adapters/agui-middleware': 'src/adapters/agui-middleware.ts',
+    'bin/mcp-ts': 'src/bin/mcp-ts.ts',
   },
   format: ['cjs', 'esm'],
   dts: {
@@ -41,4 +42,5 @@ export default defineConfig({
   // Preserve module structure for better tree-shaking
   bundle: true,
   minify: false,
+  shims: true,
 });

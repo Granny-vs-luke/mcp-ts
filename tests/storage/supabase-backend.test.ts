@@ -11,13 +11,16 @@ import { createMockSession, createMockTokens } from '../test-utils';
  */
 function createMockSupabaseClient() {
     let sessions: any[] = [];
+    let simulateMissingTable = false;
 
-    return {
+    const mock = {
         /** Test-only helper to inspect internal state */
         _getSessions: () => sessions,
+        get _simulateMissingTable() { return simulateMissingTable; },
+        set _simulateMissingTable(v: boolean) { simulateMissingTable = v; },
 
         from: (_table: string) => {
-            let action: 'insert' | 'update' | 'select' | 'delete' | null = null;
+            let action: 'insert' | 'update' | 'select' | 'delete' | 'init_check' | null = null;
             let payload: any = null;
             const filters: Array<(item: any) => boolean> = [];
             let selectAfterMutation = false;
@@ -27,13 +30,19 @@ function createMockSupabaseClient() {
                 update: (data: any) => { action = 'update'; payload = { ...data }; return chain; },
                 delete: () => { action = 'delete'; return chain; },
                 select: (_cols?: any) => {
-                    // If called after update/delete → request rows back, not a fresh SELECT
-                    if (action === 'update' || action === 'delete') {
+                    // Specific check for init() validation: select('session_id').limit(0)
+                    if (_cols === 'session_id' && payload === 'limit_zero_check') {
+                        action = 'init_check';
+                    } else if (action === 'update' || action === 'delete') {
                         selectAfterMutation = true;
                     } else {
                         action = 'select';
                     }
                     return chain;
+                },
+                limit: (n: number) => { 
+                    if (n === 0) payload = 'limit_zero_check'; 
+                    return chain; 
                 },
                 eq:  (k: string, v: any) => { filters.push(row => row[k] === v);  return chain; },
                 neq: (k: string, v: any) => { filters.push(row => row[k] !== v);  return chain; },
@@ -54,6 +63,11 @@ function createMockSupabaseClient() {
                  */
                 then: (resolve: (v: any) => void, reject?: (e: any) => void) => {
                     try {
+                        // Determine if this is actually our init_check based on column choice + limit
+                        if (action === 'select' && payload === 'limit_zero_check') {
+                            action = 'init_check';
+                        }
+
                         if (action === 'insert') {
                             if (sessions.some(s => s.session_id === payload.session_id)) {
                                 return resolve({ data: null, error: { code: '23505', message: 'duplicate key violation' } });
@@ -72,6 +86,12 @@ function createMockSupabaseClient() {
                             const removed = before - sessions.length;
                             return resolve({ data: selectAfterMutation ? Array(removed).fill(null) : null, error: null });
 
+                        } else if (action === 'init_check') {
+                            if (simulateMissingTable) {
+                                return resolve({ data: null, error: { code: '42P01', message: 'relation "mcp_sessions" does not exist' } });
+                            }
+                            return resolve({ data: [], error: null });
+
                         } else if (action === 'select') {
                             const res = sessions.filter(s => filters.every(f => f(s)));
                             return resolve({ data: res, error: null });
@@ -86,7 +106,8 @@ function createMockSupabaseClient() {
             };
             return chain;
         },
-    } as any;
+    };
+    return mock;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,6 +120,19 @@ test.describe('SupabaseStorageBackend', () => {
     test.beforeEach(() => {
         mockSupabase = createMockSupabaseClient();
         storage    = new SupabaseStorageBackend(mockSupabase);
+    });
+
+    // ── init ─────────────────────────────────────────────────────────────────
+    test.describe('init', () => {
+        test('resolves when table exists', async () => {
+            await expect(storage.init()).resolves.toBeUndefined();
+        });
+
+        test('throws descriptive error when table is missing', async () => {
+            mockSupabase._simulateMissingTable = true;
+            await expect(storage.init()).rejects.toThrow(/Table "mcp_sessions" not found/);
+            await expect(storage.init()).rejects.toThrow(/npx mcp-ts supabase-init/);
+        });
     });
 
     // ── generateSessionId ────────────────────────────────────────────────────

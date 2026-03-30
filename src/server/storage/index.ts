@@ -70,7 +70,7 @@ async function createStorage(): Promise<StorageBackend> {
                 const { createClient } = await import('@supabase/supabase-js');
                 const client = createClient(url, key);
                 console.log('[Storage] Using Supabase storage (Explicit)');
-                return new SupabaseStorageBackend(client as any);
+                return await initializeStorage(new SupabaseStorageBackend(client as any));
             } catch (error: any) {
                 console.error('[Storage] Failed to initialize Supabase:', error.message);
                 console.log('[Storage] Falling back to In-Memory storage');

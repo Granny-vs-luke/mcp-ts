@@ -8,6 +8,9 @@
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "mcp-ts": "./dist/bin/mcp-ts.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -68,7 +71,9 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "supabase",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",

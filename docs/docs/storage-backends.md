@@ -232,9 +232,19 @@ SUPABASE_ANON_KEY=your-anon-key
 To use Supabase as a storage backend, you must create the `mcp_sessions` table and configure RLS policies.
 
 #### Option A: Supabase CLI (Recommended)
-The project includes a pre-configured migration file. To apply it:
-1. Link your project: `npx supabase link --project-ref <your-project-id>`
-2. Push migrations: `npm run supabase:push`
+You can easily "eject" the required migration SQL into your own project using the built-in CLI:
+
+1. Run the initialization command:
+   ```bash
+   npx mcp-ts supabase-init
+   ```
+   This will copy the migration files to your local `./supabase/migrations/` folder.
+
+2. Link your project & push:
+   ```bash
+   npx supabase link --project-ref <your-project-id>
+   npx supabase db push
+   ```
 
 #### Option B: SQL Editor (Manual)
 If you prefer manual setup, copy the SQL from the [migration file](https://github.com/zonlabs/mcp-ts/blob/main/supabase/migrations/20260330195700_install_mcp_sessions.sql) and run it in the Supabase Dashboard SQL Editor.

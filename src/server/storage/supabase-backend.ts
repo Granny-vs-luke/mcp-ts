@@ -6,6 +6,25 @@ export class SupabaseStorageBackend implements StorageBackend {
     private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
 
     constructor(private supabase: SupabaseClient) {}
+    
+    async init(): Promise<void> {
+        // Validate that the table exists
+        const { error } = await this.supabase
+            .from('mcp_sessions')
+            .select('session_id')
+            .limit(0);
+
+        if (error) {
+            // Postgres error code 42P01 is "relation does not exist"
+            if (error.code === '42P01') {
+                throw new Error(
+                    '[SupabaseStorage] Table "mcp_sessions" not found in your database. ' +
+                    'Please run "npx mcp-ts supabase-init" in your project to set up the required table and RLS policies.'
+                );
+            }
+            throw new Error(`[SupabaseStorage] Initialization check failed: ${error.message}`);
+        }
+    }
 
     generateSessionId(): string {
         return crypto.randomUUID();
