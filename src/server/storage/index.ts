@@ -108,6 +108,19 @@ async function createStorage(): Promise<StorageBackend> {
         return await initializeStorage(new SqliteStorage({ path: process.env.MCP_TS_STORAGE_SQLITE_PATH }));
     }
 
+    if (process.env.SUPABASE_URL && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)) {
+        try {
+            const { createClient } = await import('@supabase/supabase-js');
+            const url = process.env.SUPABASE_URL;
+            const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
+            const client = createClient(url, key);
+            console.log('[Storage] Auto-detected Supabase. Using Supabase storage.');
+            return await initializeStorage(new SupabaseStorageBackend(client as any));
+        } catch (error: any) {
+            console.error('[Storage] Supabase auto-detection failed:', error.message);
+        }
+    }
+
     console.log('[Storage] No storage configured. Using In-Memory storage (Default).');
     return new MemoryStorageBackend();
 }
