@@ -24,6 +24,8 @@ export class SupabaseStorageBackend implements StorageBackend {
             }
             throw new Error(`[SupabaseStorage] Initialization check failed: ${error.message}`);
         }
+
+        console.log('[mcp-ts][Storage] Supabase: ✓ "mcp_sessions" table verified.');
     }
 
     generateSessionId(): string {

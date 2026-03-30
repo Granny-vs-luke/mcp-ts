@@ -27,6 +27,10 @@ export class MemoryStorageBackend implements StorageBackend {
 
     constructor() { }
 
+    async init(): Promise<void> {
+        console.log('[mcp-ts][Storage] Memory: ✓ internal memory store active.');
+    }
+
     private getSessionKey(identity: string, sessionId: string): string {
         return `${identity}:${sessionId}`;
     }

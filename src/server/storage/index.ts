@@ -35,27 +35,24 @@ async function createStorage(): Promise<StorageBackend> {
         try {
             const { getRedis } = await import('./redis.js');
             const redis = await getRedis();
-            console.log('[Storage] Using Redis storage (Explicit)');
-            return new RedisStorageBackend(redis);
+            console.log('[mcp-ts][Storage] Explicit selection: "redis"');
+            return await initializeStorage(new RedisStorageBackend(redis));
         } catch (error: any) {
-            console.error('[Storage] Failed to initialize Redis:', error.message);
-            console.log('[Storage] Falling back to In-Memory storage');
-            return new MemoryStorageBackend();
+            console.error('[mcp-ts][Storage] Failed to initialize Redis:', error.message);
+            console.log('[mcp-ts][Storage] Falling back to In-Memory storage');
+            return await initializeStorage(new MemoryStorageBackend());
         }
     }
 
     if (type === 'file') {
         const filePath = process.env.MCP_TS_STORAGE_FILE;
-        if (!filePath) {
-            console.warn('[Storage] MCP_TS_STORAGE_TYPE is "file" but MCP_TS_STORAGE_FILE is missing');
-        }
-        console.log(`[Storage] Using File storage (${filePath}) (Explicit)`);
+        console.log(`[mcp-ts][Storage] Explicit selection: "file" (${filePath || 'default'})`);
         return await initializeStorage(new FileStorageBackend({ path: filePath }));
     }
 
     if (type === 'sqlite') {
         const dbPath = process.env.MCP_TS_STORAGE_SQLITE_PATH;
-        console.log(`[Storage] Using SQLite storage (${dbPath || 'default'}) (Explicit)`);
+        console.log(`[mcp-ts][Storage] Explicit selection: "sqlite" (${dbPath || 'default'})`);
         return await initializeStorage(new SqliteStorage({ path: dbPath }));
     }
 
@@ -64,24 +61,27 @@ async function createStorage(): Promise<StorageBackend> {
         const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
         
         if (!url || !key) {
-            console.warn('[Storage] MCP_TS_STORAGE_TYPE is "supabase" but SUPABASE_URL and a key are missing');
+            console.warn('[mcp-ts][Storage] Explicit selection "supabase" requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
         } else {
+            if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+                console.warn('[mcp-ts][Storage] ⚠️  Warning: Using "SUPABASE_ANON_KEY" for server-side storage. You may encounter RLS policy violations. "SUPABASE_SERVICE_ROLE_KEY" is recommended.');
+            }
             try {
                 const { createClient } = await import('@supabase/supabase-js');
                 const client = createClient(url, key);
-                console.log('[Storage] Using Supabase storage (Explicit)');
+                console.log('[mcp-ts][Storage] Explicit selection: "supabase"');
                 return await initializeStorage(new SupabaseStorageBackend(client as any));
             } catch (error: any) {
-                console.error('[Storage] Failed to initialize Supabase:', error.message);
-                console.log('[Storage] Falling back to In-Memory storage');
-                return new MemoryStorageBackend();
+                console.error('[mcp-ts][Storage] Failed to initialize Supabase:', error.message);
+                console.log('[mcp-ts][Storage] Falling back to In-Memory storage');
+                return await initializeStorage(new MemoryStorageBackend());
             }
         }
     }
 
     if (type === 'memory') {
-        console.log('[Storage] Using In-Memory storage (Explicit)');
-        return new MemoryStorageBackend();
+        console.log('[mcp-ts][Storage] Explicit selection: "memory"');
+        return await initializeStorage(new MemoryStorageBackend());
     }
 
     // Automatic inference (Fallback)
@@ -89,22 +89,21 @@ async function createStorage(): Promise<StorageBackend> {
         try {
             const { getRedis } = await import('./redis.js');
             const redis = await getRedis();
-            console.log('[Storage] Auto-detected REDIS_URL. Using Redis storage.');
-            return new RedisStorageBackend(redis);
+            console.log('[mcp-ts][Storage] Auto-detection: "redis" (via REDIS_URL)');
+            return await initializeStorage(new RedisStorageBackend(redis));
         } catch (error: any) {
-            console.error('[Storage] Redis auto-detection failed:', error.message);
-            console.log('[Storage] Falling back to In-Memory storage');
-            return new MemoryStorageBackend();
+            console.error('[mcp-ts][Storage] Redis auto-detection failed:', error.message);
+            console.log('[mcp-ts][Storage] Falling back to next available backend');
         }
     }
 
     if (process.env.MCP_TS_STORAGE_FILE) {
-        console.log(`[Storage] Auto-detected MCP_TS_STORAGE_FILE. Using File storage (${process.env.MCP_TS_STORAGE_FILE}).`);
+        console.log(`[mcp-ts][Storage] Auto-detection: "file" (${process.env.MCP_TS_STORAGE_FILE})`);
         return await initializeStorage(new FileStorageBackend({ path: process.env.MCP_TS_STORAGE_FILE }));
     }
 
     if (process.env.MCP_TS_STORAGE_SQLITE_PATH) {
-        console.log(`[Storage] Auto-detected MCP_TS_STORAGE_SQLITE_PATH. Using SQLite storage (${process.env.MCP_TS_STORAGE_SQLITE_PATH}).`);
+        console.log(`[mcp-ts][Storage] Auto-detection: "sqlite" (${process.env.MCP_TS_STORAGE_SQLITE_PATH})`);
         return await initializeStorage(new SqliteStorage({ path: process.env.MCP_TS_STORAGE_SQLITE_PATH }));
     }
 
@@ -113,16 +112,21 @@ async function createStorage(): Promise<StorageBackend> {
             const { createClient } = await import('@supabase/supabase-js');
             const url = process.env.SUPABASE_URL;
             const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
+            
+            if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+                console.warn('[mcp-ts][Storage] ⚠️ Warning: Using "SUPABASE_ANON_KEY" for server-side storage. You may encounter RLS policy violations. "SUPABASE_SERVICE_ROLE_KEY" is recommended.');
+            }
+
             const client = createClient(url, key);
-            console.log('[Storage] Auto-detected Supabase. Using Supabase storage.');
+            console.log('[mcp-ts][Storage] Auto-detection: "supabase" (via SUPABASE_URL)');
             return await initializeStorage(new SupabaseStorageBackend(client as any));
         } catch (error: any) {
-            console.error('[Storage] Supabase auto-detection failed:', error.message);
+            console.error('[mcp-ts][Storage] Supabase auto-detection failed:', error.message);
         }
     }
 
-    console.log('[Storage] No storage configured. Using In-Memory storage (Default).');
-    return new MemoryStorageBackend();
+    console.log('[mcp-ts][Storage] Defaulting to: "memory"');
+    return await initializeStorage(new MemoryStorageBackend());
 }
 
 async function getStorage(): Promise<StorageBackend> {

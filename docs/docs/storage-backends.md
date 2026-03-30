@@ -221,11 +221,13 @@ MCP_TS_STORAGE_TYPE=supabase
 
 # Supabase connection details (required)
 SUPABASE_URL=https://your-project.supabase.co
+# Use the service_role key for server-side storage (not the anon key)
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
-# OR for client-side/authenticated use
-SUPABASE_ANON_KEY=your-anon-key
 ```
+
+:::warning
+**Always use `SUPABASE_SERVICE_ROLE_KEY`** for server-side storage — not `SUPABASE_ANON_KEY`. The anon key is subject to Row Level Security (RLS) policies which will block session creation. The service_role key is designed for trusted server-to-server communication and bypasses RLS. Find it in: **Supabase Dashboard → Project Settings → API → service_role**.
+:::
 
 **Database Setup:**
 
@@ -261,7 +263,11 @@ If you prefer manual setup, copy the SQL from the [migration file](https://githu
 import { createSupabaseStorageBackend } from '@mcp-ts/sdk/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(URL, KEY);
+// Always use the service_role key for server-side usage
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 const storage = createSupabaseStorageBackend(supabase);
 
 await storage.createSession({
