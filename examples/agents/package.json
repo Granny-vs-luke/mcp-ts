@@ -15,6 +15,7 @@
     "@copilotkit/react-ui": "1.51.0",
     "@copilotkit/runtime": "1.51.0",
     "@mcp-ts/sdk": "file:../..",
+    "@supabase/supabase-js": "^2.101.0",
     "next": "16.1.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",

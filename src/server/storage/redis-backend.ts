@@ -26,6 +26,15 @@ export class RedisStorageBackend implements StorageBackend {
     private readonly IDENTITY_KEY_SUFFIX = ':sessions';
 
     constructor(private redis: Redis) { }
+    
+    async init(): Promise<void> {
+        try {
+            await this.redis.ping();
+            console.log('[mcp-ts][Storage] Redis: ✓ Connected to server.');
+        } catch (error: any) {
+            throw new Error(`[RedisStorage] Failed to connect to Redis: ${error.message}`);
+        }
+    }
 
     /**
      * Generates Redis key for a specific session

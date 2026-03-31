@@ -197,13 +197,101 @@ await storage.createSession({
 
 ---
 
-### <DocIcon type="postgres" size={24} /> PostgreSQL (Coming Soon)
+### <DocIcon type="supabase" size={24} /> Supabase (Production)
 
-PostgreSQL support is planned for a future release, providing:
-- Relational data storage
-- Advanced querying capabilities
-- ACID compliance
-- Integration with existing databases
+**Cloud-native PostgreSQL storage with built-in security and row-level security (RLS).**
+
+Supabase provides a powerful, scalable backend for your MCP sessions. Ideal for:
+- Production environments
+- Next.js applications (built-in integration)
+- Applications requiring Row Level Security (RLS)
+- Managed PostgreSQL with zero maintenance
+
+**Installation:**
+
+```bash
+npm install @mcp-ts/sdk @supabase/supabase-js
+```
+
+**Configuration:**
+
+```bash
+# Explicit selection (optional)
+MCP_TS_STORAGE_TYPE=supabase
+
+# Supabase connection details (required)
+SUPABASE_URL=https://your-project.supabase.co
+# Use the service_role key for server-side storage (not the anon key)
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+```
+
+:::warning
+**Always use `SUPABASE_SERVICE_ROLE_KEY`** for server-side storage — not `SUPABASE_ANON_KEY`. The anon key is subject to Row Level Security (RLS) policies which will block session creation. The service_role key is designed for trusted server-to-server communication and bypasses RLS. Find it in: **Supabase Dashboard → Project Settings → API → service_role**.
+:::
+
+**Database Setup:**
+
+To use Supabase as a storage backend, you must create the `mcp_sessions` table and configure RLS policies.
+
+#### Option A: Supabase CLI (Recommended)
+You can easily "eject" the required migration SQL into your own project using the built-in CLI:
+
+1. Run the initialization command:
+   ```bash
+   npx mcp-ts supabase-init
+   ```
+   This will copy the migration files to your local `./supabase/migrations/` folder.
+
+2. Link your project & push:
+   ```bash
+   npx supabase link --project-ref <your-project-id>
+   npx supabase db push
+   ```
+
+#### Option B: SQL Editor (Manual)
+If you prefer manual setup, copy the SQL from the [migration file](https://github.com/zonlabs/mcp-ts/blob/main/supabase/migrations/20260330195700_install_mcp_sessions.sql) and run it in the Supabase Dashboard SQL Editor.
+
+**Features:**
+- <DocIcon type="success" size={16} /> PostgreSQL persistence with JSONB support
+- <DocIcon type="lock" size={16} /> Row Level Security (RLS) for tenant isolation
+- <DocIcon type="success" size={16} /> Automatic updated_at and expires_at management
+- <DocIcon type="bolt" size={16} /> Cloud-native and serverless friendly
+
+**Usage:**
+
+```typescript
+import { createSupabaseStorageBackend } from '@mcp-ts/sdk/server';
+import { createClient } from '@supabase/supabase-js';
+
+// Always use the service_role key for server-side usage
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+const storage = createSupabaseStorageBackend(supabase);
+
+await storage.createSession({
+  sessionId: 'sb-123',
+  identity: 'user-789',
+  serverUrl: 'https://mcp.example.com',
+  callbackUrl: 'https://app.com/callback',
+  transportType: 'sse',
+  active: true,
+  createdAt: Date.now(),
+});
+```
+
+---
+
+### <DocIcon type="postgres" size={24} /> PostgreSQL
+
+For self-hosted PostgreSQL environments.
+
+**Features:**
+- <DocIcon type="success" size={16} /> Relational data storage
+- <DocIcon type="success" size={16} /> Advanced querying capabilities
+- <DocIcon type="success" size={16} /> ACID compliance
+- <DocIcon type="success" size={16} /> Integration with existing databases
 
 ---
 
@@ -217,31 +305,33 @@ graph TD
     B -->|Yes| C[Use specified backend]
     B -->|No| D{REDIS_URL present?}
     D -->|Yes| E[Use Redis]
-    D -->|No| F{MCP_TS_STORAGE_FILE present?}
-    F -->|Yes| G[Use File System]
-    F -->|No| H[Use In-Memory Default]
+    D -->|No| F{SUPABASE_URL present?}
+    F -->|Yes| G[Use Supabase]
+    F -->|No| H{MCP_TS_STORAGE_FILE present?}
     
-    C --> I[Storage Ready]
-    E --> I
-    G --> I
-    F -->|No| G{MCP_TS_STORAGE_SQLITE_PATH present?}
-    G -->|Yes| H[Use SQLite]
-    G -->|No| I[Use In-Memory Default]
+    C --> L[Storage Ready]
+    E --> L
+    G --> L
     
-    C --> J[Storage Ready]
-    E --> J
-    K[Use File System] --> J
-    H --> J
-    I --> J
+    H -->|Yes| I[Use File System]
+    H -->|No| J{MCP_TS_STORAGE_SQLITE_PATH present?}
+    
+    I --> L
+    J -->|Yes| K[Use SQLite]
+    J -->|No| M[Use In-Memory Default]
+    
+    K --> L
+    M --> L
 ```
 
 **Priority Order:**
 
 1. **Explicit**: If `MCP_TS_STORAGE_TYPE` is set, use that backend
 2. **Auto-detect Redis**: If `REDIS_URL` is present, use Redis
-3. **Auto-detect File**: If `MCP_TS_STORAGE_FILE` is present, use File
-4. **Auto-detect SQLite**: If `MCP_TS_STORAGE_SQLITE_PATH` is present, use SQLite
-5. **Default**: Fall back to In-Memory storage
+3. **Auto-detect Supabase**: If `SUPABASE_URL` is present, use Supabase
+4. **Auto-detect File**: If `MCP_TS_STORAGE_FILE` is present, use File
+5. **Auto-detect SQLite**: If `MCP_TS_STORAGE_SQLITE_PATH` is present, use SQLite
+6. **Default**: Fall back to In-Memory storage
 
 ---
 
@@ -279,17 +369,17 @@ const memoryStorage = new MemoryStorageBackend();
 
 ## <DocIcon type="chart" size={28} /> Backend Comparison
 
-| Feature | <DocIcon type="redis" size={20} /> Redis | <DocIcon type="sqlite" size={20} /> SQLite | <DocIcon type="filesystem" size={20} /> File System | <DocIcon type="memory" size={20} /> In-Memory |
-|---------|----------|----------|----------------|--------------|
-| **Persistence** | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="error" size={16} /> No |
-| **Distributed** | <DocIcon type="success" size={16} /> Yes | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No |
-| **Auto-Expiry** | <DocIcon type="success" size={16} /> Yes (TTL) | <DocIcon type="success" size={16} /> Yes (Manual) | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No |
-| **Performance** | <DocIcon type="bolt" size={16} /> Fast | <DocIcon type="bolt" size={16} /> Very Fast | <DocIcon type="chart" size={16} /> Medium | <DocIcon type="rocket" size={16} /> Fastest |
-| **Setup** | <DocIcon type="tools" size={16} /> Requires Redis | <DocIcon type="tools" size={16} /> Native | <DocIcon type="filesystem" size={16} /> Built-in | <DocIcon type="target" size={16} /> Built-in |
-| **Serverless** | <DocIcon type="success" size={16} /> Yes | <DocIcon type="warning" size={16} /> Limited | <DocIcon type="success" size={16} /> Yes |
-| **Production** | <DocIcon type="success" size={16} /> Recommended | <DocIcon type="warning" size={16} /> Single-instance | <DocIcon type="error" size={16} /> Not recommended |
-| **Development** | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Good |
-| **Testing** | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent |
+| Feature | <DocIcon type="redis" size={20} /> Redis | <DocIcon type="supabase" size={20} /> Supabase | <DocIcon type="sqlite" size={20} /> SQLite | <DocIcon type="filesystem" size={20} /> File System | <DocIcon type="memory" size={20} /> In-Memory |
+|---------|----------|----------|----------|----------------|--------------|
+| **Persistence** | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="error" size={16} /> No |
+| **Distributed** | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No |
+| **Auto-Expiry** | <DocIcon type="success" size={16} /> Yes (TTL) | <DocIcon type="success" size={16} /> Yes (Manual) | <DocIcon type="success" size={16} /> Yes (Manual) | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No |
+| **Performance** | <DocIcon type="bolt" size={16} /> Fast | <DocIcon type="bolt" size={16} /> Fast | <DocIcon type="bolt" size={16} /> Very Fast | <DocIcon type="chart" size={16} /> Medium | <DocIcon type="rocket" size={16} /> Fastest |
+| **Setup** | <DocIcon type="tools" size={16} /> External | <DocIcon type="tools" size={16} /> Cloud | <DocIcon type="tools" size={16} /> Native | <DocIcon type="filesystem" size={16} /> Built-in | <DocIcon type="target" size={16} /> Built-in |
+| **Serverless** | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Recommended | <DocIcon type="warning" size={16} /> Limited | <DocIcon type="success" size={16} /> Yes |
+| **Production** | <DocIcon type="success" size={16} /> Recommended | <DocIcon type="success" size={16} /> Recommended | <DocIcon type="warning" size={16} /> Single-instance | <DocIcon type="error" size={16} /> Not recommended |
+| **Development** | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Good |
+| **Testing** | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent |
 
 ---
 

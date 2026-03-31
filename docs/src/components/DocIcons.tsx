@@ -17,7 +17,7 @@ import {
     FaHardDrive,
     FaBoxesStacked
 } from 'react-icons/fa6';
-import { SiRedis } from 'react-icons/si';
+import { SiRedis, SiSupabase } from 'react-icons/si';
 import { CiFileOn } from 'react-icons/ci';
 import { PiMemoryThin } from 'react-icons/pi';
 import { BiLogoPostgresql } from 'react-icons/bi';
@@ -26,7 +26,7 @@ import { GrDatabase } from 'react-icons/gr';
 export type IconType =
     | 'database' | 'sync' | 'tools' | 'chart' | 'lock' | 'idea' | 'search' | 'book'
     | 'success' | 'warning' | 'error'
-    | 'rocket' | 'bolt' | 'target' | 'filesystem' | 'memory' | 'redis' | 'postgres' | 'backends';
+    | 'rocket' | 'bolt' | 'target' | 'filesystem' | 'memory' | 'redis' | 'supabase' | 'postgres' | 'backends';
 
 interface DocIconProps {
     type: IconType;
@@ -45,7 +45,8 @@ const palette = {
     slate: '#64748b',
     neutral: '#4b5563',
     brandRedis: '#D82C20',
-    brandPostgres: '#336791', // Still Postgres brand blue, but let's see
+    brandPostgres: '#336791',
+    brandSupabase: '#3ECF8E', // Supabase Emerald Green
 };
 
 const iconMap: Record<IconType, { Icon: any, defaultColor: string }> = {
@@ -69,6 +70,7 @@ const iconMap: Record<IconType, { Icon: any, defaultColor: string }> = {
     filesystem: { Icon: CiFileOn, defaultColor: palette.yellow },
     memory: { Icon: PiMemoryThin, defaultColor: palette.slate },
     redis: { Icon: SiRedis, defaultColor: palette.brandRedis },
+    supabase: { Icon: SiSupabase, defaultColor: palette.brandSupabase },
     postgres: { Icon: BiLogoPostgresql, defaultColor: palette.brandPostgres },
     backends: { Icon: GrDatabase, defaultColor: palette.red },
 };
