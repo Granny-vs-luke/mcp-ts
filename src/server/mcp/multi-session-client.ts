@@ -3,6 +3,11 @@
 import { MCPClient } from './oauth-client.js';
 import { storage, type SessionData } from '../storage/index.js';
 
+const DEFAULT_TIMEOUT_MS = 15000;
+const DEFAULT_MAX_RETRIES = 2;
+const DEFAULT_RETRY_DELAY_MS = 1000;
+const CONNECTION_BATCH_SIZE = 5;
+
 /**
  * Manages multiple MCP connections for a single user identity.
  * Allows aggregating tools from all connected servers.
@@ -26,57 +31,155 @@ export interface MultiSessionOptions {
 }
 
 /**
- * Manages multiple MCP connections for a single user identity.
- * Allows aggregating tools from all connected servers.
+ * Manages multiple MCP client connections for a single user identity.
+ *
+ * On a traditional long-running server, you can cache this instance per user
+ * so the connections stay alive between requests. On serverless, a new instance
+ * will be created per invocation, but the underlying session data is always
+ * read from the storage backend so nothing is lost between calls.
  */
 export class MultiSessionClient {
     private clients: MCPClient[] = [];
     private identity: string;
     private options: MultiSessionOptions;
 
+    /**
+     * Creates a new MultiSessionClient for the given user identity.
+     *
+     * @param identity - A unique string identifying the user (e.g. user ID or email).
+     * @param options  - Optional tuning for connection timeout, retry count, and retry delay.
+     *                   Falls back to sensible defaults if not provided.
+     */
     constructor(identity: string, options: MultiSessionOptions = {}) {
         this.identity = identity;
         this.options = {
-            timeout: 15000,
-            maxRetries: 2,
-            retryDelay: 1000,
+            timeout: DEFAULT_TIMEOUT_MS,
+            maxRetries: DEFAULT_MAX_RETRIES,
+            retryDelay: DEFAULT_RETRY_DELAY_MS,
             ...options
         };
     }
 
+    /**
+     * Fetches all sessions for this identity from storage and returns only the
+     * ones that are ready to connect.
+     *
+     * A session is considered connectable when:
+     * - It has a `serverId`, `serverUrl`, and `callbackUrl` (i.e. it was fully initialized)
+     * - Its `active` flag is not explicitly `false` — sessions with `active: false` are
+     *   either mid-OAuth flow, auth-pending, or previously failed. We skip those here
+     *   and let the OAuth flow complete separately before we try to reconnect them.
+     *
+     * Note: Sessions where `active` is `undefined` (legacy records) are included
+     * for backwards compatibility.
+     */
     private async getActiveSessions(): Promise<SessionData[]> {
         const sessions = await storage.getIdentitySessionsData(this.identity);
-        console.log(`[MultiSessionClient] All sessions for ${this.identity}:`,
-            sessions.map(s => ({ sessionId: s.sessionId, serverId: s.serverId }))
+        const valid = sessions.filter(s =>
+            s.serverId &&
+            s.serverUrl &&
+            s.callbackUrl &&
+            s.active !== false  // exclude OAuth-pending / failed sessions
         );
-        const valid = sessions.filter(s => s.serverId && s.serverUrl && s.callbackUrl);
-        console.log(`[MultiSessionClient] Filtered valid sessions:`, valid.length);
         return valid;
     }
 
+    /**
+     * Connects to a list of sessions in controlled batches of `CONNECTION_BATCH_SIZE`.
+     *
+     * Batching prevents overwhelming the event loop or external servers when a user
+     * has many active MCP sessions (e.g. 20+ servers). Within each batch, sessions
+     * are connected concurrently using `Promise.all` for speed.
+     */
     private async connectInBatches(sessions: SessionData[]): Promise<void> {
-        const BATCH_SIZE = 5;
-        for (let i = 0; i < sessions.length; i += BATCH_SIZE) {
-            const batch = sessions.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < sessions.length; i += CONNECTION_BATCH_SIZE) {
+            const batch = sessions.slice(i, i + CONNECTION_BATCH_SIZE);
             await Promise.all(batch.map(session => this.connectSession(session)));
         }
     }
 
+    private connectionPromises = new Map<string, Promise<void>>();
+
+    /**
+     * Connects a single session, with built-in deduplication to prevent race conditions.
+     *
+     * - If a client for this session already exists and is connected, returns immediately.
+     * - If a connection attempt for this session is already in-flight (e.g. from a
+     *   concurrent call), it joins the existing promise instead of starting a new one.
+     *   This is the key concurrency lock — the `connectionPromises` map acts as a
+     *   per-session mutex so we never spin up two physical connections for the same session.
+     * - On completion (success or failure), the promise is cleaned up from the map.
+     */
     private async connectSession(session: SessionData): Promise<void> {
         const existingClient = this.clients.find(c => c.getSessionId() === session.sessionId);
         if (existingClient?.isConnected()) {
             return;
         }
 
-        const maxRetries = this.options.maxRetries ?? 2;
-        const retryDelay = this.options.retryDelay ?? 1000;
+        // Avoid concurrent connection attempts for the same session
+        if (this.connectionPromises.has(session.sessionId)) {
+            return this.connectionPromises.get(session.sessionId)!;
+        }
+
+        const connectPromise = this.establishConnectionWithRetries(session);
+
+        this.connectionPromises.set(session.sessionId, connectPromise);
+
+        try {
+            await connectPromise;
+        } finally {
+            this.connectionPromises.delete(session.sessionId);
+        }
+    }
+
+    /**
+     * The core connection loop for a single session.
+     *
+     * Attempts to establish a physical MCP connection, retrying up to `maxRetries` times
+     * if the connection fails. Each attempt:
+     * 1. Creates a fresh `MCPClient` instance from the session data.
+     * 2. Races the connect call against a timeout promise — if the server doesn't respond
+     *    within `timeoutMs`, the attempt is aborted and counted as a failure.
+     * 3. On success, replaces any stale client entry for this session in the `clients` array.
+     * 4. On failure, waits `retryDelay` ms before the next attempt.
+     *
+     * If all attempts are exhausted, logs an error and returns silently (does not throw),
+     * so a single bad server doesn't block the rest of the batch from connecting.
+     */
+    private async establishConnectionWithRetries(session: SessionData): Promise<void> {
+        const maxRetries = this.options.maxRetries ?? DEFAULT_MAX_RETRIES;
+        const retryDelay = this.options.retryDelay ?? DEFAULT_RETRY_DELAY_MS;
         let lastError: unknown;
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-                const client = await this.createAndConnectClient(session);
+                const client = new MCPClient({
+                    identity: this.identity,
+                    sessionId: session.sessionId,
+                    serverId: session.serverId,
+                    serverUrl: session.serverUrl,
+                    callbackUrl: session.callbackUrl,
+                    serverName: session.serverName,
+                    transportType: session.transportType,
+                    headers: session.headers,
+                });
+
+                const timeoutMs = this.options.timeout ?? DEFAULT_TIMEOUT_MS;
+                let timeoutTimer: ReturnType<typeof setTimeout>;
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    timeoutTimer = setTimeout(() => reject(new Error(`Connection timed out after ${timeoutMs}ms`)), timeoutMs);
+                });
+
+                try {
+                    await Promise.race([client.connect(), timeoutPromise]);
+                } finally {
+                    clearTimeout(timeoutTimer!);
+                }
+
+                // Always replace the disconnected client entry
+                this.clients = this.clients.filter(c => c.getSessionId() !== session.sessionId);
                 this.clients.push(client);
-                return;
+                return; // successfully connected
             } catch (error) {
                 lastError = error;
                 if (attempt < maxRetries) {
@@ -88,41 +191,34 @@ export class MultiSessionClient {
         console.error(`[MultiSessionClient] Failed to connect to session ${session.sessionId} after ${maxRetries + 1} attempts:`, lastError);
     }
 
-    private async createAndConnectClient(session: SessionData): Promise<MCPClient> {
-        const client = new MCPClient({
-            identity: this.identity,
-            sessionId: session.sessionId,
-            serverId: session.serverId,
-            serverUrl: session.serverUrl,
-            callbackUrl: session.callbackUrl,
-            serverName: session.serverName,
-            transportType: session.transportType,
-            headers: session.headers,
-        });
-
-        const timeoutMs = this.options.timeout ?? 15000;
-        const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error(`Connection timed out after ${timeoutMs}ms`)), timeoutMs);
-        });
-
-        await Promise.race([client.connect(), timeoutPromise]);
-        return client;
-    }
-
+    /**
+     * The main entry point. Fetches all active sessions for this identity from
+     * storage and establishes connections to all of them in batches.
+     *
+     * Call this once after creating the client. On traditional servers, you can
+     * cache the `MultiSessionClient` instance after calling `connect()` to avoid
+     * re-fetching and re-connecting on every request.
+     */
     async connect(): Promise<void> {
         const sessions = await this.getActiveSessions();
         await this.connectInBatches(sessions);
     }
 
     /**
-     * Returns the array of currently connected clients.
+     * Returns all currently connected `MCPClient` instances.
+     *
+     * Use this to enumerate available tools across all connected servers,
+     * or to route a tool call to the right client by `serverId`.
      */
     getClients(): MCPClient[] {
         return this.clients;
     }
 
     /**
-     * Disconnects all clients.
+     * Gracefully disconnects all active MCP clients and clears the internal client list.
+     *
+     * Call this during server shutdown or when a user logs out to free up
+     * underlying transport resources (SSE streams, HTTP connections, etc.).
      */
     disconnect(): void {
         this.clients.forEach((client) => client.disconnect());
