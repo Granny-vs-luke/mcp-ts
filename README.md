@@ -264,25 +264,19 @@ import { useMcpContext } from "./mcp";
 
 export function ToolRenderer() {
   const { mcpClient } = useMcpContext();
-  const { getAppMetadata, McpAppRenderer } = useMcpApps(mcpClient);
+  const { McpAppRenderer } = useMcpApps(mcpClient);
 
   useRenderToolCall({
     name: "*",
-    render: ({ name, args, result, status }) => {
-      const metadata = getAppMetadata(name);
-      
-      if (!metadata) return null;
-
-      return (
-        <McpAppRenderer
-          metadata={metadata}
-          input={args}
-          result={result}
-          status={status}
-          sseClient={mcpClient.sseClient}
-        />
-      );
-    },
+    render: ({ name, args, result, status }) => (
+      <McpAppRenderer
+        mcpClient={mcpClient}
+        name={name}
+        input={args}
+        result={result}
+        status={status}
+      />
+    ),
   });
 
   return null;

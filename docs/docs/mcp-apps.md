@@ -82,28 +82,19 @@ import { useMcpApps } from "@mcp-ts/sdk/client/react";
 
 function ToolRenderer() {
   const { mcpClient } = useMcpContext();
-  const { getAppMetadata, McpAppRenderer } = useMcpApps(mcpClient);
+  const { McpAppRenderer } = useMcpApps(mcpClient);
 
   useRenderToolCall({
     name: "*",
-    render: ({ name, args, result, status }) => {
-      // Get metadata for this tool
-      const metadata = getAppMetadata(name);
-      
-      if (!metadata) {
-        return null; // Not an MCP app tool
-      }
-
-      // Render the MCP app with tool call data
-      return (
-        <McpAppRenderer
-          metadata={metadata}
-          input={args}
-          result={result}
-          status={status}
-        />
-      );
-    },
+    render: ({ name, args, result, status }) => (
+      <McpAppRenderer
+        mcpClient={mcpClient}
+        name={name}
+        input={args}
+        result={result}
+        status={status}
+      />
+    ),
   });
 
   return null;
@@ -174,7 +165,6 @@ sequenceDiagram
 
 ```typescript
 function useMcpApps(mcpClient: McpClient | null): {
-  getAppMetadata: (toolName: string) => McpAppMetadata | undefined;
   McpAppRenderer: React.FC<McpAppRendererProps>;
 }
 ```
@@ -183,30 +173,18 @@ function useMcpApps(mcpClient: McpClient | null): {
 - `mcpClient` - The MCP client from `useMcp()` or context
 
 **Returns:**
-- `getAppMetadata` - Function to look up app metadata by tool name
 - `McpAppRenderer` - Stable component for rendering MCP apps
-
-### getAppMetadata
-
-```typescript
-function getAppMetadata(toolName: string): McpAppMetadata | undefined
-```
-
-Looks up MCP app metadata for a given tool name. Handles tool name prefixes automatically (e.g., `tool_abc123_get-time` → `get-time`).
-
-**Returns:**
-- `toolName` - The base tool name
-- `resourceUri` - The MCP resource URI for the app UI
-- `sessionId` - The session ID for the MCP connection
 
 ### McpAppRenderer Props
 
 ```typescript
 interface McpAppRendererProps {
-  metadata: McpAppMetadata;           // Stable metadata from getAppMetadata
-  input?: Record<string, unknown>;     // Tool arguments
-  result?: unknown;                    // Tool execution result
+  mcpClient: McpClient | null;           // MCP client for metadata lookup
+  name: string;                            // Tool name to render
+  input?: Record<string, unknown>;        // Tool arguments
+  result?: unknown;                        // Tool execution result
   status: 'executing' | 'inProgress' | 'complete' | 'idle';
+  className?: string;                      // Optional CSS class
 }
 ```
 
@@ -228,27 +206,19 @@ import { useMcpApps } from "@mcp-ts/sdk/client/react";
 
 function ToolRenderer() {
   const { mcpClient } = useMcpContext();
-  const { getAppMetadata, McpAppRenderer } = useMcpApps(mcpClient);
+  const { McpAppRenderer } = useMcpApps(mcpClient);
 
   useRenderToolCall({
     name: "*",
-    render: (props) => {
-      const metadata = getAppMetadata(props.name);
-      
-      if (!metadata) {
-        // Not an MCP app tool - render default
-        return <DefaultToolCall {...props} />;
-      }
-
-      return (
-        <McpAppRenderer
-          metadata={metadata}
-          input={props.args}
-          result={props.result}
-          status={props.status}
-        />
-      );
-    },
+    render: (props) => (
+      <McpAppRenderer
+        mcpClient={mcpClient}
+        name={props.name}
+        input={props.args}
+        result={props.result}
+        status={props.status}
+      />
+    ),
   });
 
   return null;
@@ -262,15 +232,12 @@ You can use `useMcpApps` with any framework that provides tool call information:
 ```tsx
 function MyToolRenderer({ toolName, args, result, status }) {
   const { mcpClient } = useMyMcpContext();
-  const { getAppMetadata, McpAppRenderer } = useMcpApps(mcpClient);
-  
-  const metadata = getAppMetadata(toolName);
-  
-  if (!metadata) return null;
+  const { McpAppRenderer } = useMcpApps(mcpClient);
   
   return (
     <McpAppRenderer
-      metadata={metadata}
+      mcpClient={mcpClient}
+      name={toolName}
       input={args}
       result={result}
       status={status}
@@ -315,14 +282,16 @@ The SDK automatically discovers tools with `_meta.ui.resourceUri` and makes them
 Check that:
 1. The tool has `_meta.ui.resourceUri` set
 2. The resource is accessible (preloaded successfully)
-3. `getAppMetadata()` returns the metadata (tool name matches)
+3. The tool name matches an MCP app in the connections
 
-### Tool input not received
+### useAppHost - Internal Use Only
 
-The app receives input when:
-1. Iframe is loaded and AppBridge is initialized
-2. `input` prop is provided to `McpAppRenderer`
-3. App calls `host.onToolInput()` to listen for input
+The `useAppHost` hook is **library internal** and should not be used directly. It handles:
+- Creating the `AppHost` bridge between React and the iframe
+- Setting up PostMessage communication
+- Managing iframe lifecycle
+
+Use `useMcpApps` which provides the public API.
 
 ## Next Steps
 

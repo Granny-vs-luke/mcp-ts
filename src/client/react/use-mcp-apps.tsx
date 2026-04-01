@@ -34,26 +34,59 @@ export interface McpAppMetadata {
 }
 
 interface McpAppRendererProps {
-  metadata: McpAppMetadata;
+  mcpClient: McpClient | null;
+  name: string;
   input?: Record<string, unknown>;
   result?: unknown;
   status: 'executing' | 'inProgress' | 'complete' | 'idle';
-  sseClient?: SSEClient | null;
   /** Custom CSS class for the container */
   className?: string;
 }
 
 /**
- * Internal component that renders the MCP app in a sandboxed iframe
+ * Simplified MCP App renderer - users just pass tool name and data
+ * Internal hook handles metadata lookup and SSE client retrieval
  */
 const McpAppRenderer = memo(function McpAppRenderer({
-  metadata,
+  mcpClient,
+  name,
   input,
   result,
   status,
-  sseClient,
   className,
 }: McpAppRendererProps) {
+  const getAppMetadata = useCallback((): McpAppMetadata | undefined => {
+    if (!mcpClient) return undefined;
+
+    const extractedName = extractToolName(name);
+
+    for (const conn of mcpClient.connections) {
+      for (const tool of conn.tools) {
+        const candidateName = extractToolName(tool.name);
+        const resourceUri =
+          tool.mcpApp?.resourceUri ??
+          tool._meta?.ui?.resourceUri ??
+          tool._meta?.['ui/resourceUri'];
+
+        if (resourceUri && candidateName === extractedName) {
+          return {
+            toolName: candidateName,
+            resourceUri,
+            sessionId: conn.sessionId,
+          };
+        }
+      }
+    }
+
+    return undefined;
+  }, [mcpClient, name]);
+
+  const metadata = getAppMetadata();
+  const sseClient = mcpClient?.sseClient ?? null;
+
+  if (!metadata || !sseClient) {
+    return null;
+  }
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { host, error: hostError } = useAppHost(sseClient as SSEClient, iframeRef);
   const [isLaunched, setIsLaunched] = useState(false);
