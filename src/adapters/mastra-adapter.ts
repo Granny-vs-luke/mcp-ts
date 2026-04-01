@@ -59,7 +59,7 @@ export class MastraAdapter {
         await this.ensureZod();
 
         const result = await client.listTools();
-        const prefix = this.options.prefix ?? client.getServerId() ?? 'mcp';
+        const prefix = this.options.prefix ?? client.getServerId()?.replace(/-/g, '').substring(0, 8) ?? 'mcp';
         const tools: Record<string, MastraTool> = {};
 
         for (const tool of result.tools) {

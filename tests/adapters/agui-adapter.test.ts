@@ -54,7 +54,7 @@ test.describe('AguiAdapter', () => {
 
     const tools = await adapter.getTools();
     expect(tools).toHaveLength(1);
-    expect(tools[0].name).toContain('tool_testserver_get-time');
+    expect(tools[0].name).toContain('tool_testserv_get-time');
 
     const result = await tools[0].handler?.({});
     expect((mockClient as any).callToolCalls).toHaveLength(1);

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { StorageBackend, SessionData } from './types.js';
 import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
+import { generateSessionId } from '../../shared/utils.js';
 
 export class SupabaseStorageBackend implements StorageBackend {
     private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
@@ -29,7 +30,7 @@ export class SupabaseStorageBackend implements StorageBackend {
     }
 
     generateSessionId(): string {
-        return crypto.randomUUID();
+        return generateSessionId();
     }
 
     private mapRowToSessionData(row: any): SessionData {

@@ -1,20 +1,7 @@
-
 import type { Redis } from 'ioredis';
-import { customAlphabet } from 'nanoid';
-import { StorageBackend, SessionData } from './types';
+import { StorageBackend, SessionData } from './types.js';
 import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
-
-/** first char: letters only (required by OpenAI) */
-const firstChar = customAlphabet(
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
-    1
-);
-
-/** remaining chars: alphanumeric */
-const rest = customAlphabet(
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
-    11
-);
+import { generateSessionId } from '../../shared/utils.js';
 
 /**
  * Redis implementation of StorageBackend
@@ -88,7 +75,7 @@ export class RedisStorageBackend implements StorageBackend {
     }
 
     generateSessionId(): string {
-        return firstChar() + rest();
+        return generateSessionId();
     }
 
     async createSession(session: SessionData, ttl?: number): Promise<void> {

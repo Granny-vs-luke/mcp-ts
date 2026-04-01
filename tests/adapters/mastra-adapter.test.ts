@@ -52,7 +52,7 @@ test.describe('MastraAdapter', () => {
         const tools = await adapter.getTools();
 
         expect(Object.keys(tools)).toHaveLength(1);
-        expect(Object.keys(tools)[0]).toContain('test-server_test_tool');
+        expect(Object.keys(tools)[0]).toContain('testserv_test_tool');
     });
 
     test('should use custom prefix', async () => {

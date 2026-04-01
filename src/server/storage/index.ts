@@ -8,6 +8,7 @@ import type { StorageBackend } from './types.js';
 
 // Re-export types
 export * from './types.js';
+export { generateSessionId } from '../../shared/utils.js';
 export { RedisStorageBackend, MemoryStorageBackend, FileStorageBackend, SqliteStorage, SupabaseStorageBackend };
 
 export function createSupabaseStorageBackend(client: any): SupabaseStorageBackend {

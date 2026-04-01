@@ -176,7 +176,7 @@ export class AguiAdapter {
         const serverId = (typeof (client as any).getServerId === 'function'
             ? (client as any).getServerId()
             : undefined) as string | undefined;
-        const normalizedPrefix = (this.options.prefix ?? serverId ?? 'mcp').replace(/-/g, '');
+        const normalizedPrefix = this.options.prefix?.replace(/-/g, '') ?? serverId?.replace(/-/g, '').substring(0, 8) ?? 'mcp';
         const prefix = `tool_${normalizedPrefix}`;
 
         return result.tools.map(tool => {
@@ -206,7 +206,7 @@ export class AguiAdapter {
         const serverId = (typeof (client as any).getServerId === 'function'
             ? (client as any).getServerId()
             : undefined) as string | undefined;
-        const normalizedPrefix = (this.options.prefix ?? serverId ?? 'mcp').replace(/-/g, '');
+        const normalizedPrefix = this.options.prefix?.replace(/-/g, '') ?? serverId?.replace(/-/g, '').substring(0, 8) ?? 'mcp';
         const prefix = `tool_${normalizedPrefix}`;
 
         return result.tools.map(tool => {

@@ -1,20 +1,7 @@
-
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import { customAlphabet } from 'nanoid';
-import { StorageBackend, SessionData, SetClientOptions } from './types';
-
-// first char: letters only (required by OpenAI)
-const firstChar = customAlphabet(
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
-    1
-);
-
-// remaining chars: alphanumeric
-const rest = customAlphabet(
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
-    11
-);
+import { StorageBackend, SessionData, SetClientOptions } from './types.js';
+import { generateSessionId } from '../../shared/utils.js';
 
 /**
  * File system implementation of StorageBackend
@@ -83,7 +70,7 @@ export class FileStorageBackend implements StorageBackend {
     }
 
     generateSessionId(): string {
-        return firstChar() + rest();
+        return generateSessionId();
     }
 
     async createSession(session: SessionData, ttl?: number): Promise<void> {
