@@ -33,6 +33,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish to npm (using Trusted Publishing)
+      - name: Publish to npm
         run: npm publish --provenance
         continue-on-error: true # Don't fail if version exists
