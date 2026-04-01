@@ -33,8 +33,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish to npm
+      - name: Publish to npm (using Trusted Publishing)
         run: npm publish --provenance
         continue-on-error: true # Don't fail if version exists
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
