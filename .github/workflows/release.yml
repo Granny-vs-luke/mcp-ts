@@ -102,7 +102,7 @@ jobs:
 
       # Publish to npm
       - name: Publish to npm
-        run: npm publish --provenance
+        run: npm publish --provenance --access public
         continue-on-error: true
 
       # Create GitHub release
