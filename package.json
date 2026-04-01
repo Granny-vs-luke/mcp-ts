@@ -4,7 +4,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "description": "A Lightweight MCP (Model Context Protocol) client library for JavaScript applications, supporting multiple storage backends (Memory, File, Redis, Supabase) and real-time SSE support.",
+  "description": "A Lightweight MCP (Model Context Protocol) client library for JavaScript applications, supporting multiple storage backends (Memory, File, Redis, Supabase) and designed for both server and client environments.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
