@@ -2,6 +2,7 @@ import type { Database } from 'better-sqlite3';
 import { StorageBackend, SessionData } from './types.js'; // Ensure .js extension
 import * as fs from 'fs';
 import * as path from 'path';
+import { generateSessionId } from '../../shared/utils.js';
 
 export interface SqliteStorageOptions {
     path?: string;
@@ -62,12 +63,7 @@ export class SqliteStorage implements StorageBackend {
     }
 
     generateSessionId(): string {
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        let result = '';
-        for (let i = 0; i < 32; i++) {
-            result += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        return result;
+        return generateSessionId();
     }
 
     async createSession(session: SessionData, ttl?: number): Promise<void> {

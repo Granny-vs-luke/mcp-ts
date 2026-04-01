@@ -53,7 +53,7 @@ export class AIAdapter {
                 const serverId = typeof client.getServerId === 'function'
                     ? client.getServerId()
                     : undefined;
-                const prefix = this.options.prefix ?? serverId?.replace(/-/g, '') ?? 'mcp';
+                const prefix = this.options.prefix ?? serverId?.replace(/-/g, '').substring(0, 8) ?? 'mcp';
                 return [
                     `tool_${prefix}_${tool.name}`,
                     {
