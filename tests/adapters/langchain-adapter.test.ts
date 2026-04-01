@@ -52,7 +52,7 @@ test.describe('LangChainAdapter', () => {
         const tools = await adapter.getTools();
 
         expect(tools).toHaveLength(1);
-        expect(tools[0].name).toContain('test-server_test_tool');
+        expect(tools[0].name).toContain('testserv_test_tool');
     });
 
     test('should use custom prefix', async () => {

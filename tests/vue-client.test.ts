@@ -15,6 +15,14 @@ test.describe('Vue Client useMcp', () => {
         // Mock SSE endpoint
         await page.route('**/sse*', async route => {
             console.log('Route matched: SSE');
+            if (route.request().method() === 'POST') {
+                // Return immediate rpc-response for commands like list_sessions
+                return route.fulfill({
+                    status: 200,
+                    contentType: 'text/event-stream',
+                    body: 'event: rpc-response\ndata: {"jsonrpc":"2.0","id":1,"result":{"sessions":[{"sessionId":"s1","serverId":"serv1","serverName":"Server 1","status":"connected"}]}}\n\n'
+                });
+            }
             await route.fulfill({
                 status: 200,
                 contentType: 'text/event-stream',
@@ -29,6 +37,23 @@ test.describe('Vue Client useMcp', () => {
                 status: 200,
                 contentType: 'application/javascript',
                 body: 'export function nanoid() { return "test-id-" + Math.random(); }'
+            });
+        });
+
+        // Mock app-bridge
+        await page.route('https://esm.sh/@modelcontextprotocol/ext-apps@1.0.1/app-bridge', async route => {
+            console.log('Route matched: app-bridge');
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/javascript',
+                body: `
+                    export class AppBridge {
+                        constructor() {}
+                    }
+                    export class PostMessageTransport {
+                        constructor() {}
+                    }
+                `
             });
         });
 
@@ -95,7 +120,8 @@ test.describe('Vue Client useMcp', () => {
                         {
                             "imports": {
                                 "vue": "https://esm.sh/vue@3.5.27",
-                                "nanoid": "https://esm.sh/nanoid@5.1.6"
+                                "nanoid": "https://esm.sh/nanoid@5.1.6",
+                                "@modelcontextprotocol/ext-apps/app-bridge": "https://esm.sh/@modelcontextprotocol/ext-apps@1.0.1/app-bridge"
                             }
                         }
                         </script>

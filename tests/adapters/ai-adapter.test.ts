@@ -52,7 +52,7 @@ test.describe('AIAdapter', () => {
         const tools = await adapter.getTools();
 
         expect(Object.keys(tools)).toHaveLength(1);
-        expect(Object.keys(tools)[0]).toContain('tool_testserver_test_tool');
+        expect(Object.keys(tools)[0]).toContain('tool_testserv_test_tool');
     });
 
     test('should use custom prefix', async () => {

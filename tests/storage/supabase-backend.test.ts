@@ -141,8 +141,8 @@ test.describe('SupabaseStorageBackend', () => {
             const id1 = storage.generateSessionId();
             const id2 = storage.generateSessionId();
             expect(id1).not.toBe(id2);
-            // UUIDv4 pattern
-            expect(id1).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+            // 12-char pattern where first is letter
+            expect(id1).toMatch(/^[a-zA-Z][a-zA-Z0-9]{11}$/);
         });
     });
 
