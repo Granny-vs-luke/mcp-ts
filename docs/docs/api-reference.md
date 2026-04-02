@@ -641,17 +641,17 @@ interface McpAppMetadata {
 
 #### `McpAppRenderer` Component
 
-Stable, memoized component for rendering MCP apps. Prevents iframe flickering by maintaining component identity across renders.
+Returned from `useMcpApps(mcpClient)` together with `getAppMetadata`. The hook closes over `mcpClient`, so each `<McpAppRenderer />` only needs the active tool call: `name`, optional `input` / `result`, and `status`.
 
 **Props:**
 
 ```typescript
 interface McpAppRendererProps {
-  metadata: McpAppMetadata;           // Stable metadata from getAppMetadata
+  name: string;                        // Tool name; SDK matches this to server tool / app metadata
   input?: Record<string, unknown>;     // Tool arguments
   result?: unknown;                    // Tool execution result
   status: 'executing' | 'inProgress' | 'complete' | 'idle';
-  className?: string;                 // Custom CSS classes for container
+  className?: string;                  // Custom CSS classes for container
 }
 ```
 
@@ -662,15 +662,11 @@ import { useMcpApps } from '@mcp-ts/sdk/client/react';
 
 function ToolCallRenderer({ name, args, result, status }) {
   const { mcpClient } = useMcpContext();
-  const { getAppMetadata, McpAppRenderer } = useMcpApps(mcpClient);
-  
-  const metadata = getAppMetadata(name);
-  
-  if (!metadata) return null;
-  
+  const { McpAppRenderer } = useMcpApps(mcpClient);
+
   return (
     <McpAppRenderer
-      metadata={metadata}
+      name={name}
       input={args}
       result={result}
       status={status}

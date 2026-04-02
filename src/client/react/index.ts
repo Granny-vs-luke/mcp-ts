@@ -10,7 +10,11 @@ export { useMcp, type UseMcpOptions, type McpClient, type McpConnection } from '
 export { useAppHost } from './use-app-host.js';
 
 // Simplified MCP Apps Hook - the main API
-export { useMcpApps } from './use-mcp-apps.js';
+export {
+  useMcpApps,
+  type McpAppRendererProps,
+  type McpAppMetadata,
+} from './use-mcp-apps.js';
 
 // Re-export shared types and client from main entry
 export * from '../index.js';
