@@ -5,10 +5,11 @@ import { AppHost } from '../core/app-host';
 /**
  * Hook to host an MCP App in a React component
  *
- * Optimized for instant loading:
- * - Creates AppHost synchronously
- * - Starts bridge connection immediately
- * - Returns host before connection completes (ready to call launch)
+ * Initialization is async but optimized for instant availability:
+ * - Constructor runs synchronously (sandbox + bridge handler setup)
+ * - Host is set in state immediately so launch() can be called right away
+ * - start() is a lightweight no-op reserved for future async pre-init work
+ * - The real async work (iframe load, bridge connect) happens inside launch()
  *
  * @param client - Connected SSEClient instance
  * @param iframeRef - Reference to the iframe element

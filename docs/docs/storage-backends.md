@@ -256,6 +256,7 @@ If you prefer manual setup, copy the SQL from the [migration file](https://githu
 - <DocIcon type="lock" size={16} /> Row Level Security (RLS) for tenant isolation
 - <DocIcon type="success" size={16} /> Automatic updated_at and expires_at management
 - <DocIcon type="bolt" size={16} /> Cloud-native and serverless friendly
+- <DocIcon type="lock" size={16} /> Application-level AES-256-GCM encryption for `tokens` and `headers`
 
 **Usage:**
 
@@ -280,6 +281,35 @@ await storage.createSession({
   createdAt: Date.now(),
 });
 ```
+
+**Encryption at Rest:**
+
+The Supabase backend automatically encrypts sensitive session fields (`tokens` and `headers`) using **AES-256-GCM** before writing to the database. All encryption/decryption happens transparently in your Node.js application — Supabase only ever sees cipher text.
+
+To enable encryption, set the `STORAGE_ENCRYPTION_KEY` environment variable to a 32-byte hex string:
+
+```bash
+# Generate a secure key:
+# node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+STORAGE_ENCRYPTION_KEY=your-64-character-hex-string
+```
+
+Once set, encrypted data in the database will look like this:
+
+```json
+{
+  "tokens": "enc:1:cd4511ef932b...:3f2a1b...:a4b5c6d7...",
+  "headers": "enc:1:1234abcd...:..."
+}
+```
+
+:::tip
+If `STORAGE_ENCRYPTION_KEY` is **not** set, `mcp-ts` will print a single startup warning and save data without encryption — your app will not crash. This allows you to opt-in gradually or skip encryption in local dev.
+:::
+
+:::warning
+Never commit `STORAGE_ENCRYPTION_KEY` to version control. Treat it the same as a database password. If it is lost, encrypted session data from the database cannot be recovered.
+:::
 
 ---
 
@@ -380,6 +410,7 @@ const memoryStorage = new MemoryStorageBackend();
 | **Production** | <DocIcon type="success" size={16} /> Recommended | <DocIcon type="success" size={16} /> Recommended | <DocIcon type="warning" size={16} /> Single-instance | <DocIcon type="error" size={16} /> Not recommended |
 | **Development** | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Good |
 | **Testing** | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent |
+| **Encryption** | <DocIcon type="error" size={16} /> No | <DocIcon type="lock" size={16} /> AES-256-GCM | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No |
 
 ---
 
@@ -440,6 +471,16 @@ MCP_TS_STORAGE_TYPE=memory
 # Use Redis with Upstash or similar
 REDIS_URL=rediss://default:token@serverless-redis.upstash.io:6379
 ```
+
+### Security (Supabase)
+
+```bash
+# Enable encryption for tokens and headers at rest
+# Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+STORAGE_ENCRYPTION_KEY=your-64-character-hex-string
+```
+
+This enables transparent AES-256-GCM encryption so that even if your Supabase database is compromised, OAuth tokens and authorization headers remain unreadable.
 
 ---
 

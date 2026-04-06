@@ -1,4 +1,4 @@
-import crypto from 'node:crypto';
+import { randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
@@ -38,8 +38,8 @@ export function encryptObject(data: any): any {
 
     try {
         const text = JSON.stringify(data);
-        const iv = crypto.randomBytes(IV_LENGTH);
-        const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+        const iv = randomBytes(IV_LENGTH);
+        const cipher = createCipheriv(ALGORITHM, key, iv);
         
         let encrypted = cipher.update(text, 'utf-8', 'hex');
         encrypted += cipher.final('hex');
@@ -78,7 +78,7 @@ export function decryptObject(data: any): any {
         const authTag = Buffer.from(parts[3], 'hex');
         const encryptedText = parts[4];
 
-        const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+        const decipher = createDecipheriv(ALGORITHM, key, iv);
         decipher.setAuthTag(authTag);
 
         let decrypted = decipher.update(encryptedText, 'hex', 'utf-8');
