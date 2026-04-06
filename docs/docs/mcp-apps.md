@@ -88,7 +88,6 @@ function ToolRenderer() {
     name: "*",
     render: ({ name, args, result, status }) => (
       <McpAppRenderer
-        mcpClient={mcpClient}
         name={name}
         input={args}
         result={result}
@@ -165,7 +164,8 @@ sequenceDiagram
 
 ```typescript
 function useMcpApps(mcpClient: McpClient | null): {
-  McpAppRenderer: React.FC<McpAppRendererProps>;
+  getAppMetadata: (toolName: string) => McpAppMetadata | undefined;
+  McpAppRenderer: React.NamedExoticComponent<McpAppRendererProps>;
 }
 ```
 
@@ -173,13 +173,13 @@ function useMcpApps(mcpClient: McpClient | null): {
 - `mcpClient` - The MCP client from `useMcp()` or context
 
 **Returns:**
-- `McpAppRenderer` - Stable component for rendering MCP apps
+- `getAppMetadata` — Returns UI metadata for a tool if the server exposed an MCP App for it. Use this when you need to branch in your own UI (for example, show a badge only for tools with an app). You do not need it just to render: `McpAppRenderer` looks up metadata from the tool `name` on its own.
+- `McpAppRenderer` — Renders the app iframe for the client you passed into `useMcpApps`. Give it only the current tool call: `name`, `input`, `result`, and `status`.
 
 ### McpAppRenderer Props
 
 ```typescript
 interface McpAppRendererProps {
-  mcpClient: McpClient | null;           // MCP client for metadata lookup
   name: string;                            // Tool name to render
   input?: Record<string, unknown>;        // Tool arguments
   result?: unknown;                        // Tool execution result
@@ -212,7 +212,6 @@ function ToolRenderer() {
     name: "*",
     render: (props) => (
       <McpAppRenderer
-        mcpClient={mcpClient}
         name={props.name}
         input={props.args}
         result={props.result}
@@ -236,7 +235,6 @@ function MyToolRenderer({ toolName, args, result, status }) {
   
   return (
     <McpAppRenderer
-      mcpClient={mcpClient}
       name={toolName}
       input={args}
       result={result}

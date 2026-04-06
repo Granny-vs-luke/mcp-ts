@@ -4,7 +4,7 @@
  * Based on Cloudflare's agents pattern
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { SSEClient, type SSEClientOptions } from '../core/sse-client';
 import type { McpConnectionEvent, McpConnectionState } from '../../shared/events';
 import type {
@@ -227,6 +227,8 @@ export function useMcp(options: UseMcpOptions): McpClient {
     'disconnected'
   );
   const [isInitializing, setIsInitializing] = useState(false);
+  /** Mirrored from `clientRef` so the public `McpClient` object can be memoized when the instance is ready. */
+  const [sseClient, setSseClient] = useState<SSEClient | null>(null);
 
   /**
    * Initialize SSE client
@@ -258,6 +260,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
 
     const client = new SSEClient(clientOptions);
     clientRef.current = client;
+    setSseClient(client);
 
     if (autoConnect) {
       client.connect();
@@ -615,27 +618,52 @@ export function useMcp(options: UseMcpOptions): McpClient {
     [getConnection]
   );
 
-  return {
-    connections,
-    status,
-    isInitializing,
-    connect,
-    disconnect,
-    getConnection,
-    getConnectionByServerId,
-    isServerConnected,
-    getTools,
-    refresh,
-    connectSSE,
-    disconnectSSE,
-    finishAuth,
-    resumeAuth,
-    callTool,
-    listTools,
-    listPrompts,
-    getPrompt,
-    listResources,
-    readResource,
-    sseClient: clientRef.current,
-  };
+  return useMemo(
+    () => ({
+      connections,
+      status,
+      isInitializing,
+      connect,
+      disconnect,
+      getConnection,
+      getConnectionByServerId,
+      isServerConnected,
+      getTools,
+      refresh,
+      connectSSE,
+      disconnectSSE,
+      finishAuth,
+      resumeAuth,
+      callTool,
+      listTools,
+      listPrompts,
+      getPrompt,
+      listResources,
+      readResource,
+      sseClient,
+    }),
+    [
+      connections,
+      status,
+      isInitializing,
+      connect,
+      disconnect,
+      getConnection,
+      getConnectionByServerId,
+      isServerConnected,
+      getTools,
+      refresh,
+      connectSSE,
+      disconnectSSE,
+      finishAuth,
+      resumeAuth,
+      callTool,
+      listTools,
+      listPrompts,
+      getPrompt,
+      listResources,
+      readResource,
+      sseClient,
+    ]
+  );
 }

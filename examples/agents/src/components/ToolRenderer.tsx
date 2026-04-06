@@ -26,7 +26,6 @@ const ToolCallRenderer: React.FC<RenderProps> = (props) => {
         status={normalizedStatus} 
       />
       <McpAppRenderer
-        mcpClient={mcpClient}
         name={name}
         input={args}
         result={result}

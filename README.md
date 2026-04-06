@@ -270,7 +270,6 @@ export function ToolRenderer() {
     name: "*",
     render: ({ name, args, result, status }) => (
       <McpAppRenderer
-        mcpClient={mcpClient}
         name={name}
         input={args}
         result={result}

@@ -4,7 +4,15 @@
  * Provides utilities for rendering interactive UI components from MCP servers.
  */
 
-import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  memo,
+  useMemo,
+  type MutableRefObject,
+} from 'react';
 import { useAppHost } from './use-app-host.js';
 import type { SSEClient } from '../core/sse-client.js';
 
@@ -33,8 +41,8 @@ export interface McpAppMetadata {
   sessionId: string;
 }
 
-interface McpAppRendererProps {
-  mcpClient: McpClient | null;
+/** Props for {@link useMcpApps}'s `McpAppRenderer` (client is supplied via the hook). */
+export interface McpAppRendererProps {
   name: string;
   input?: Record<string, unknown>;
   result?: unknown;
@@ -43,90 +51,68 @@ interface McpAppRendererProps {
   className?: string;
 }
 
-/**
- * Simplified MCP App renderer - users just pass tool name and data
- * Internal hook handles metadata lookup and SSE client retrieval
- */
-const McpAppRenderer = memo(function McpAppRenderer({
-  mcpClient,
+type McpAppViewProps = McpAppRendererProps & {
+  /**
+   * Ref avoids tying `McpAppRenderer` identity to `mcpClient`: when `connections` updates, `useMcp()` still
+   * returns a new object (correct for `useEffect` deps), but the iframe must not remount.
+   */
+  clientRef: MutableRefObject<McpClient | null>;
+};
+
+/** Renders one MCP App in a sandboxed iframe; reads the latest client from `clientRef` each render. */
+const McpAppView = memo(function McpAppView({
+  clientRef,
   name,
   input,
   result,
   status,
   className,
-}: McpAppRendererProps) {
-  const getAppMetadata = useCallback((): McpAppMetadata | undefined => {
-    if (!mcpClient) return undefined;
-
-    const extractedName = extractToolName(name);
-
-    for (const conn of mcpClient.connections) {
-      for (const tool of conn.tools) {
-        const candidateName = extractToolName(tool.name);
-        const resourceUri =
-          tool.mcpApp?.resourceUri ??
-          tool._meta?.ui?.resourceUri ??
-          tool._meta?.['ui/resourceUri'];
-
-        if (resourceUri && candidateName === extractedName) {
-          return {
-            toolName: candidateName,
-            resourceUri,
-            sessionId: conn.sessionId,
-          };
-        }
-      }
-    }
-
-    return undefined;
-  }, [mcpClient, name]);
-
-  const metadata = getAppMetadata();
+}: McpAppViewProps) {
+  const mcpClient = clientRef.current;
+  const metadata = getMcpAppMetadata(mcpClient, name);
   const sseClient = mcpClient?.sseClient ?? null;
+  const resourceUri = metadata?.resourceUri;
+  const appSessionId = metadata?.sessionId;
 
-  if (!metadata || !sseClient) {
-    return null;
-  }
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { host, error: hostError } = useAppHost(sseClient as SSEClient, iframeRef);
   const [isLaunched, setIsLaunched] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  // Track which data has been sent to prevent duplicates
   const sentInputRef = useRef(false);
   const sentResultRef = useRef(false);
   const lastInputRef = useRef(input);
   const lastResultRef = useRef(result);
   const lastStatusRef = useRef(status);
 
-  // Launch the app when host is ready
   useEffect(() => {
-    if (!host || !metadata.resourceUri || !metadata.sessionId) return;
+    setIsLaunched(false);
+    setError(null);
+  }, [resourceUri, appSessionId]);
+
+  useEffect(() => {
+    if (!host || !resourceUri || !appSessionId) return;
 
     host
-      .launch(metadata.resourceUri, metadata.sessionId)
+      .launch(resourceUri, appSessionId)
       .then(() => setIsLaunched(true))
       .catch((err) => setError(err instanceof Error ? err : new Error(String(err))));
-  }, [host, metadata.resourceUri, metadata.sessionId]);
+  }, [host, resourceUri, appSessionId]);
 
-  // Send tool input when available or when it changes
   useEffect(() => {
-    if (!host || !isLaunched || !input) return;
-    
-    // Send if never sent, or if input changed
+    if (!host || !isLaunched || !resourceUri || !appSessionId || !input) return;
+
     if (!sentInputRef.current || JSON.stringify(input) !== JSON.stringify(lastInputRef.current)) {
       sentInputRef.current = true;
       lastInputRef.current = input;
       host.sendToolInput(input);
     }
-  }, [host, isLaunched, input]);
+  }, [host, isLaunched, input, resourceUri, appSessionId, name]);
 
-  // Send tool result when complete or when it changes
   useEffect(() => {
-    if (!host || !isLaunched || result === undefined) return;
+    if (!host || !isLaunched || !resourceUri || !appSessionId || result === undefined) return;
     if (status !== 'complete') return;
 
-    // Send if never sent, or if result changed
     if (!sentResultRef.current || JSON.stringify(result) !== JSON.stringify(lastResultRef.current)) {
       sentResultRef.current = true;
       lastResultRef.current = result;
@@ -136,9 +122,8 @@ const McpAppRenderer = memo(function McpAppRenderer({
           : result;
       host.sendToolResult(formattedResult);
     }
-  }, [host, isLaunched, result, status]);
+  }, [host, isLaunched, result, status, resourceUri, appSessionId, name]);
 
-  // Reset sent flags when tool status resets to executing (new tool call)
   useEffect(() => {
     if (status === 'executing' && lastStatusRef.current !== 'executing') {
       sentInputRef.current = false;
@@ -147,7 +132,10 @@ const McpAppRenderer = memo(function McpAppRenderer({
     lastStatusRef.current = status;
   }, [status]);
 
-  // Display errors
+  if (!metadata || !sseClient) {
+    return null;
+  }
+
   const displayError = error || hostError;
   if (displayError) {
     return (
@@ -176,72 +164,61 @@ const McpAppRenderer = memo(function McpAppRenderer({
 });
 
 /**
- * Simple hook to get MCP app metadata
+ * Helpers scoped to one `mcpClient`. Pass the client here once; `McpAppRenderer` only needs per-tool props (`name`, `input`, `result`, `status`).
  *
- * @param mcpClient - The MCP client from useMcp() or context
- * @returns Object with getAppMetadata function and McpAppRenderer component
- *
- * @example
- * ```tsx
- * function ToolRenderer(props) {
- *   const { getAppMetadata, McpAppRenderer } = useMcpApps(mcpClient);
- *   const metadata = getAppMetadata(props.name);
- *
- *   if (!metadata) return null;
- *   return (
- *     <McpAppRenderer
- *       metadata={metadata}
- *       input={props.args}
- *       result={props.result}
- *       status={props.status}
- *     />
- *   );
- * }
- * ```
+ * @param mcpClient - From `useMcp()` or context (for example `useMcpContext()`).
  */
 export function useMcpApps(mcpClient: McpClient | null) {
-  /**
-   * Get MCP app metadata for a tool name
-   * This is fast and can be called on every render
-   */
+  // Stable `McpAppRenderer` type: parent re-renders and `connections` updates must not remount the iframe.
+  const clientRef = useRef(mcpClient);
+  clientRef.current = mcpClient;
+
   const getAppMetadata = useCallback(
-    (toolName: string): McpAppMetadata | undefined => {
-      if (!mcpClient) return undefined;
-
-      const extractedName = extractToolName(toolName);
-
-      for (const conn of mcpClient.connections) {
-        for (const tool of conn.tools) {
-          const candidateName = extractToolName(tool.name);
-          // Check both locations: direct mcpApp or _meta.ui
-          const resourceUri =
-            tool.mcpApp?.resourceUri ??
-            tool._meta?.ui?.resourceUri ??
-            tool._meta?.['ui/resourceUri'];
-
-          if (resourceUri && candidateName === extractedName) {
-            return {
-              toolName: candidateName,
-              resourceUri,
-              sessionId: conn.sessionId,
-            };
-          }
-        }
-      }
-
-      return undefined;
-    },
-    [mcpClient]
+    (toolName: string) => getMcpAppMetadata(clientRef.current, toolName),
+    []
   );
+
+  const McpAppRenderer = useMemo(() => {
+    const Renderer = memo(function McpAppRenderer(props: McpAppRendererProps) {
+      return <McpAppView clientRef={clientRef} {...props} />;
+    });
+    Renderer.displayName = 'McpAppRenderer';
+    return Renderer;
+  }, []);
 
   return { getAppMetadata, McpAppRenderer };
 }
 
-/**
- * Extract the base tool name, removing any prefixes
- */
 function extractToolName(fullName: string): string {
-  // Handle patterns like "tool_abc123_get-time" -> "get-time"
   const match = fullName.match(/(?:tool_[^_]+_)?(.+)$/);
   return match?.[1] || fullName;
+}
+
+function getMcpAppMetadata(
+  mcpClient: McpClient | null,
+  toolName: string
+): McpAppMetadata | undefined {
+  if (!mcpClient) return undefined;
+
+  const extractedName = extractToolName(toolName);
+
+  for (const conn of mcpClient.connections) {
+    for (const tool of conn.tools) {
+      const candidateName = extractToolName(tool.name);
+      const resourceUri =
+        tool.mcpApp?.resourceUri ??
+        tool._meta?.ui?.resourceUri ??
+        tool._meta?.['ui/resourceUri'];
+
+      if (resourceUri && candidateName === extractedName) {
+        return {
+          toolName: candidateName,
+          resourceUri,
+          sessionId: conn.sessionId,
+        };
+      }
+    }
+  }
+
+  return undefined;
 }
