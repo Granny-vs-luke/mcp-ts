@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { StorageBackend, SessionData } from './types.js';
 import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
+import { encryptObject, decryptObject } from './crypto.js';
 
 export class SupabaseStorageBackend implements StorageBackend {
     private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
@@ -43,10 +44,10 @@ export class SupabaseStorageBackend implements StorageBackend {
             callbackUrl: row.callback_url,
             createdAt: new Date(row.created_at).getTime(),
             identity: row.identity,
-            headers: row.headers,
+            headers: decryptObject(row.headers),
             active: row.active,
             clientInformation: row.client_information,
-            tokens: row.tokens,
+            tokens: decryptObject(row.tokens),
             codeVerifier: row.code_verifier,
             clientId: row.client_id,
         };
@@ -71,10 +72,10 @@ export class SupabaseStorageBackend implements StorageBackend {
                 callback_url: session.callbackUrl,
                 created_at: new Date(session.createdAt || Date.now()).toISOString(),
                 identity: identity,
-                headers: session.headers,
+                headers: encryptObject(session.headers),
                 active: session.active ?? false,
                 client_information: session.clientInformation,
-                tokens: session.tokens,
+                tokens: encryptObject(session.tokens),
                 code_verifier: session.codeVerifier,
                 client_id: session.clientId,
                 expires_at: expiresAt
@@ -105,9 +106,9 @@ export class SupabaseStorageBackend implements StorageBackend {
         if ('transportType' in data) updateData.transport_type = data.transportType;
         if ('callbackUrl' in data) updateData.callback_url = data.callbackUrl;
         if ('active' in data) updateData.active = data.active;
-        if ('headers' in data) updateData.headers = data.headers;
+        if ('headers' in data) updateData.headers = encryptObject(data.headers);
         if ('clientInformation' in data) updateData.client_information = data.clientInformation;
-        if ('tokens' in data) updateData.tokens = data.tokens;
+        if ('tokens' in data) updateData.tokens = encryptObject(data.tokens);
         if ('codeVerifier' in data) updateData.code_verifier = data.codeVerifier;
         if ('clientId' in data) updateData.client_id = data.clientId;
 
