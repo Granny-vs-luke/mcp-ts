@@ -165,6 +165,7 @@ export function _setStorageInstanceForTesting(instance: StorageBackend | null): 
  */
 export const storage: StorageBackend = new Proxy({} as StorageBackend, {
     get(_target, prop) {
+        if (prop === 'then') return undefined;
         return async (...args: any[]) => {
             const instance = await getStorage();
             const value = (instance as any)[prop];
