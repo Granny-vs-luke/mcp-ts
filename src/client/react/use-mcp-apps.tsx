@@ -146,16 +146,16 @@ const McpAppView = memo(function McpAppView({
   }
 
   return (
-    <div className={`w-full border border-gray-700 rounded overflow-hidden bg-white min-h-96 my-2 relative ${className || ''}`}>
+    <div className={`w-full border border-gray-700 rounded overflow-hidden bg-transparent min-h-96 my-2 relative ${className || ''}`}>
       <iframe
         ref={iframeRef}
         sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads"
-        className="w-full h-full min-h-96"
+        className={`w-full h-full min-h-96 transition-opacity duration-300 ${isLaunched ? 'opacity-100' : 'opacity-0'}`}
         style={{ height: 'auto' }}
         title="MCP App"
       />
       {!isLaunched && (
-        <div className="absolute inset-0 bg-gray-900/50 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 bg-transparent flex items-center justify-center pointer-events-none z-10">
           <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
         </div>
       )}
