@@ -4,12 +4,14 @@ import { MemoryStorageBackend } from './memory-backend';
 import { FileStorageBackend } from './file-backend';
 import { SqliteStorage } from './sqlite-backend.js';
 import { SupabaseStorageBackend } from './supabase-backend.js';
+import { LocalStorageBackend } from './localstorage-backend.js';
 import type { StorageBackend } from './types.js';
 
 // Re-export types
 export * from './types.js';
 export { generateSessionId } from '../../shared/utils.js';
-export { RedisStorageBackend, MemoryStorageBackend, FileStorageBackend, SqliteStorage, SupabaseStorageBackend };
+export { RedisStorageBackend, MemoryStorageBackend, FileStorageBackend, SqliteStorage, SupabaseStorageBackend, LocalStorageBackend };
+export type { LocalStorageBackendOptions } from './localstorage-backend.js';
 
 export function createSupabaseStorageBackend(client: any): SupabaseStorageBackend {
     return new SupabaseStorageBackend(client);
@@ -83,6 +85,18 @@ async function createStorage(): Promise<StorageBackend> {
     if (type === 'memory') {
         console.log('[mcp-ts][Storage] Explicit selection: "memory"');
         return await initializeStorage(new MemoryStorageBackend());
+    }
+
+    if (type === 'localstorage') {
+        // localStorage is only available in browser environments.
+        // Attempting to use it server-side will throw on first operation.
+        if (typeof window === 'undefined') {
+            console.warn('[mcp-ts][Storage] "localstorage" backend requires a browser environment. Falling back to in-memory storage.');
+            return await initializeStorage(new MemoryStorageBackend());
+        }
+        const namespace = process.env.MCP_TS_STORAGE_LS_NAMESPACE;
+        console.log(`[mcp-ts][Storage] Explicit selection: "localstorage" (namespace: "${namespace ?? 'mcp-ts'}")`);
+        return await initializeStorage(new LocalStorageBackend({ namespace }));
     }
 
     // Automatic inference (Fallback)

@@ -313,6 +313,74 @@ Never commit `STORAGE_ENCRYPTION_KEY` to version control. Treat it the same as a
 
 ---
 
+### <DocIcon type="browser" size={24} /> LocalStorage (Browser)
+
+**Client-side persistent storage for browser environments — no server required.**
+
+LocalStorage is the ideal backend for fully client-side MCP applications (SPAs, demos, embedded browser tools) that want sessions to survive page refreshes without any backend infrastructure.
+
+**Best for:**
+- Single-page applications (React, Vue, etc.)
+- Browser-embedded MCP tools and demos
+- Offline-capable or zero-backend apps
+- Local development without any external services
+
+:::warning
+**XSS Risk:** `localStorage` is accessible to all scripts on the same origin. Do **not** store sensitive OAuth tokens in a high-security context using this backend. Use Redis or Supabase for production server-side deployments.
+:::
+
+:::note
+**Browser-only:** This backend calls `window.localStorage` and will not work in Node.js environments. When `MCP_TS_STORAGE_TYPE=localstorage` is set but `window` is undefined, it automatically falls back to in-memory storage.
+:::
+
+**Configuration:**
+
+```bash
+# Explicit selection
+MCP_TS_STORAGE_TYPE=localstorage
+
+# Optional: custom namespace prefix (default: "mcp-ts")
+# Useful if multiple apps share the same origin
+MCP_TS_STORAGE_LS_NAMESPACE=my-app
+```
+
+**Features:**
+- <DocIcon type="success" size={16} /> Persistent across page refreshes (survives browser restart)
+- <DocIcon type="success" size={16} /> Zero external dependencies
+- <DocIcon type="success" size={16} /> Optional TTL with lazy expiry eviction
+- <DocIcon type="success" size={16} /> Namespace prefix to avoid key collisions
+- <DocIcon type="warning" size={16} /> Browser-only (not available in Node.js)
+- <DocIcon type="warning" size={16} /> Same-origin only (~5–10 MB quota)
+- <DocIcon type="error" size={16} /> Not suitable for multi-user or multi-instance deployments
+
+**Manual instantiation (recommended for browser apps):**
+
+```typescript
+import { LocalStorageBackend } from '@mcp-ts/sdk/server';
+
+// Minimal setup
+const storage = new LocalStorageBackend();
+await storage.init();
+
+// With options
+const storage = new LocalStorageBackend({
+  namespace: 'my-app',   // key prefix (default: 'mcp-ts')
+  defaultTtl: 3600,      // 1-hour sessions (default: 43200 = 12h)
+                         // set to 0 for no expiry
+});
+await storage.init();
+```
+
+**Key storage format:**
+
+```
+localStorage["mcp-ts:session:user-123:abc456"] = JSON string (SessionData + optional _expiresAt)
+localStorage["mcp-ts:idx:user-123"]            = JSON string[] (session IDs for that identity)
+localStorage["mcp-ts:identities"]              = JSON string[] (all known identities)
+```
+
+---
+
 ### <DocIcon type="postgres" size={24} /> PostgreSQL
 
 For self-hosted PostgreSQL environments.
@@ -363,6 +431,8 @@ graph TD
 5. **Auto-detect SQLite**: If `MCP_TS_STORAGE_SQLITE_PATH` is present, use SQLite
 6. **Default**: Fall back to In-Memory storage
 
+> **Note:** `LocalStorage` is **not** auto-detected. It must be explicitly set via `MCP_TS_STORAGE_TYPE=localstorage` or instantiated directly (`new LocalStorageBackend()`) in browser code.
+
 ---
 
 ## <DocIcon type="tools" size={28} /> Custom Backend Implementation
@@ -399,18 +469,19 @@ const memoryStorage = new MemoryStorageBackend();
 
 ## <DocIcon type="chart" size={28} /> Backend Comparison
 
-| Feature | <DocIcon type="redis" size={20} /> Redis | <DocIcon type="supabase" size={20} /> Supabase | <DocIcon type="sqlite" size={20} /> SQLite | <DocIcon type="filesystem" size={20} /> File System | <DocIcon type="memory" size={20} /> In-Memory |
-|---------|----------|----------|----------|----------------|--------------|
-| **Persistence** | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="error" size={16} /> No |
-| **Distributed** | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No |
-| **Auto-Expiry** | <DocIcon type="success" size={16} /> Yes (TTL) | <DocIcon type="success" size={16} /> Yes (Manual) | <DocIcon type="success" size={16} /> Yes (Manual) | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No |
-| **Performance** | <DocIcon type="bolt" size={16} /> Fast | <DocIcon type="bolt" size={16} /> Fast | <DocIcon type="bolt" size={16} /> Very Fast | <DocIcon type="chart" size={16} /> Medium | <DocIcon type="rocket" size={16} /> Fastest |
-| **Setup** | <DocIcon type="tools" size={16} /> External | <DocIcon type="tools" size={16} /> Cloud | <DocIcon type="tools" size={16} /> Native | <DocIcon type="filesystem" size={16} /> Built-in | <DocIcon type="target" size={16} /> Built-in |
-| **Serverless** | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Recommended | <DocIcon type="warning" size={16} /> Limited | <DocIcon type="success" size={16} /> Yes |
-| **Production** | <DocIcon type="success" size={16} /> Recommended | <DocIcon type="success" size={16} /> Recommended | <DocIcon type="warning" size={16} /> Single-instance | <DocIcon type="error" size={16} /> Not recommended |
-| **Development** | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Good |
-| **Testing** | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent |
-| **Encryption** | <DocIcon type="error" size={16} /> No | <DocIcon type="lock" size={16} /> AES-256-GCM | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No |
+| Feature | <DocIcon type="redis" size={20} /> Redis | <DocIcon type="supabase" size={20} /> Supabase | <DocIcon type="sqlite" size={20} /> SQLite | <DocIcon type="filesystem" size={20} /> File System | <DocIcon type="memory" size={20} /> In-Memory | <DocIcon type="browser" size={20} /> LocalStorage |
+|---------|----------|----------|----------|----------------|--------------|---------------|
+| **Persistence** | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="error" size={16} /> No | <DocIcon type="success" size={16} /> Yes (browser) |
+| **Distributed** | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Yes | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No |
+| **Auto-Expiry** | <DocIcon type="success" size={16} /> Yes (TTL) | <DocIcon type="success" size={16} /> Yes (Manual) | <DocIcon type="success" size={16} /> Yes (Manual) | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No | <DocIcon type="success" size={16} /> Yes (Lazy TTL) |
+| **Performance** | <DocIcon type="bolt" size={16} /> Fast | <DocIcon type="bolt" size={16} /> Fast | <DocIcon type="bolt" size={16} /> Very Fast | <DocIcon type="chart" size={16} /> Medium | <DocIcon type="rocket" size={16} /> Fastest | <DocIcon type="rocket" size={16} /> Fastest |
+| **Setup** | <DocIcon type="tools" size={16} /> External | <DocIcon type="tools" size={16} /> Cloud | <DocIcon type="tools" size={16} /> Native | <DocIcon type="filesystem" size={16} /> Built-in | <DocIcon type="target" size={16} /> Built-in | <DocIcon type="target" size={16} /> Built-in |
+| **Serverless** | <DocIcon type="success" size={16} /> Yes | <DocIcon type="success" size={16} /> Recommended | <DocIcon type="warning" size={16} /> Limited | <DocIcon type="success" size={16} /> Yes | | <DocIcon type="success" size={16} /> Yes (browser) |
+| **Production** | <DocIcon type="success" size={16} /> Recommended | <DocIcon type="success" size={16} /> Recommended | <DocIcon type="warning" size={16} /> Single-instance | <DocIcon type="error" size={16} /> Not recommended | | <DocIcon type="error" size={16} /> No |
+| **Development** | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Good | | <DocIcon type="success" size={16} /> Excellent |
+| **Testing** | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent | <DocIcon type="success" size={16} /> Good | <DocIcon type="success" size={16} /> Excellent | | <DocIcon type="success" size={16} /> Good |
+| **Encryption** | <DocIcon type="error" size={16} /> No | <DocIcon type="lock" size={16} /> AES-256-GCM | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No | <DocIcon type="error" size={16} /> No |
+| **Environment** | Server | Server | Server | Server | Server | **Browser only** |
 
 ---
 
