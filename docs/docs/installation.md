@@ -16,9 +16,11 @@ Before installing, ensure you have:
 - **Package manager** - npm, yarn, or pnpm
 - **Storage Backend** (optional, defaults to in-memory):
   - <DocIcon type="redis" size={24} /> **Redis** — Production distributed storage
+  - <DocIcon type="supabase" size={24} /> **Supabase** — Cloud-native PostgreSQL (recommended for Next.js)
+  - <DocIcon type="sqlite" size={24} /> **SQLite** — Zero-config single-file database
   - <DocIcon type="filesystem" size={24} /> **File System** — Local JSON persistence
-  - <DocIcon type="memory" size={24} /> **In-Memory** — Fast ephemeral storage
-  - <DocIcon type="postgres" size={24} /> **PostgreSQL** — Coming soon!
+  - <DocIcon type="memory" size={24} /> **In-Memory** — Fast ephemeral storage (default)
+  - <DocIcon type="browser" size={24} /> **LocalStorage** — Browser-only, no backend (DI pattern)
 
 ## Install the Package
 
@@ -109,12 +111,28 @@ PostgreSQL support is planned for a future release.
 
 ## Storage Selection Logic
 
-The library uses the following priority:
+The library uses the following priority for **server-side** deployments:
 
 1. **Explicit**: If `MCP_TS_STORAGE_TYPE` is set, use that backend
 2. **Auto-detect Redis**: If `REDIS_URL` is present, use Redis
-3. **Auto-detect File**: If `MCP_TS_STORAGE_FILE` is present, use File
-4. **Default**: Fall back to In-Memory storage
+3. **Auto-detect Supabase**: If `SUPABASE_URL` is present, use Supabase  
+4. **Auto-detect File**: If `MCP_TS_STORAGE_FILE` is present, use File
+5. **Auto-detect SQLite**: If `MCP_TS_STORAGE_SQLITE_PATH` is present, use SQLite
+6. **Default**: Fall back to In-Memory storage
+
+:::note Browser Mode
+**`LocalStorageBackend`** is not part of the auto-detection chain. For browser-only apps without a backend, import it from `@mcp-ts/sdk/client` and inject it explicitly:
+```typescript
+import { LocalStorageBackend } from '@mcp-ts/sdk/client';
+import { MultiSessionClient } from '@mcp-ts/sdk/server';
+
+const storage = new LocalStorageBackend({ namespace: 'my-app' });
+await storage.init();
+
+const client = new MultiSessionClient('user-123', { storage });
+await client.connect();
+```
+:::
 
 ## Verify Installation
 

@@ -1,5 +1,5 @@
 import type { Database } from 'better-sqlite3';
-import { StorageBackend, SessionData } from './types.js'; // Ensure .js extension
+import { StorageBackend, SessionData } from '../../shared/storage.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { generateSessionId } from '../../shared/utils.js';

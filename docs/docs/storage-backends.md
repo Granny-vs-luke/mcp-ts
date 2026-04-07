@@ -317,66 +317,83 @@ Never commit `STORAGE_ENCRYPTION_KEY` to version control. Treat it the same as a
 
 **Client-side persistent storage for browser environments — no server required.**
 
-LocalStorage is the ideal backend for fully client-side MCP applications (SPAs, demos, embedded browser tools) that want sessions to survive page refreshes without any backend infrastructure.
+The `LocalStorageBackend` is the ideal choice when you want to build a **fully client-side MCP application** (SPA, demo, embedded browser tool, or Electron app) where connections are made directly from the browser to a remote MCP server without any Node.js proxy.
 
 **Best for:**
-- Single-page applications (React, Vue, etc.)
+- Single-page applications (React, Vue, etc.) without a backend proxy
 - Browser-embedded MCP tools and demos
 - Offline-capable or zero-backend apps
 - Local development without any external services
 
 :::warning
-**XSS Risk:** `localStorage` is accessible to all scripts on the same origin. Do **not** store sensitive OAuth tokens in a high-security context using this backend. Use Redis or Supabase for production server-side deployments.
+**XSS Risk:** `localStorage` is accessible to all JavaScript on the same origin and is therefore vulnerable to XSS attacks. Do **not** store sensitive OAuth tokens in this backend for high-security production applications. Use Redis or Supabase for server-side deployments.
 :::
 
 :::note
-**Browser-only:** This backend calls `window.localStorage` and will not work in Node.js environments. When `MCP_TS_STORAGE_TYPE=localstorage` is set but `window` is undefined, it automatically falls back to in-memory storage.
+**Browser-only:** This backend lives in `@mcp-ts/sdk/client` (not `@mcp-ts/sdk/server`) and requires `window.localStorage`. It will not work in Node.js environments. When used with `nextHandlers` / `sseHandler`, the session data must be stored server-side — use Redis, File, or Supabase instead.
 :::
 
-**Configuration:**
+**Installation:**
 
 ```bash
-# Explicit selection
-MCP_TS_STORAGE_TYPE=localstorage
-
-# Optional: custom namespace prefix (default: "mcp-ts")
-# Useful if multiple apps share the same origin
-MCP_TS_STORAGE_LS_NAMESPACE=my-app
+# LocalStorageBackend is included in the core package — no extra install needed
+npm install @mcp-ts/sdk
 ```
 
 **Features:**
 - <DocIcon type="success" size={16} /> Persistent across page refreshes (survives browser restart)
 - <DocIcon type="success" size={16} /> Zero external dependencies
-- <DocIcon type="success" size={16} /> Optional TTL with lazy expiry eviction
+- <DocIcon type="success" size={16} /> Optional TTL with lazy eviction
 - <DocIcon type="success" size={16} /> Namespace prefix to avoid key collisions
-- <DocIcon type="warning" size={16} /> Browser-only (not available in Node.js)
+- <DocIcon type="warning" size={16} /> Browser-only (not for Node.js / sseHandler setups)
 - <DocIcon type="warning" size={16} /> Same-origin only (~5–10 MB quota)
 - <DocIcon type="error" size={16} /> Not suitable for multi-user or multi-instance deployments
 
-**Manual instantiation (recommended for browser apps):**
+**Browser-mode usage (Dependency Injection):**
 
 ```typescript
-import { LocalStorageBackend } from '@mcp-ts/sdk/server';
+// ✅ Import from '@mcp-ts/sdk/client' — never from '/server'
+import { LocalStorageBackend } from '@mcp-ts/sdk/client';
+import { MultiSessionClient, MCPClient } from '@mcp-ts/sdk/server';
 
-// Minimal setup
-const storage = new LocalStorageBackend();
-await storage.init();
-
-// With options
+// Create a shared storage instance for this browser session
 const storage = new LocalStorageBackend({
-  namespace: 'my-app',   // key prefix (default: 'mcp-ts')
-  defaultTtl: 3600,      // 1-hour sessions (default: 43200 = 12h)
-                         // set to 0 for no expiry
+  namespace: 'my-app',  // key prefix (default: 'mcp-ts')
+  defaultTtl: 43200,    // 12-hour sessions (set to 0 for no expiry)
 });
+
+// Initialize once, then inject into every client via the `storage` option
 await storage.init();
+
+// ─── MultiSessionClient (connects all previously saved sessions) ─────────────
+const multiClient = new MultiSessionClient('user-123', { storage });
+await multiClient.connect();
+
+// ─── MCPClient (new connection to a single server) ───────────────────────────
+const singleClient = new MCPClient({
+  identity: 'user-123',
+  sessionId: singleClient.generateSessionId?.() ?? storage.generateSessionId(),
+  serverUrl: 'https://my-mcp-server.dev/mcp',
+  callbackUrl: `${window.location.origin}/oauth/callback`,
+  storage, // <-- same backend injected here
+});
+
+await singleClient.connect();
 ```
+
+**`LocalStorageBackendOptions`:**
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `namespace` | `string` | `'mcp-ts'` | Key prefix — useful when multiple apps share the same origin |
+| `defaultTtl` | `number` | `43200` | Session lifetime in seconds. `0` = no expiry |
 
 **Key storage format:**
 
 ```
-localStorage["mcp-ts:session:user-123:abc456"] = JSON string (SessionData + optional _expiresAt)
-localStorage["mcp-ts:idx:user-123"]            = JSON string[] (session IDs for that identity)
-localStorage["mcp-ts:identities"]              = JSON string[] (all known identities)
+localStorage["mcp-ts:session:<identity>:<sessionId>"] = JSON string (SessionData + _expiresAt)
+localStorage["mcp-ts:idx:<identity>"]                = JSON string[] (all sessionIds for that identity)
+localStorage["mcp-ts:identities"]                   = JSON string[] (all known identities)
 ```
 
 ---
@@ -431,7 +448,10 @@ graph TD
 5. **Auto-detect SQLite**: If `MCP_TS_STORAGE_SQLITE_PATH` is present, use SQLite
 6. **Default**: Fall back to In-Memory storage
 
-> **Note:** `LocalStorage` is **not** auto-detected. It must be explicitly set via `MCP_TS_STORAGE_TYPE=localstorage` or instantiated directly (`new LocalStorageBackend()`) in browser code.
+> **Note:** `LocalStorage` is **not** part of the automatic server-side detection chain. It must be
+> injected explicitly via the `storage` option on `MCPClient` / `MultiSessionClient`, or used directly
+> by calling `new LocalStorageBackend()` in browser code.
+> See the [Browser Mode](#-localstorage-browser) section above for usage details.
 
 ---
 

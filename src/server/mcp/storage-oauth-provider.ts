@@ -5,7 +5,7 @@ import type {
     OAuthClientMetadata,
     OAuthTokens
 } from "@modelcontextprotocol/sdk/shared/auth.js";
-import { storage, SessionData } from "../storage/index.js";
+import type { StorageBackend, SessionData } from "../../shared/storage.js";
 import {
     DEFAULT_CLIENT_NAME,
     DEFAULT_CLIENT_URI,
@@ -17,8 +17,8 @@ import {
 } from '../../shared/constants.js';
 
 /**
- * Extension of OAuthClientProvider interface with additional methods
- * Enables server-specific tracking and state management
+ * Extension of OAuthClientProvider interface with additional methods.
+ * Enables server-specific tracking and state management.
  */
 export interface AgentsOAuthProvider extends OAuthClientProvider {
     authUrl: string | undefined;
@@ -45,11 +45,36 @@ export interface StorageOAuthClientProviderOptions {
     clientId?: string;
     clientSecret?: string;
     onRedirect?: (url: string) => void;
+
+    /**
+     * The storage backend to use for persisting OAuth state.
+     *
+     * ─── Server-side usage ─────────────────────────────────────────────────────
+     * Leave `undefined` to use the global singleton (auto-detected from env vars).
+     * This is the default behaviour when you use `sseHandler` / `nextHandlers`.
+     *
+     * ─── Browser-side usage ────────────────────────────────────────────────────
+     * Pass a `LocalStorageBackend` (or any `StorageBackend` implementation) to
+     * opt in to a fully client-side architecture without a backend proxy.
+     *
+     * @example
+     * // Browser (pure front-end, no sseHandler)
+     * import { LocalStorageBackend } from '@mcp-ts/sdk/client';
+     *
+     * new StorageOAuthClientProvider({
+     *   ...opts,
+     *   storage: new LocalStorageBackend({ namespace: 'my-app' }),
+     * });
+     */
+    storage?: StorageBackend;
 }
 
 /**
- * Storage-backed OAuth provider implementation for MCP
- * Stores OAuth tokens, client information, and PKCE verifiers using the configured StorageBackend
+ * Storage-backed OAuth provider for MCP.
+ *
+ * Reads and writes OAuth tokens, PKCE code verifiers, and client information
+ * through any {@link StorageBackend}. Works transparently with both the
+ * server-side global store and browser-side `LocalStorageBackend`.
  */
 export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     public readonly identity: string;
@@ -62,6 +87,9 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     private readonly logoUri?: string;
     private readonly policyUri?: string;
     private readonly clientSecret?: string;
+
+    /** Injected or lazily-resolved storage backend */
+    private readonly _storage: StorageBackend | undefined;
 
     private _authUrl: string | undefined;
     private _clientId: string | undefined;
@@ -84,7 +112,49 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         this._clientId = options.clientId;
         this.clientSecret = options.clientSecret;
         this.onRedirectCallback = options.onRedirect;
+        this._storage = options.storage;
     }
+
+    // ─── Storage resolution ─────────────────────────────────────────────────
+
+    /**
+     * Resolves the active storage backend.
+     *
+     * When an explicit backend was passed via DI, use it directly.
+     * Otherwise, fall back to the global server-side singleton (lazy import
+     * keeps this tree-shakeable for browser bundles when DI is used).
+     */
+    private async getBackend(): Promise<StorageBackend> {
+        if (this._storage) return this._storage;
+        // Lazy import → the server storage module is never bundled when
+        // a browser-side backend is passed via constructor injection.
+        const { storage } = await import('../storage/index.js');
+        return storage;
+    }
+
+    // ─── Internal helpers ────────────────────────────────────────────────────
+
+    /**
+     * Loads OAuth data from the storage session.
+     * Returns an empty object if the session does not exist yet.
+     */
+    private async getSessionData(): Promise<SessionData> {
+        const backend = await this.getBackend();
+        const data = await backend.getSession(this.identity, this.sessionId);
+        return data ?? ({} as SessionData);
+    }
+
+    /**
+     * Persists partial OAuth data back into the current session.
+     * The session must already exist (created by the controller layer) before
+     * this method is called, otherwise the backend will throw.
+     */
+    private async saveSessionData(data: Partial<SessionData>): Promise<void> {
+        const backend = await this.getBackend();
+        await backend.updateSession(this.identity, this.sessionId, data);
+    }
+
+    // ─── OAuthClientProvider interface ──────────────────────────────────────
 
     get clientMetadata(): OAuthClientMetadata {
         return {
@@ -109,31 +179,6 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         this._clientId = clientId_;
     }
 
-    /**
-     * Loads OAuth data from storage session
-     * @private
-     */
-    private async getSessionData(): Promise<SessionData> {
-        const data = await storage.getSession(this.identity, this.sessionId);
-        if (!data) {
-            return {} as SessionData;
-        }
-        return data;
-    }
-
-    /**
-     * Saves OAuth data to storage
-     * @param data - Partial OAuth data to save
-     * @private
-     * @throws Error if session doesn't exist (session must be created by controller layer)
-     */
-    private async saveSessionData(data: Partial<SessionData>): Promise<void> {
-        await storage.updateSession(this.identity, this.sessionId, data);
-    }
-
-    /**
-     * Retrieves stored OAuth client information
-     */
     async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
         const data = await this.getSessionData();
 
@@ -155,9 +200,6 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         };
     }
 
-    /**
-     * Stores OAuth client information
-     */
     async saveClientInformation(clientInformation: OAuthClientInformationFull): Promise<void> {
         await this.saveSessionData({
             clientInformation,
@@ -166,9 +208,6 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         this.clientId = clientInformation.client_id;
     }
 
-    /**
-     * Stores OAuth tokens
-     */
     async saveTokens(tokens: OAuthTokens): Promise<void> {
         const data: Partial<SessionData> = { tokens };
 
@@ -188,7 +227,8 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async checkState(_state: string): Promise<{ valid: boolean; serverId?: string; error?: string }> {
-        const data = await storage.getSession(this.identity, this.sessionId);
+        const backend = await this.getBackend();
+        const data = await backend.getSession(this.identity, this.sessionId);
 
         if (!data) {
             return { valid: false, error: "Session not found" };
@@ -198,7 +238,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async consumeState(_state: string): Promise<void> {
-        // No-op
+        // No-op — state is carried by the sessionId itself
     }
 
     async redirectToAuthorization(authUrl: URL): Promise<void> {
@@ -211,8 +251,10 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     async invalidateCredentials(
         scope: "all" | "client" | "tokens" | "verifier"
     ): Promise<void> {
+        const backend = await this.getBackend();
+
         if (scope === "all") {
-            await storage.removeSession(this.identity, this.sessionId);
+            await backend.removeSession(this.identity, this.sessionId);
         } else {
             const updates: Partial<SessionData> = {};
 

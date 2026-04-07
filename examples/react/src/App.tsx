@@ -24,7 +24,7 @@ function App() {
   return (
     <div className="app">
       <header>
-        <h1>MCP Redis Client Example</h1>
+        <h1>MCP Client Example</h1>
         <div className="status-badge" data-status={status}>
           SSE Status: {status}
         </div>
@@ -50,23 +50,24 @@ function App() {
           <h3>About this Example</h3>
           <p>
             This example demonstrates the <code>useMcp</code> hook from{' '}
-            <code>@mcp-ts/sdk</code>. It connects to an MCP server
-            via Server-Sent Events (SSE) with Redis-backed session management.
+            <code>@mcp-ts/sdk</code>. It connects to an MCP server via Server-Sent
+            Events (SSE) through a backend proxy that handles session persistence.
           </p>
-          <h4>Features:</h4>
+          <h4>Proxy Mode (this example):</h4>
           <ul>
             <li>Real-time connection status via SSE</li>
             <li>OAuth 2.1 authentication flow</li>
             <li>Tool discovery and execution</li>
             <li>Automatic reconnection handling</li>
-            <li>Redis-backed session persistence</li>
+            <li>Server-side session persistence (Redis / Supabase / SQLite / File)</li>
           </ul>
-          <h4>Setup Required:</h4>
-          <ol>
-            <li>Set up a backend SSE endpoint (see server examples)</li>
-            <li>Configure Redis connection</li>
-            <li>Update the SSE URL above to match your backend</li>
-          </ol>
+          <h4>Browser Mode (no backend):</h4>
+          <p style={{ fontSize: '0.875rem', color: '#666' }}>
+            For pure browser apps, import <code>LocalStorageBackend</code> from{' '}
+            <code>@mcp-ts/sdk/client</code> and pass it to{' '}
+            <code>MCPClient</code> or <code>MultiSessionClient</code> via the{' '}
+            <code>storage</code> option — no SSE endpoint needed.
+          </p>
         </section>
       </main>
     </div>

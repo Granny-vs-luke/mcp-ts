@@ -6,6 +6,7 @@
 /** SSE client for real-time connections */
 export { SSEClient, type SSEClientOptions } from './core/sse-client';
 export { AppHost } from './core/app-host';
+export { LocalStorageBackend, type LocalStorageBackendOptions } from './storage/localstorage-backend.js';
 
 
 

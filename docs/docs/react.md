@@ -336,9 +336,61 @@ import type {
 import type {
   McpClient, // Return type of useMcp
 } from '@mcp-ts/sdk/client';
+
+// Storage types are shared — importable from either entry point
+import type { StorageBackend, SessionData } from '@mcp-ts/sdk/shared';
 ```
+
+---
+
+## Browser Mode (No Backend Required)
+
+`useMcp` is designed for the **proxy pattern** where a backend SSE server manages connections on your behalf. But if you want to connect **directly from the browser** to a remote MCP server (no `sseHandler`, no Next.js API routes), you can use `MCPClient` or `MultiSessionClient` directly with `LocalStorageBackend`.
+
+:::warning
+Direct browser-to-MCP-server connections require the remote MCP server to have **CORS enabled** for your origin. OAuth tokens are stored in `localStorage` which is accessible to all scripts on the same origin (XSS risk).
+:::
+
+```typescript
+import { LocalStorageBackend } from '@mcp-ts/sdk/client';
+import { MultiSessionClient } from '@mcp-ts/sdk/server';
+
+// ─── 1. Create and initialize the storage backend ──────────────────────
+const storage = new LocalStorageBackend({ namespace: 'my-react-app' });
+await storage.init();
+
+// ─── 2. Use the storage in a React component ─────────────────────────
+function BrowserMcpApp() {
+  const multiClient = useMemo(
+    () => new MultiSessionClient('user-123', { storage }),
+    []
+  );
+
+  useEffect(() => {
+    // Reconnect to all previously saved sessions on mount
+    multiClient.connect();
+    return () => multiClient.disconnect();
+  }, [multiClient]);
+
+  const clients = multiClient.getClients();
+  // ... render connected clients
+}
+```
+
+**When to use each mode:**
+
+| | `useMcp` (proxy mode) | `MCPClient` / `MultiSessionClient` (browser mode) |
+|---|---|---|
+| **Backend required** | ✅ Yes (`sseHandler`) | ❌ No |
+| **Session storage** | Server-side (Redis, Supabase…) | Browser (`LocalStorageBackend`) |
+| **CORS needed** | ❌ (same-origin proxy) | ✅ (direct connection) |
+| **Security** | 🔒 Tokens server-side | ⚠️ Tokens in `localStorage` |
+| **Recommended for** | Production apps | Demos, dev tools, SPAs |
+
+---
 
 ## Next Steps
 
+- [Storage Backends](./storage-backends.md) - Backend options including `LocalStorageBackend`
 - [API Reference](./api-reference.md) - Complete API documentation
 - [Examples](https://github.com/zonlabs/mcp-ts/tree/main/examples) - More practical examples

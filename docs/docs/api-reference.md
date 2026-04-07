@@ -80,6 +80,12 @@ const client = new MCPClient({
   clientUri?: string,
   logoUri?: string,
   policyUri?: string,
+  /**
+   * Storage backend for session and OAuth data.
+   * Omit to use the global auto-detected server-side backend (default).
+   * Pass a `LocalStorageBackend` for purely browser-side usage with no sseHandler.
+   */
+  storage?: StorageBackend,
 });
 ```
 
@@ -202,6 +208,12 @@ const mcp = new MultiSessionClient(identity, {
   timeout: 15000,
   maxRetries: 2,
   retryDelay: 1000,
+  /**
+   * Storage backend for session discovery and persistence.
+   * Omit to use the global auto-detected server-side backend (default).
+   * Pass a `LocalStorageBackend` for purely browser-side usage without a proxy.
+   */
+  storage?: StorageBackend,
 });
 ```
 
@@ -209,6 +221,7 @@ const mcp = new MultiSessionClient(identity, {
 - `timeout` - Connection timeout in milliseconds (default: 15000)
 - `maxRetries` - Maximum number of retry attempts for each session (default: 2)
 - `retryDelay` - Delay between retries in milliseconds (default: 1000)
+- `storage` - Optional storage backend (see [Architecture: Browser vs Server](#architecture-browser-vs-server) below)
 
 #### Methods
 
@@ -399,6 +412,24 @@ MCP_TS_STORAGE_FILE=./sessions.json
 MCP_TS_STORAGE_TYPE=memory
 ```
 
+:::note Architecture: Browser vs Server
+The global `storage` singleton and env-var detection apply **only to server-side deployments** (Next.js API routes, Express, etc.).
+
+If you are building a **pure browser app** (no `nextHandlers` / `sseHandler`), use
+`LocalStorageBackend` from `@mcp-ts/sdk/client` and inject it directly:
+
+```typescript
+import { LocalStorageBackend } from '@mcp-ts/sdk/client';
+import { MultiSessionClient } from '@mcp-ts/sdk/server';
+
+const storage = new LocalStorageBackend({ namespace: 'my-app' });
+await storage.init();
+
+const client = new MultiSessionClient('user-123', { storage });
+await client.connect();
+```
+:::
+
 ---
 
 ### Storage Methods
@@ -534,11 +565,12 @@ await storage.disconnect();
 You can also use specific storage backends directly:
 
 ```typescript
-import { 
+import {
   RedisStorageBackend,
   MemoryStorageBackend,
-  FileStorageBackend 
+  FileStorageBackend,
 } from '@mcp-ts/sdk/server';
+import { LocalStorageBackend } from '@mcp-ts/sdk/client'; // Browser only!
 import { Redis } from 'ioredis';
 
 // Redis
@@ -551,6 +583,10 @@ await fileStorage.init();
 
 // In-Memory
 const memoryStorage = new MemoryStorageBackend();
+
+// Browser localStorage (inject via the `storage` option, not global)
+const lsStorage = new LocalStorageBackend({ namespace: 'my-app' });
+await lsStorage.init();
 ```
 
 ---

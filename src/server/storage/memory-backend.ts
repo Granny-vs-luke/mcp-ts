@@ -1,4 +1,4 @@
-import { StorageBackend, SessionData, SetClientOptions } from './types.js';
+import { StorageBackend, SessionData } from '../../shared/storage.js';
 import { generateSessionId } from '../../shared/utils.js';
 
 /**

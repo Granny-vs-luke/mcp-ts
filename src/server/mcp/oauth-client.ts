@@ -33,7 +33,7 @@ import { StorageOAuthClientProvider, type AgentsOAuthProvider } from './storage-
 import { sanitizeServerLabel } from '../../shared/utils.js';
 import { Emitter, type McpConnectionEvent, type McpObservabilityEvent, type McpConnectionState } from '../../shared/events.js';
 import { UnauthorizedError } from '../../shared/errors.js';
-import { storage } from '../storage/index.js';
+import type { StorageBackend } from '../../shared/storage.js';
 import {
   MCP_CLIENT_NAME,
   MCP_CLIENT_VERSION,
@@ -77,6 +77,32 @@ export interface MCPOAuthClientOptions {
   clientUri?: string;
   logoUri?: string;
   policyUri?: string;
+
+  /**
+   * Storage backend to use for persisting session and OAuth data.
+   *
+   * ─── Server-side (default) ──────────────────────────────────────────────
+   * Omit this field to use the global auto-detected backend (Redis, Supabase,
+   * SQLite, File or Memory, resolved from environment variables).
+   *
+   * ─── Browser-side (pure front-end, no sseHandler) ───────────────────────
+   * Pass a `LocalStorageBackend` to run the entire connection engine inside
+   * the browser without a Node.js proxy. The browser will connect directly
+   * to the remote MCP server — make sure CORS is enabled on that server.
+   *
+   * @example
+   * // Browser-only usage
+   * import { LocalStorageBackend } from '@mcp-ts/sdk/client';
+   *
+   * const client = new MCPClient({
+   *   identity: 'user-123',
+   *   sessionId: 'ses_abc',
+   *   serverUrl: 'https://my-mcp-server.dev/mcp',
+   *   callbackUrl: 'https://my-app.dev/oauth/callback',
+   *   storage: new LocalStorageBackend({ namespace: 'my-app' }),
+   * });
+   */
+  storage?: StorageBackend;
 }
 
 /**
@@ -106,6 +132,12 @@ export class MCPClient {
   private policyUri?: string;
   private createdAt?: number;
 
+  /**
+   * Injected storage backend. When undefined, the class lazily imports the
+   * global server-side singleton so that browser bundles stay clean when DI
+   * is used.
+   */
+  private readonly _storage: StorageBackend | undefined;
 
   /** Event emitters for connection lifecycle */
   private readonly _onConnectionEvent = new Emitter<McpConnectionEvent>();
@@ -117,8 +149,8 @@ export class MCPClient {
   private currentState: McpConnectionState = 'DISCONNECTED';
 
   /**
-   * Creates a new MCP client instance
-   * Can be initialized with minimal options (identity + sessionId) for session restoration
+   * Creates a new MCP client instance.
+   * Can be initialized with minimal options (identity + sessionId) for session restoration.
    * @param options - Client configuration options
    */
   constructor(options: MCPOAuthClientOptions) {
@@ -137,6 +169,22 @@ export class MCPClient {
     this.clientUri = options.clientUri;
     this.logoUri = options.logoUri;
     this.policyUri = options.policyUri;
+    this._storage = options.storage;
+  }
+
+  // ─── Storage resolution ─────────────────────────────────────────────────
+
+  /**
+   * Resolves the active storage backend.
+   *
+   * Uses an explicitly injected backend when provided (ideal for browser-side
+   * usage). Falls back to the global server-side singleton via a lazy import,
+   * which keeps this module tree-shakeable when DI is used in browser bundles.
+   */
+  private async getBackend(): Promise<StorageBackend> {
+    if (this._storage) return this._storage;
+    const { storage } = await import('../storage/index.js');
+    return storage;
   }
 
   /**
@@ -281,7 +329,8 @@ export class MCPClient {
     this.emitProgress('Loading session configuration...');
 
     if (!this.serverUrl || !this.callbackUrl || !this.serverId) {
-      const sessionData = await storage.getSession(this.identity, this.sessionId);
+      const backend = await this.getBackend();
+      const sessionData = await backend.getSession(this.identity, this.sessionId);
       if (!sessionData) {
         throw new Error(`Session not found: ${this.sessionId}`);
       }
@@ -291,7 +340,7 @@ export class MCPClient {
       /**
        * Do NOT load transportType from session if not explicitly provided.
        * We want to re-negotiate (try streamable -> sse) on new connections if in "Auto" mode.
-       * this.transportType = this.transportType || sessionData.transportType; 
+       * this.transportType = this.transportType || sessionData.transportType;
        */
       this.serverName = this.serverName || sessionData.serverName;
       this.serverId = this.serverId || sessionData.serverId || 'unknown';
@@ -318,6 +367,8 @@ export class MCPClient {
         policyUri: this.policyUri,
         clientId: this.clientId,
         clientSecret: this.clientSecret,
+        // Propagate injected storage so OAuth state is stored in the same backend
+        storage: this._storage,
         onRedirect: (redirectUrl: string) => {
           if (this.onRedirect) {
             this.onRedirect(redirectUrl);
@@ -344,14 +395,15 @@ export class MCPClient {
       );
     }
 
-    // Create session in storage if it doesn't exist yet
-    // This is needed BEFORE OAuth flow starts because the OAuth provider
-    // will call saveCodeVerifier() which requires the session to exist
-    const existingSession = await storage.getSession(this.identity, this.sessionId);
+    // Create session in storage if it doesn't exist yet.
+    // This is needed BEFORE the OAuth flow starts because the OAuth provider
+    // will call saveCodeVerifier() which requires the session to already exist.
+    const backend = await this.getBackend();
+    const existingSession = await backend.getSession(this.identity, this.sessionId);
     if (!existingSession && this.serverId && this.serverUrl && this.callbackUrl) {
       this.createdAt = Date.now();
       console.log(`[MCPClient] Creating initial session ${this.sessionId} for OAuth flow`);
-      await storage.createSession({
+      await backend.createSession({
         sessionId: this.sessionId,
         identity: this.identity,
         serverId: this.serverId,
@@ -393,11 +445,12 @@ export class MCPClient {
     };
 
     // Try to update first, create if doesn't exist
-    const existingSession = await storage.getSession(this.identity, this.sessionId);
+    const backend = await this.getBackend();
+    const existingSession = await backend.getSession(this.identity, this.sessionId);
     if (existingSession) {
-      await storage.updateSession(this.identity, this.sessionId, sessionData, ttl);
+      await backend.updateSession(this.identity, this.sessionId, sessionData, ttl);
     } else {
-      await storage.createSession(sessionData, ttl);
+      await backend.createSession(sessionData, ttl);
     }
   }
 
@@ -502,7 +555,8 @@ export class MCPClient {
 
       // Promote short-lived OAuth-pending session TTL to long-lived active TTL once.
       // Also persist when transport negotiation changed the effective transport.
-      const existingSession = await storage.getSession(this.identity, this.sessionId);
+      const backend = await this.getBackend();
+      const existingSession = await backend.getSession(this.identity, this.sessionId);
       const needsTransportUpdate = !existingSession || existingSession.transportType !== this.transportType;
       const needsTtlPromotion = !existingSession || existingSession.active !== true;
 
@@ -996,7 +1050,8 @@ export class MCPClient {
       await (this.oauthProvider as any).invalidateCredentials('all');
     }
 
-    await storage.removeSession(this.identity, this.sessionId);
+    const backend = await this.getBackend();
+    await backend.removeSession(this.identity, this.sessionId);
     this.disconnect();
   }
 
@@ -1112,27 +1167,37 @@ export class MCPClient {
    * @returns Object keyed by sanitized server labels containing transport, url, headers, etc.
    * @static
    */
-  static async getMcpServerConfig(identity: string): Promise<Record<string, any>> {
+  /**
+   * @param storage - Optional storage backend. Falls back to the global server
+   *   singleton when omitted (standard server-side usage).
+   */
+  static async getMcpServerConfig(
+    identity: string,
+    storage?: StorageBackend
+  ): Promise<Record<string, any>> {
     const mcpConfig: Record<string, any> = {};
-    const sessions = await storage.getIdentitySessionsData(identity);
+
+    // Resolve the backend once for the entire operation
+    const backend = storage ?? (await import('../storage/index.js')).storage;
+    const sessions = await backend.getIdentitySessionsData(identity);
 
     await Promise.all(
       sessions.map(async (sessionData) => {
         const { sessionId } = sessionData;
 
         try {
-          // Validate session - remove if missing required fields
+          // Validate session — remove if missing required fields
           if (
             !sessionData.serverId ||
             !sessionData.transportType ||
             !sessionData.serverUrl ||
             !sessionData.callbackUrl
           ) {
-            await storage.removeSession(identity, sessionId);
+            await backend.removeSession(identity, sessionId);
             return;
           }
 
-          // Get OAuth headers if session requires authentication
+          // Get OAuth headers if the session requires authentication
           let headers: Record<string, string> | undefined;
           try {
             // Inject existing session data to avoid redundant storage reads in initialize()
@@ -1145,6 +1210,8 @@ export class MCPClient {
               serverName: sessionData.serverName,
               transportType: sessionData.transportType,
               headers: sessionData.headers,
+              // Propagate the backend so token refresh uses the same store
+              storage,
             });
 
             await client.initialize();
@@ -1175,7 +1242,7 @@ export class MCPClient {
             ...(headers && { headers }),
           };
         } catch (error) {
-          await storage.removeSession(identity, sessionId);
+          await backend.removeSession(identity, sessionId);
           console.warn(`[MCP] Failed to process session ${sessionId}:`, error);
         }
       })

@@ -1,5 +1,3 @@
-
-import type { MCPClient } from '../mcp/oauth-client.js';
 import type {
     OAuthTokens,
     OAuthClientInformationMixed,
@@ -27,18 +25,6 @@ export interface SessionData {
     tokens?: OAuthTokens;
     codeVerifier?: string;
     clientId?: string;
-}
-
-export interface SetClientOptions {
-    sessionId: string;
-    serverId?: string; // Database server ID
-    serverName?: string; // Human-readable server name
-    client?: MCPClient;
-    serverUrl?: string;
-    callbackUrl?: string;
-    transportType?: 'sse' | 'streamable_http';
-    identity?: string;
-    headers?: Record<string, string>;
 }
 
 /**

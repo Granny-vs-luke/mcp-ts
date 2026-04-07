@@ -1,8 +1,12 @@
-# MCP Redis - React Example
+# mcp-ts — React Example
 
-This example demonstrates how to use `@mcp-ts/sdk` in a React application with TypeScript.
+This example demonstrates how to use `@mcp-ts/sdk` in a React (Vite) application with TypeScript.
 
 ## What This Example Shows
+
+This example uses the **proxy mode** (`useMcp` hook) where a backend SSE server manages
+MCP connections and persists session data server-side. The React app only needs to know
+the SSE endpoint URL.
 
 - Using the `useMcp` React hook for managing MCP connections
 - Real-time connection status updates via Server-Sent Events (SSE)
@@ -10,6 +14,24 @@ This example demonstrates how to use `@mcp-ts/sdk` in a React application with T
 - Discovering and calling tools from MCP servers
 - Managing multiple concurrent connections
 - Error handling and reconnection logic
+
+> **Browser Mode (no backend):** mcp-ts also supports a fully client-side mode where the
+> browser connects directly to MCP servers. See [Browser Mode](#browser-mode-no-backend)
+> below.
+
+## Prerequisites
+
+1. **Backend SSE Endpoint**: A backend server that implements the MCP SSE protocol
+   (see server examples in this repository).
+
+2. **Storage Backend** (pick one, server-side):
+   - Redis (`REDIS_URL`) — recommended for production
+   - Supabase (`SUPABASE_URL` + key) — managed PostgreSQL
+   - SQLite (`MCP_TS_STORAGE_SQLITE_PATH`) — zero-config single file
+   - File (`MCP_TS_STORAGE_FILE`) — simple JSON file
+   - In-Memory (default) — ephemeral, lost on restart
+
+3. **MCP Server**: An MCP-compliant server to connect to (e.g., a custom MCP server or a third-party service).
 
 ## Project Structure
 
@@ -186,9 +208,40 @@ const handler = createSSEHandler({
 // Use with your framework (Express, Next.js, etc.)
 ```
 
-## Environment Variables
+## Browser Mode (No Backend)
 
-You may want to set these in a `.env` file:
+mcp-ts supports a **fully browser-side** mode where connections are made directly from
+the browser to remote MCP servers — no SSE endpoint required.
+
+```typescript
+// ❌ Don't have a backend? Use LocalStorageBackend instead.
+import { LocalStorageBackend } from '@mcp-ts/sdk/client';  // browser-safe import
+import { MultiSessionClient, MCPClient } from '@mcp-ts/sdk/server';
+
+// Create storage that persists across page refreshes
+const storage = new LocalStorageBackend({ namespace: 'my-app' });
+await storage.init();
+
+// Connect to all previously saved sessions
+const multiClient = new MultiSessionClient('user-123', { storage });
+await multiClient.connect();
+
+// Or start a fresh single connection
+const sessionId = storage.generateSessionId();
+const client = new MCPClient({
+  identity: 'user-123',
+  sessionId,
+  serverUrl: 'https://my-mcp-server.example.com/mcp',
+  callbackUrl: `${window.location.origin}/oauth/callback`,
+  storage, // ← inject the same backend
+});
+await client.connect();
+```
+
+> **CORS required:** The remote MCP server must have CORS enabled for your origin.
+> OAuth tokens are stored in `localStorage` — be aware of XSS risks in high-security contexts.
+
+## Environment Variables
 
 ```env
 VITE_SSE_ENDPOINT=/api/mcp/sse
