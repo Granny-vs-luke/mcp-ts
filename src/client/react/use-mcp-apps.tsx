@@ -49,6 +49,8 @@ export interface McpAppRendererProps {
   status: 'executing' | 'inProgress' | 'complete' | 'idle';
   /** Custom CSS class for the container */
   className?: string;
+  /** Custom component to display while the app launches (e.g., a spinner or message) */
+  loader?: React.ReactNode;
 }
 
 type McpAppViewProps = McpAppRendererProps & {
@@ -67,6 +69,7 @@ const McpAppView = memo(function McpAppView({
   result,
   status,
   className,
+  loader,
 }: McpAppViewProps) {
   const mcpClient = clientRef.current;
   const metadata = getMcpAppMetadata(mcpClient, name);
@@ -154,9 +157,9 @@ const McpAppView = memo(function McpAppView({
         style={{ height: 'auto' }}
         title="MCP App"
       />
-      {!isLaunched && (
+      {!isLaunched && loader && (
         <div className="absolute inset-0 bg-transparent flex items-center justify-center pointer-events-none z-10">
-          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          {loader}
         </div>
       )}
     </div>
