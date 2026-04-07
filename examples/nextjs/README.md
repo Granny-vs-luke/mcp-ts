@@ -1,12 +1,12 @@
-# MCP Redis - Next.js Full-Stack Example
+# mcp-ts — Next.js Full-Stack Example
 
-This example demonstrates a complete full-stack implementation of `@mcp-ts/sdk` in a Next.js application, including both server-side SSE handling and client-side React integration.
+This example demonstrates a complete full-stack implementation of `@mcp-ts/sdk` in a Next.js application, supporting both server-side proxying (recommended for production) and pure client-side storage for browser-only apps.
 
 ## What This Example Shows
 
-### Server-Side
-- SSE endpoint implementation using Next.js API routes
-- Redis-backed session management
+### Server-Side (Proxy Mode)
+- SSE endpoint implementation using Next.js API routes (`app/api/mcp/route.ts`)
+- Multi-backend session management (Redis, Supabase, SQLite, File, Memory)
 - RPC request handling (connect, disconnect, tool execution)
 - OAuth 2.1 flow integration
 - Real-time event streaming to clients
@@ -48,7 +48,12 @@ examples/nextjs/
 ## Prerequisites
 
 1. **Node.js**: Version 18 or higher
-2. **Redis Server**: Running and accessible
+2. **Storage Backend** (pick one for the server-side proxy):
+   - **Redis** (`REDIS_URL`) — Scalable production storage
+   - **Supabase** (`SUPABASE_URL` + key) — Managed PostgreSQL
+   - **SQLite** (`MCP_TS_STORAGE_SQLITE_PATH`) — Simple local file DB
+   - **File System** (`MCP_TS_STORAGE_FILE`) — Local JSON persistence
+   - **In-Memory** (default) — Ephemeral storage
 3. **MCP Server**: An MCP-compliant server to connect to
 
 ## Installation
@@ -154,6 +159,32 @@ const {
 - Tool discovery and listing
 - OAuth flow handling
 - Connection management UI
+
+## Architecture: Proxy vs Browser Mode
+
+### 1. Proxy Mode (this example)
+The React components use the `useMcp` hook to communicate with `/api/mcp`. The Next.js API route acts as a proxy, maintaining the actual connection to the MCP server and storing sensitive OAuth tokens server-side in your chosen backend (Redis, Supabase, etc.).
+
+**Pros:** Secure token storage, handles CORS on the server.
+**Cons:** Requires a running Next.js backend.
+
+### 2. Browser Mode
+If you want to bypass the Next.js API routes and connect **directly** from the browser to a remote MCP server, you can use `LocalStorageBackend`.
+
+```typescript
+'use client';
+import { LocalStorageBackend } from '@mcp-ts/sdk/client';
+import { MultiSessionClient } from '@mcp-ts/sdk/server';
+
+const storage = new LocalStorageBackend({ namespace: 'my-nextjs-app' });
+
+// In your component/effect:
+const client = new MultiSessionClient('user-123', { storage });
+await client.connect();
+```
+
+**Pros:** No backend required, lower latency.
+**Cons:** Insecure token storage (`localStorage`), requires CORS enabled on the remote MCP server.
 
 ## Configuration
 
