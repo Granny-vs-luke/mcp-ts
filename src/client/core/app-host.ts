@@ -6,22 +6,92 @@
  * communication via the AppBridge protocol.
  *
  * Key features:
- * - Secure iframe sandboxing with minimal permissions
+ * - Secure iframe sandboxing with minimal permissions (proxy-based)
  * - Resource preloading for instant MCP App UI loading
  * - Cache-aware resource fetching (SSEClient cache → local cache → direct fetch)
  * - Support for ui:// and mcp-app:// resource URIs
  */
 
-import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/app-bridge';
+import { 
+  AppBridge, 
+  PostMessageTransport
+} from '@modelcontextprotocol/ext-apps/app-bridge';
+import type { LoggingMessageNotification } from '@modelcontextprotocol/sdk/types.js';
 import type { AppHostClient } from './types';
+import { setupSandboxProxyIframe } from '../utils/app-host-utils.js';
+
+export type McpUiResourceCsp = Record<string, string>;
+export type McpUiHostContext = Record<string, unknown>;
+
+// Define types dynamically from AppBridge properties instead of direct imports
+// which seem to fail in this tsconfig environment
+type OnMessageHandler = NonNullable<AppBridge['onmessage']>;
+export type McpUiMessageParams = Parameters<OnMessageHandler>[0];
+export type RequestHandlerExtra = Parameters<OnMessageHandler>[1];
+export type McpUiMessageResult = ReturnType<OnMessageHandler> extends Promise<infer R> ? R : never;
+
+type OnOpenLinkHandler = NonNullable<AppBridge['onopenlink']>;
+export type McpUiOpenLinkParams = Parameters<OnOpenLinkHandler>[0];
+export type McpUiOpenLinkResult = ReturnType<OnOpenLinkHandler> extends Promise<infer R> ? R : never;
+
+type OnSizeChangeHandler = NonNullable<AppBridge['onsizechange']>;
+export type McpUiSizeChangedParams = Parameters<OnSizeChangeHandler>[0];
+
+type OnRequestDisplayModeHandler = NonNullable<AppBridge['onrequestdisplaymode']>;
+export type McpUiRequestDisplayModeParams = Parameters<OnRequestDisplayModeHandler>[0];
+export type McpUiRequestDisplayModeResult = ReturnType<OnRequestDisplayModeHandler> extends Promise<infer R> ? R : never;
+
 
 // ============================================
 // Types & Interfaces
 // ============================================
 
+export interface SandboxConfig {
+  url: URL | string;
+  permissions?: string;
+  csp?: McpUiResourceCsp;
+}
+
 export interface AppHostOptions {
   /** Enable debug logging @default false */
   debug?: boolean;
+  /** Sandbox proxy configuration */
+  sandbox?: SandboxConfig;
+  /** Host context for theming, viewport, locale */
+  hostContext?: McpUiHostContext;
+  /** Custom handler for call tool requests, overriding automatic client forwarding */
+  onCallTool?: (params: ToolCallParams) => Promise<unknown>;
+  /** Custom handler for resources/read */
+  onReadResource?: (uri: string) => Promise<ResourceResponse>;
+  /** Custom handler for fallback JSON-RPC requests */
+  onFallbackRequest?: (request: any) => Promise<any>;
+  
+  /** Handler for open-link requests from the guest UI */
+  onOpenLink?: (
+    params: McpUiOpenLinkParams,
+    extra: RequestHandlerExtra,
+  ) => Promise<McpUiOpenLinkResult>;
+
+  /** Handler for message requests from the guest UI */
+  onMessage?: (
+    params: McpUiMessageParams,
+    extra: RequestHandlerExtra,
+  ) => Promise<McpUiMessageResult>;
+
+  /** Handler for logging messages from the guest UI */
+  onLoggingMessage?: (params: LoggingMessageNotification['params']) => void;
+
+  /** Handler for size change notifications from the guest UI */
+  onSizeChanged?: (params: McpUiSizeChangedParams) => void;
+
+  /** Callback invoked when an error occurs during setup or message handling */
+  onError?: (error: Error) => void;
+
+  /** Handler for display mode change requests from the guest UI */
+  onRequestDisplayMode?: (
+    params: McpUiRequestDisplayModeParams,
+    extra: RequestHandlerExtra,
+  ) => Promise<McpUiRequestDisplayModeResult>;
 }
 
 export interface AppMessageParams {
@@ -49,15 +119,6 @@ interface ResourceResponse {
 
 const HOST_INFO = { name: 'mcp-ts-host', version: '1.0.0' };
 
-/** Sandbox permissions - minimal set required for MCP Apps to function */
-const SANDBOX_PERMISSIONS = [
-  'allow-scripts',      // Required for app JavaScript execution
-  'allow-forms',        // Required for form submissions
-  'allow-same-origin',  // Required for Blob URL correctness
-  'allow-modals',       // Required for dialogs/alerts
-  'allow-popups',       // Required for opening links
-  'allow-downloads'     // Required for file downloads
-].join(' ');
 
 /** Supported MCP App URI schemes */
 const MCP_URI_SCHEMES = ['ui://', 'mcp-app://'] as const;
@@ -76,16 +137,19 @@ export class AppHost {
   private resourceCache = new Map<string, Promise<ResourceResponse | null>>();
   private debug: boolean;
 
-  /** Callback for app messages (e.g., chat messages from the app) */
+  private sandboxConfig?: SandboxConfig;
+  private options: AppHostOptions;
   public onAppMessage?: (params: AppMessageParams) => void;
 
   constructor(
-    private readonly client: AppHostClient,
+    private readonly client: AppHostClient | null,
     private readonly iframe: HTMLIFrameElement,
     options?: AppHostOptions
   ) {
-    this.debug = options?.debug ?? false;
-    this.configureSandbox();
+    this.options = options || {};
+    this.debug = this.options.debug ?? false;
+    this.sandboxConfig = this.options.sandbox;
+
     this.bridge = this.initializeBridge();
   }
 
@@ -119,29 +183,50 @@ export class AppHost {
   }
 
   /**
-   * Launch an MCP App from a URL or MCP resource URI.
+   * Launch an MCP App from a URL, MCP resource URI, or RAW HTML.
    * Loads the HTML first, then establishes bridge connection.
    */
-  async launch(url: string, sessionId?: string): Promise<void> {
+  async launch(source: { uri?: string; html?: string }, sessionId?: string): Promise<void> {
     if (sessionId) this.sessionId = sessionId;
 
-    // Set up initialization promise BEFORE connecting
     const initializedPromise = this.onAppReady();
 
-    // Load HTML into iframe first
-    if (this.isMcpUri(url)) {
-      await this.launchMcpApp(url);
-    } else {
-      this.iframe.src = url;
+    let htmlToRender = source.html;
+
+    if (!htmlToRender && source.uri) {
+      if (this.isMcpUri(source.uri)) {
+        htmlToRender = await this.readMcpAppHtml(source.uri);
+      } else {
+        htmlToRender = await this.fetchHtml(source.uri);
+      }
     }
 
-    // Wait for iframe to load before connecting bridge
-    await this.onIframeReady();
+    if (!htmlToRender && source.uri && !this.isMcpUri(source.uri)) {
+        // Fallback for regular urls without proxy
+        this.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads');
+        this.iframe.src = source.uri;
+        await this.onIframeReady();
+        await this.connectBridge();
+    } else if (htmlToRender) {
+      if (!this.sandboxConfig) {
+        throw new Error("Sandbox configuration requires a proxy URL to render HTML safely.");
+      }
+      await this.launchSandboxedHtml(htmlToRender, this.sandboxConfig);
+      await this.connectBridge();
+      
+      // Legacy ui sandbox integration must fire FIRST to render the UI document
+      this.iframe.contentWindow?.postMessage({
+        type: 'ui-html-content',
+        payload: { html: htmlToRender }
+      }, '*');
 
-    // Connect the bridge (HTML is loaded, contentWindow is ready)
-    await this.connectBridge();
+      this.log('Sending HTML resource to Sandbox proxy');
+      await this.bridge.sendSandboxResourceReady({
+        html: htmlToRender,
+        csp: this.sandboxConfig.csp
+      });
+    }
 
-    // Wait for app to signal it's initialized (with timeout)
     this.log('Waiting for app initialization');
     await Promise.race([
       initializedPromise,
@@ -151,6 +236,21 @@ export class AppHost {
       }, 3000))
     ]);
     this.log('App launched and ready');
+  }
+
+  // Set host context manually
+  setHostContext(context: McpUiHostContext): void {
+    this.options.hostContext = context;
+    if (this.bridge) {
+      this.bridge.setHostContext(context);
+    }
+  }
+
+  // Send streaming inputs manually
+  sendToolInputPartial(params: any): void {
+    if (this.bridge) {
+      (this.bridge as any).sendToolInputPartial(params);
+    }
   }
 
   /**
@@ -212,11 +312,6 @@ export class AppHost {
   // Private: Initialization
   // ============================================
 
-  private configureSandbox(): void {
-    if (this.iframe.sandbox.value !== SANDBOX_PERMISSIONS) {
-      this.iframe.sandbox.value = SANDBOX_PERMISSIONS;
-    }
-  }
 
   private initializeBridge(): AppBridge {
     const bridge = new AppBridge(
@@ -226,12 +321,10 @@ export class AppHost {
         openLinks: {},
         serverTools: {},
         logging: {},
-        // Declare support for model context updates
         updateModelContext: { text: {} },
       },
       {
-        // Initial host context
-        hostContext: {
+        hostContext: this.options.hostContext || {
           theme: 'dark',
           platform: 'web',
           containerDimensions: { maxHeight: 6000 },
@@ -241,20 +334,59 @@ export class AppHost {
       }
     );
 
-    // Register handlers - must be done BEFORE connect()
+    ;(bridge as any).fallbackRequestHandler = this.options.onFallbackRequest;
+    
     bridge.oncalltool = (params) => this.handleToolCall(params);
-    bridge.onopenlink = this.handleOpenLink.bind(this);
-    bridge.onmessage = this.handleMessage.bind(this);
-    bridge.onloggingmessage = (params) => this.log(`App log [${params.level}]: ${params.data}`);
+    if (this.options.onReadResource) {
+       bridge.onreadresource = async (params) => {
+         const resp = await this.options.onReadResource!(params.uri);
+         return { 
+           contents: resp.contents.map(c => ({
+            uri: params.uri,
+            text: c.text as string,
+            blob: c.blob as string,
+           }))
+         };
+       };
+    }
+
+    bridge.onopenlink = async (params, extra) => {
+      if (this.options.onOpenLink) {
+        return await this.options.onOpenLink(params, extra as any);
+      }
+      return this.handleOpenLink(params);
+    };
+    bridge.onmessage = async (params, extra) => {
+      if (this.options.onMessage) {
+        return await this.options.onMessage(params, extra as any);
+      }
+      return this.handleMessage(params as any);
+    };
+    bridge.onloggingmessage = (params) => {
+      this.log(`App log [${params.level}]: ${params.data}`);
+      if (this.options.onLoggingMessage) {
+        this.options.onLoggingMessage(params);
+      }
+    };
     bridge.onupdatemodelcontext = async () => ({});
-    bridge.onsizechange = async ({ width, height }) => {
-      if (height !== undefined) this.iframe.style.height = `${height}px`;
-      if (width !== undefined) this.iframe.style.minWidth = `min(${width}px, 100%)`;
+    bridge.onsizechange = async (params) => {
+      const { width, height } = params;
+      // Guard: ignore transient 0px resize events (e.g. fired by guest during viewport transitions)
+      if (height !== undefined && height > 0) {
+        this.iframe.style.height = `${height}px`;
+      }
+      if (width !== undefined && width > 0) this.iframe.style.minWidth = `min(${width}px, 100%)`;
+      if (this.options.onSizeChanged) {
+        this.options.onSizeChanged(params);
+      }
       return {};
     };
-    bridge.onrequestdisplaymode = async (params) => ({
-      mode: params.mode === 'fullscreen' ? 'fullscreen' : 'inline'
-    });
+    bridge.onrequestdisplaymode = async (params, extra) => {
+      if (this.options.onRequestDisplayMode) {
+        return await this.options.onRequestDisplayMode(params, extra as any);
+      }
+      return { mode: params.mode === 'fullscreen' ? 'fullscreen' : 'inline' };
+    };
 
     return bridge;
   }
@@ -272,6 +404,9 @@ export class AppHost {
       this.log('Bridge connected successfully');
     } catch (error) {
       this.log('Bridge connection failed', 'error');
+      if (this.options.onError) {
+        this.options.onError(error instanceof Error ? error : new Error(String(error)));
+      }
       throw error;
     }
   }
@@ -281,8 +416,12 @@ export class AppHost {
   // ============================================
 
   private async handleToolCall(params: ToolCallParams) {
-    if (!this.client.isConnected()) {
-      throw new Error('Client disconnected');
+    if (this.options.onCallTool) {
+      return await this.options.onCallTool(params);
+    }
+    
+    if (!this.client || !this.client.isConnected()) {
+      throw new Error('Client disconnected or not provided');
     }
 
     const sessionId = await this.getSessionId();
@@ -312,34 +451,49 @@ export class AppHost {
   // Private: Resource Loading
   // ============================================
 
-  private async launchMcpApp(uri: string): Promise<void> {
-    if (!this.client.isConnected()) {
-      throw new Error('Client must be connected');
+  private async launchSandboxedHtml(html: string, config: SandboxConfig): Promise<void> {
+    const sandboxUrlString = config.url instanceof URL ? config.url.href : config.url;
+    const url = new URL(sandboxUrlString, globalThis.location?.href);
+    if (config.csp && Object.keys(config.csp).length > 0) {
+      url.searchParams.set('csp', JSON.stringify(config.csp));
     }
 
+    const { onReady } = await setupSandboxProxyIframe(this.iframe, url);
+    await onReady;
+  }
+
+  private async fetchHtml(url: string): Promise<string> {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to load url: ${url}`);
+    return await res.text();
+  }
+
+  private async readMcpAppHtml(uri: string): Promise<string> {
     const sessionId = await this.getSessionId();
     if (!sessionId) {
-      throw new Error('No active session');
+      throw new Error('No active session. Wait, wait, actually if we have no client we assume onReadResource handles it?');
     }
-
-    // Fetch resource using cache hierarchy: SSEClient cache → local cache → direct fetch
     const response = await this.fetchResourceWithCache(sessionId, uri);
     if (!response?.contents?.length) {
       throw new Error(`Empty resource: ${uri}`);
     }
-
+    
     const content = response.contents[0];
     const html = this.decodeContent(content);
     if (!html) {
       throw new Error(`Invalid content in resource: ${uri}`);
     }
-
-    // Render via Blob URL for clean isolation
-    const blob = new Blob([html], { type: 'text/html' });
-    this.iframe.src = URL.createObjectURL(blob);
+    return html;
   }
 
   private async fetchResourceWithCache(sessionId: string, uri: string): Promise<ResourceResponse> {
+    if (this.options.onReadResource) {
+      return await this.options.onReadResource(uri);
+    }
+    if (!this.client) {
+      throw new Error('No client to read resource from');
+    }
+    
     // Priority 1: SSEClient's built-in cache (best performance)
     if (this.hasClientCache()) {
       return (this.client as any).getOrFetchResource(sessionId, uri);
@@ -358,8 +512,11 @@ export class AppHost {
 
   private async preloadResource(uri: string): Promise<ResourceResponse | null> {
     try {
+      if (this.options.onReadResource) {
+         return await this.options.onReadResource(uri);
+      }
       const sessionId = await this.getSessionId();
-      if (!sessionId) return null;
+      if (!sessionId || !this.client) return null;
       return await this.client.readResource(sessionId, uri) as ResourceResponse;
     } catch (error) {
       this.log(`Preload failed for ${uri}`, 'warn');
@@ -373,6 +530,7 @@ export class AppHost {
 
   private async getSessionId(): Promise<string | undefined> {
     if (this.sessionId) return this.sessionId;
+    if (!this.client) return undefined;
     const result = await this.client.getSessions();
     return result.sessions?.[0]?.sessionId;
   }
@@ -382,6 +540,7 @@ export class AppHost {
   }
 
   private hasClientCache(): boolean {
+    if (!this.client) return false;
     return 'getOrFetchResource' in this.client &&
            typeof (this.client as any).getOrFetchResource === 'function';
   }

@@ -7,11 +7,11 @@ function extractToolName(fullName: string): string {
 }
 
 test.describe('useMcpApps', () => {
-    const createMockMcpClient = (tools: McpClient['connections'][0]['tools'][]): McpClient => ({
+    const createMockMcpClient = (tools: any[]): McpClient => ({
         connections: [
             {
                 sessionId: 'session-1',
-                tools,
+                tools: tools as any,
             },
         ],
         sseClient: null,

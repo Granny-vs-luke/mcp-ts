@@ -51,12 +51,12 @@ export type TransportType = 'sse' | 'streamable_http';
  */
 import type { ClientCapabilities } from '@modelcontextprotocol/sdk/types.js';
 
-interface McpAppClientCapabilities extends ClientCapabilities {
+interface McpAppClientCapabilities extends Omit<ClientCapabilities, 'extensions'> {
   extensions?: {
     'io.modelcontextprotocol/ui'?: {
       mimeTypes: string[];
     };
-    [key: string]: unknown;
+    [key: string]: any;
   };
 }
 
