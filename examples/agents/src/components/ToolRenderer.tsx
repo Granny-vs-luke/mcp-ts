@@ -1,7 +1,7 @@
 "use client";
 
 import { useRenderToolCall, type ActionRenderPropsNoArgs } from "@copilotkit/react-core";
-import { useMcpApps } from "@mcp-ts/sdk/client/react";
+import { useMcpApps, DEFAULT_MCP_APP_CSP } from "@mcp-ts/sdk/client/react";
 import { useMcpContext } from "./mcp";
 import { MCPToolCall } from "./mcp-tool-call";
 
@@ -30,6 +30,10 @@ const ToolCallRenderer: React.FC<RenderProps> = (props) => {
         input={args}
         result={result}
         status={normalizedStatus}
+        sandbox={{ 
+          url: '/sandbox.html?contentType=rawhtml',
+          csp: DEFAULT_MCP_APP_CSP
+        }}
       />
     </>
   );

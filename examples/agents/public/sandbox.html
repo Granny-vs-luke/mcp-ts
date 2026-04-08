@@ -31,6 +31,19 @@
       const params = new URLSearchParams(location.search);
       const contentType = params.get('contentType');
       const target = params.get('url');
+      const cspParam = params.get('csp');
+
+      let cspString = '';
+      if (cspParam) {
+        try {
+          const cspObj = JSON.parse(cspParam);
+          cspString = Object.entries(cspObj)
+            .map(([key, value]) => `${key} ${value}`)
+            .join('; ');
+        } catch (e) {
+          console.error('Failed to parse CSP parameter:', e);
+        }
+      }
 
       // Validate that the URL is a valid HTTP or HTTPS URL
       function isValidHttpUrl(string) {
@@ -55,6 +68,9 @@
           if (!doc) return false;
           try {
             doc.open();
+            if (cspString) {
+              doc.write(`<meta http-equiv="Content-Security-Policy" content="${cspString}">`);
+            }
             doc.write(markup);
             doc.close();
             return true;
@@ -78,6 +94,7 @@
 
         // Wait for HTML content from parent
         window.addEventListener('message', (event) => {
+          // Listen for HTML injection (APP_HOST_PROTOCOL.HTML_CONTENT)
           if (event.source === window.parent && event.data && event.data.type === 'ui-html-content') {
             const payload = event.data.payload || {};
             const html = payload.html;
@@ -98,7 +115,7 @@
           }
         });
 
-        // Notify parent that proxy is ready to receive HTML (distinct event)
+        // Notify parent that proxy is ready to receive HTML (APP_HOST_PROTOCOL.PROXY_READY_LEGACY)
         window.parent.postMessage({ type: 'ui-proxy-iframe-ready' }, '*');
       } else if (target) {
         if (!isValidHttpUrl(target)) {

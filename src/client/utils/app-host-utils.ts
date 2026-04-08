@@ -1,4 +1,6 @@
-const DEFAULT_SANDBOX_TIMEOUT_MS = 10000;
+import { APP_HOST_PROTOCOL, APP_HOST_DEFAULTS } from '../core/constants.js';
+
+const DEFAULT_SANDBOX_TIMEOUT_MS = APP_HOST_DEFAULTS.SANDBOX_TIMEOUT_MS;
 
 export async function setupSandboxProxyIframe(
   iframe: HTMLIFrameElement,
@@ -31,7 +33,7 @@ export async function setupSandboxProxyIframe(
     const messageListener = (event: MessageEvent) => {
       if (event.source === iframe.contentWindow) {
         const type = event.data?.type || event.data?.method;
-        if (type === 'ui-proxy-iframe-ready' || type === 'ext-apps/sandbox-proxy-ready') {
+        if (type === APP_HOST_PROTOCOL.PROXY_READY || type === APP_HOST_PROTOCOL.PROXY_READY_LEGACY) {
           if (!settled) {
             settled = true;
             clearTimeout(timeoutId);

@@ -5,7 +5,8 @@
 
 /** SSE client for real-time connections */
 export { SSEClient, type SSEClientOptions } from './core/sse-client';
-export { AppHost } from './core/app-host';
+export { AppHost, DEFAULT_MCP_APP_CSP } from './core/app-host';
+export { APP_HOST_PROTOCOL, APP_HOST_DEFAULTS } from './core/constants';
 
 
 

@@ -15,6 +15,7 @@ import React, {
 } from 'react';
 import { useAppHost, type UseAppHostOptions } from './use-app-host.js';
 import type { SSEClient } from '../core/sse-client.js';
+import { APP_HOST_DEFAULTS } from '../core/constants.js';
 import type { SandboxConfig } from '../core/app-host.js';
 
 export interface McpClient {
@@ -249,9 +250,9 @@ const McpAppView = memo(function McpAppView({
     // Merge user-provided hostContext with our internal displayMode, then notify the guest.
     // This causes Excalidraw (and other MCP apps) to switch between inline/fullscreen UI mode.
     const mergedCtx = {
-      theme: 'dark',
-      platform: 'web',
-      containerDimensions: { maxHeight: 6000 },
+      theme: APP_HOST_DEFAULTS.THEME,
+      platform: APP_HOST_DEFAULTS.PLATFORM,
+      containerDimensions: { maxHeight: APP_HOST_DEFAULTS.MAX_HEIGHT },
       availableDisplayModes: ['inline', 'fullscreen'],
       ...(hostContext || {}),
       displayMode, // always override with our authoritative state

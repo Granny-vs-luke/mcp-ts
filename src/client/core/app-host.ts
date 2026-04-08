@@ -19,6 +19,7 @@ import {
 import type { LoggingMessageNotification } from '@modelcontextprotocol/sdk/types.js';
 import type { AppHostClient } from './types';
 import { setupSandboxProxyIframe } from '../utils/app-host-utils.js';
+import { APP_HOST_PROTOCOL, APP_HOST_DEFAULTS } from './constants.js';
 
 export type McpUiResourceCsp = Record<string, string>;
 export type McpUiHostContext = Record<string, unknown>;
@@ -51,6 +52,32 @@ export interface SandboxConfig {
   permissions?: string;
   csp?: McpUiResourceCsp;
 }
+
+/**
+ * Default Content-Security-Policy for MCP App iframes.
+ *
+ * Allows inline scripts/styles (required by most MCP App frameworks),
+ * outbound network connections, and common asset sources, while blocking
+ * nested frames and plugin objects.
+ *
+ * Pass this (or a spread of it) as `sandbox.csp` to enforce it:
+ * @example
+ * sandbox={{ url: '/sandbox.html?contentType=rawhtml', csp: DEFAULT_MCP_APP_CSP }}
+ * // or to extend:
+ * sandbox={{ url: '/sandbox.html?contentType=rawhtml', csp: { ...DEFAULT_MCP_APP_CSP, 'connect-src': "'self' https://api.example.com" } }}
+ */
+export const DEFAULT_MCP_APP_CSP: McpUiResourceCsp = {
+  'default-src': "'self'",
+  'script-src':  "'self' 'unsafe-inline' 'unsafe-eval' https:",
+  'style-src':   "'self' 'unsafe-inline' https:",
+  'connect-src': "'self' https: wss:",
+  'img-src':     "'self' data: https: blob:",
+  'font-src':    "'self' data: https:",
+  'media-src':   "'self' https: blob:",
+  'frame-src':   "'none'",
+  'object-src':  "'none'",
+  'base-uri':    "'self'",
+};
 
 export interface AppHostOptions {
   /** Enable debug logging @default false */
@@ -117,11 +144,11 @@ interface ResourceResponse {
 // Constants
 // ============================================
 
-const HOST_INFO = { name: 'mcp-ts-host', version: '1.0.0' };
+const HOST_INFO = APP_HOST_DEFAULTS.HOST_INFO;
 
 
 /** Supported MCP App URI schemes */
-const MCP_URI_SCHEMES = ['ui://', 'mcp-app://'] as const;
+const MCP_URI_SCHEMES = APP_HOST_DEFAULTS.URI_SCHEMES;
 
 // ============================================
 // AppHost Class
@@ -216,7 +243,7 @@ export class AppHost {
       
       // Legacy ui sandbox integration must fire FIRST to render the UI document
       this.iframe.contentWindow?.postMessage({
-        type: 'ui-html-content',
+        type: APP_HOST_PROTOCOL.HTML_CONTENT,
         payload: { html: htmlToRender }
       }, '*');
 
