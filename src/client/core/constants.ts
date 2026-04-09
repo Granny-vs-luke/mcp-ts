@@ -1,27 +1,14 @@
 /**
- * Standard event types for the MCP App Host <-> Sandbox Proxy protocol.
- */
-export const APP_HOST_PROTOCOL = {
-  /** 
-   * Event sent by the Sandbox Proxy iframe to the Host when it is loaded and ready
-   * to receive HTML content or bridge connections.
-   */
-  PROXY_READY: 'ext-apps/sandbox-proxy-ready',
-  
-  /** 
-   * Legacy version of PROXY_READY used by early internal prototypes.
-   */
-  PROXY_READY_LEGACY: 'ui-proxy-iframe-ready',
-
-  /**
-   * Event sent by the Host to the Sandbox Proxy to inject raw HTML content.
-   */
-  HTML_CONTENT: 'ui-html-content',
-} as const;
-
-/**
  * Default configuration values for the App Host.
+ *
+ * `SANDBOX_*_READY_METHOD` match `@modelcontextprotocol/ext-apps` (see
+ * https://github.com/modelcontextprotocol/ext-apps/blob/main/src/types.ts ).
+ * Duplicated here because the package root `app.d.ts` often omits these value exports under
+ * `moduleResolution: "NodeNext"`.
  */
+export const SANDBOX_PROXY_READY_METHOD = 'ui/notifications/sandbox-proxy-ready' as const;
+export const SANDBOX_RESOURCE_READY_METHOD = 'ui/notifications/sandbox-resource-ready' as const;
+
 export const APP_HOST_DEFAULTS = {
   /** Default timeout for waiting for the sandbox proxy to be ready (ms). */
   SANDBOX_TIMEOUT_MS: 10000,

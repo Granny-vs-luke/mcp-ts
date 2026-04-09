@@ -47,18 +47,18 @@ graph TB
 
 ## Sandbox proxy
 
-Hosts must ship a small static page (for example copy [`examples/agents/public/sandbox.html`](https://github.com/zonlabs/mcp-ts/tree/main/examples/agents/public/sandbox.html)) that:
+Hosts must ship a static **MCP Apps sandbox proxy** page (for example copy [`examples/agents/public/sandbox.html`](https://github.com/zonlabs/mcp-ts/tree/main/examples/agents/public/sandbox.html)) that follows **`@modelcontextprotocol/ext-apps`**:
 
-- Listens for the sandbox-ready handshake and HTML injection messages from the SDK.
-- For `contentType=rawhtml`, writes guest HTML into an inner iframe and optionally applies CSP from the `csp` query parameter (JSON object → `Content-Security-Policy` meta).
+- After load, posts a JSON-RPC notification to the parent with method **`ui/notifications/sandbox-proxy-ready`** (same string as **`SANDBOX_PROXY_READY_METHOD`** from `@modelcontextprotocol/ext-apps`, also re-exported from `@mcp-ts/sdk/client`).
+- Listens for **`ui/notifications/sandbox-resource-ready`** from the parent (the host sends this via `AppBridge.sendSandboxResourceReady` after the bridge connects), then writes `params.html` into an inner iframe. Optional CSP: `?csp=` query JSON and/or structured `params.csp` when it is a directive map (`script-src`, etc.).
 
-Point `sandbox.url` at that page, typically with `?contentType=rawhtml`:
+Point `sandbox.url` at that page (no special query string required; `csp` is appended automatically from `sandbox.csp` when you pass it in React):
 
 ```tsx
 import { DEFAULT_MCP_APP_CSP } from "@mcp-ts/sdk/client/react";
 
 sandbox={{
-  url: "/sandbox.html?contentType=rawhtml",
+  url: "/sandbox.html",
   csp: DEFAULT_MCP_APP_CSP,
 }}
 ```
@@ -93,7 +93,7 @@ function ToolRenderer() {
         result={result}
         status={status === "complete" || status === "inProgress" || status === "executing" ? status : "executing"}
         sandbox={{
-          url: "/sandbox.html?contentType=rawhtml",
+          url: "/sandbox.html",
           csp: DEFAULT_MCP_APP_CSP,
         }}
       />
@@ -116,7 +116,7 @@ If your agent streams tool arguments or can cancel a run, pass through:
   input={args}
   result={result}
   status={status}
-  sandbox={{ url: "/sandbox.html?contentType=rawhtml", csp: DEFAULT_MCP_APP_CSP }}
+  sandbox={{ url: "/sandbox.html", csp: DEFAULT_MCP_APP_CSP }}
   toolInputPartial={streamingArgsPartial}
   toolCancelled={wasCancelled}
 />
@@ -130,7 +130,7 @@ If your agent streams tool arguments or can cancel a run, pass through:
   input={args}
   result={result}
   status={status}
-  sandbox={{ url: "/sandbox.html?contentType=rawhtml", csp: DEFAULT_MCP_APP_CSP }}
+  sandbox={{ url: "/sandbox.html", csp: DEFAULT_MCP_APP_CSP }}
   hostContext={{ theme: "light", locale: "en-US" }}
   onCallTool={async ({ name, arguments: args }) => {
     // Custom path: validate, then call your backend, etc.
@@ -209,7 +209,7 @@ See the [API reference](./api-reference.md#apphost-class) for full `AppHostOptio
 
 From **`@mcp-ts/sdk/client`**:
 
-- `AppHost`, `DEFAULT_MCP_APP_CSP`, `APP_HOST_PROTOCOL`, `APP_HOST_DEFAULTS`, `SSEClient`, …
+- `AppHost`, `DEFAULT_MCP_APP_CSP`, `APP_HOST_DEFAULTS`, `SANDBOX_PROXY_READY_METHOD`, `SANDBOX_RESOURCE_READY_METHOD`, `SSEClient`, …
 
 From **`@mcp-ts/sdk/client/react`**:
 
@@ -232,7 +232,7 @@ The host must be able to `readResource` that URI for the correct session (automa
 
 ## Troubleshooting
 
-- **Blank app / launch error** — Ensure `sandbox.url` is reachable and returns the proxy page; for HTML injection, include `contentType=rawhtml` if your proxy expects it.
+- **Blank app / launch error** — Ensure `sandbox.url` is reachable and the page implements **`ui/notifications/sandbox-proxy-ready`** and **`ui/notifications/sandbox-resource-ready`** as in the example `sandbox.html`.
 - **CSP blocks scripts or APIs** — Adjust `sandbox.csp` (start from `DEFAULT_MCP_APP_CSP` and tighten or extend `connect-src` / `script-src` as needed).
 - **Tool not found** — Confirm `name` matches the tool after prefix stripping and that `connections` includes the tool with a UI URI.
 - **No automatic forwarding** — If you omit `onCallTool` but the SSE client is disconnected, guest tool calls fail until the client is connected or you supply handlers.

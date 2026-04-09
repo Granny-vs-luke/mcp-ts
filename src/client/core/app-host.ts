@@ -19,7 +19,7 @@ import {
 import type { LoggingMessageNotification } from '@modelcontextprotocol/sdk/types.js';
 import type { AppHostClient } from './types';
 import { setupSandboxProxyIframe } from '../utils/app-host-utils.js';
-import { APP_HOST_PROTOCOL, APP_HOST_DEFAULTS } from './constants.js';
+import { APP_HOST_DEFAULTS } from './constants.js';
 
 export type McpUiResourceCsp = Record<string, string>;
 export type McpUiHostContext = Record<string, unknown>;
@@ -62,9 +62,9 @@ export interface SandboxConfig {
  *
  * Pass this (or a spread of it) as `sandbox.csp` to enforce it:
  * @example
- * sandbox={{ url: '/sandbox.html?contentType=rawhtml', csp: DEFAULT_MCP_APP_CSP }}
+ * sandbox={{ url: '/sandbox.html', csp: DEFAULT_MCP_APP_CSP }}
  * // or to extend:
- * sandbox={{ url: '/sandbox.html?contentType=rawhtml', csp: { ...DEFAULT_MCP_APP_CSP, 'connect-src': "'self' https://api.example.com" } }}
+ * sandbox={{ url: '/sandbox.html', csp: { ...DEFAULT_MCP_APP_CSP, 'connect-src': "'self' https://api.example.com" } }}
  */
 export const DEFAULT_MCP_APP_CSP: McpUiResourceCsp = {
   'default-src': "'self'",
@@ -240,17 +240,11 @@ export class AppHost {
       }
       await this.launchSandboxedHtml(htmlToRender, this.sandboxConfig);
       await this.connectBridge();
-      
-      // Legacy ui sandbox integration must fire FIRST to render the UI document
-      this.iframe.contentWindow?.postMessage({
-        type: APP_HOST_PROTOCOL.HTML_CONTENT,
-        payload: { html: htmlToRender }
-      }, '*');
 
-      this.log('Sending HTML resource to Sandbox proxy');
+      this.log('Sending HTML resource to sandbox proxy (MCP Apps notification)');
       await this.bridge.sendSandboxResourceReady({
         html: htmlToRender,
-        csp: this.sandboxConfig.csp
+        csp: this.sandboxConfig.csp,
       });
     }
 

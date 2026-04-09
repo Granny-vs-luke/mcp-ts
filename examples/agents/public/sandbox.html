@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>MCP Apps Proxy</title>
+    <title>MCP Apps sandbox proxy</title>
     <style>
       html,
       body {
@@ -20,7 +20,7 @@
       iframe {
         background-color: transparent;
         border: 0px none transparent;
-        padding: 0px;
+        padding: 0;
         overflow: hidden;
         flex-grow: 1;
       }
@@ -28,122 +28,115 @@
   </head>
   <body>
     <script>
-      const params = new URLSearchParams(location.search);
-      const contentType = params.get('contentType');
-      const target = params.get('url');
-      const cspParam = params.get('csp');
+      (function () {
+        /** @see SANDBOX_RESOURCE_READY_METHOD in @modelcontextprotocol/ext-apps/app-bridge */
+        var RESOURCE_READY = 'ui/notifications/sandbox-resource-ready';
+        /** @see SANDBOX_PROXY_READY_METHOD in @modelcontextprotocol/ext-apps/app-bridge */
+        var PROXY_READY = 'ui/notifications/sandbox-proxy-ready';
 
-      let cspString = '';
-      if (cspParam) {
-        try {
-          const cspObj = JSON.parse(cspParam);
-          cspString = Object.entries(cspObj)
-            .map(([key, value]) => `${key} ${value}`)
-            .join('; ');
-        } catch (e) {
-          console.error('Failed to parse CSP parameter:', e);
+        var params = new URLSearchParams(location.search);
+        var cspParam = params.get('csp');
+        var urlCspString = '';
+        if (cspParam) {
+          try {
+            var cspObj = JSON.parse(cspParam);
+            if (cspObj && typeof cspObj === 'object' && !Array.isArray(cspObj)) {
+              urlCspString = Object.entries(cspObj)
+                .map(function (e) {
+                  return e[0] + ' ' + e[1];
+                })
+                .join('; ');
+            }
+          } catch (e) {
+            console.error('Failed to parse CSP query parameter:', e);
+          }
         }
-      }
 
-      // Validate that the URL is a valid HTTP or HTTPS URL
-      function isValidHttpUrl(string) {
-        try {
-          const url = new URL(string);
-          return url.protocol === 'http:' || url.protocol === 'https:';
-        } catch (error) {
-          return false;
+        function isDirectiveMap(obj) {
+          if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+          return Object.keys(obj).some(function (k) {
+            return k.indexOf('-') !== -1;
+          });
         }
-      }
 
-      if (contentType === 'rawhtml') {
-        // Double-iframe raw HTML mode (HTML sent via postMessage)
-        const inner = document.createElement('iframe');
+        function cspMetaContent(notificationCsp) {
+          if (notificationCsp && isDirectiveMap(notificationCsp)) {
+            return Object.entries(notificationCsp)
+              .map(function (e) {
+                return e[0] + ' ' + e[1];
+              })
+              .join('; ');
+          }
+          return urlCspString;
+        }
 
+        function escapeMetaContent(s) {
+          return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        }
+
+        var inner = document.createElement('iframe');
         inner.id = 'root';
-        let pendingHtml = null;
+        var pending = null;
 
-        // Helper function to write HTML using document.write
-        const renderHtmlInIframe = (markup) => {
-          const doc = inner.contentDocument || inner.contentWindow?.document;
+        function renderHtmlInIframe(markup, cspDirectives) {
+          var doc = inner.contentDocument || inner.contentWindow.document;
           if (!doc) return false;
           try {
             doc.open();
-            if (cspString) {
-              doc.write(`<meta http-equiv="Content-Security-Policy" content="${cspString}">`);
+            var csp = cspDirectives || urlCspString;
+            if (csp) {
+              doc.write(
+                '<meta http-equiv="Content-Security-Policy" content="' +
+                  escapeMetaContent(csp) +
+                  '">',
+              );
             }
             doc.write(markup);
             doc.close();
             return true;
-          } catch (error) {
-            console.error('Failed to write HTML to iframe:', error);
+          } catch (err) {
+            console.error('Failed to write HTML into guest iframe:', err);
             return false;
           }
-        };
+        }
 
-        // Retry writing pending HTML when iframe finishes loading
-        inner.addEventListener('load', () => {
-          if (pendingHtml !== null && renderHtmlInIframe(pendingHtml)) {
-            pendingHtml = null;
+        inner.addEventListener('load', function () {
+          if (pending) {
+            var p = pending;
+            pending = null;
+            renderHtmlInIframe(p.html, p.csp);
           }
         });
 
-        inner.style = 'width:100%; height:100%; border:none;';
-        // Set src to about:blank so browser initializes contentDocument
+        inner.style.cssText = 'width:100%;height:100%;border:none;';
         inner.src = 'about:blank';
+        inner.setAttribute('allow', 'fullscreen');
         document.body.appendChild(inner);
 
-        // Wait for HTML content from parent
-        window.addEventListener('message', (event) => {
-          // Listen for HTML injection (APP_HOST_PROTOCOL.HTML_CONTENT)
-          if (event.source === window.parent && event.data && event.data.type === 'ui-html-content') {
-            const payload = event.data.payload || {};
-            const html = payload.html;
-            if (typeof html === 'string') {
-              // Try to write immediately; if contentDocument isn't ready, queue for retry
-              if (!renderHtmlInIframe(html)) {
-                pendingHtml = html;
+        window.addEventListener('message', function (event) {
+          if (event.source === window.parent) {
+            var d = event.data;
+            if (d && d.method === RESOURCE_READY && d.params && typeof d.params.html === 'string') {
+              var html = d.params.html;
+              var csp = cspMetaContent(d.params.csp);
+              if (!renderHtmlInIframe(html, csp)) {
+                pending = { html: html, csp: csp };
               }
+              return;
             }
-          } else if (event.source === window.parent) {
-            // Forward other messages from parent to inner iframe
-            if (inner && inner.contentWindow) {
-              inner.contentWindow.postMessage(event.data, '*');
+            if (inner.contentWindow) {
+              inner.contentWindow.postMessage(d, '*');
             }
           } else if (event.source === inner.contentWindow) {
-            // Relay messages from inner to parent
             window.parent.postMessage(event.data, '*');
           }
         });
 
-        // Notify parent that proxy is ready to receive HTML (APP_HOST_PROTOCOL.PROXY_READY_LEGACY)
-        window.parent.postMessage({ type: 'ui-proxy-iframe-ready' }, '*');
-      } else if (target) {
-        if (!isValidHttpUrl(target)) {
-          document.body.textContent = 'Error: invalid URL. Only HTTP and HTTPS URLs are allowed.';
-        } else {
-          const inner = document.createElement('iframe');
-          inner.src = target;
-          inner.setAttribute('allow', 'fullscreen');
-          inner.allowFullscreen = true;
-          inner.style = 'width:100%; height:100%; border:none;';
-          // Default external URL sandbox; can be adjusted later by protocol if needed
-          inner.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-modals allow-popups allow-downloads');
-          document.body.appendChild(inner);
-          const urlOrigin = new URL(target).origin;
-
-          window.addEventListener('message', (event) => {
-            if (event.source === window.parent) {
-              // listen for messages from the parent and send them to the iframe
-              inner.contentWindow.postMessage(event.data, urlOrigin);
-            } else if (event.source === inner.contentWindow) {
-              // listen for messages from the iframe and send them to the parent
-              window.parent.postMessage(event.data, '*');
-            }
-          });
-        }
-      } else {
-        document.body.textContent = 'Error: missing url or html parameter';
-      }
+        window.parent.postMessage(
+          { jsonrpc: '2.0', method: PROXY_READY, params: {} },
+          '*',
+        );
+      })();
     </script>
   </body>
 </html>

@@ -1,35 +1,6 @@
 # MCP App Host Comparison: `mcp-ts` vs `mcp-ui`
 
-This document compares how **`@mcp-ts/sdk`** (client `AppHost`, React `useMcpApps` / `McpAppRenderer`) and **`@mcp-ui/client`** host MCP Apps: architecture, security, and feature overlap. It includes a short changelog for the recent client work that brought `mcp-ts` much closer to the `mcp-ui` model.
-
-## Recent client commits (MCP App Host + related)
-
-These are the three most recent commits on `main` at the time of writing (newest first).
-
-### 1. `fix(client): improve OAuth handling in useMcp hook`
-
-Not specific to MCP Apps, but part of the same client surface area as `useMcp` / SSE:
-
-- Trims and validates the OAuth authorization URL before redirect.
-- Logs and marks connection `FAILED` when the authorization URL is missing.
-- Aligns React and Vue `useMcp` behavior for authorization URL handling.
-
-### 2. `feat(client): implement sandbox CSP and protocol constants`
-
-- **`src/client/core/constants.ts`**: Shared `APP_HOST_PROTOCOL` (sandbox proxy ready, HTML injection) and `APP_HOST_DEFAULTS` (timeouts, host info, URI schemes, theme/platform defaults).
-- **CSP**: `DEFAULT_MCP_APP_CSP` documents a practical default; hosts pass `sandbox.csp` and `AppHost` serializes it into the proxy URL query for the sandbox page to apply (e.g. meta-based CSP in the proxy).
-- **`AppHost` / hooks**: Consume the shared constants instead of ad hoc strings.
-- Sandbox iframe permissions include **`allow-same-origin`** where needed so HTML injection and bridge setup work reliably (see MCP ext-apps proxy pattern).
-
-### 3. `feat(client): MCP App Host integration with full callback support and fullscreen rendering`
-
-- **`AppHost` / `AppHostOptions`**: Optional `AppHostClient` (`null` allowed); `sandbox`, `hostContext`, `onCallTool`, `onReadResource`, `onFallbackRequest`, `onMessage`, `onOpenLink`, `onLoggingMessage`, `onSizeChanged`, `onError`, `onRequestDisplayMode`; guards on transient `onsizechange` with `height: 0`; implements fullscreen/inline via `onRequestDisplayMode` when the host wires it.
-- **`use-app-host.ts`**: Passes full `AppHostOptions` into `AppHost`.
-- **`use-mcp-apps.tsx` / `McpAppRendererProps`**: `sandbox`, `hostContext`, the callbacks above, plus `toolResourceUri`, `html`, `toolInputPartial`, `toolCancelled`; merges `displayMode` into `hostContext`; native **fullscreen** lifecycle (pre-fullscreen height snapshot, `fullscreenchange` with refs, eager height restore on exit).
-- **`setupSandboxProxyIframe`** (`app-host-utils.ts`) + **sandbox proxy page** (e.g. under `examples/agents/public/sandbox.html`): proxy-based loading instead of relying on blob URLs for sandboxed HTML.
-- **Tests**: Adjusted mocks where tool typing changed.
-
----
+This document compares how **`@mcp-ts/sdk`** (client `AppHost`, React `useMcpApps` / `McpAppRenderer`) and **`@mcp-ui/client`** host MCP Apps: architecture, security, and feature overlap.
 
 ## 1. Architecture and design patterns
 
@@ -127,6 +98,6 @@ Not specific to MCP Apps, but part of the same client surface area as `useMcp` /
 - **`mcp-ts`** is an **SDK that includes MCP App hosting** as part of the same package as SSE sessions, storage-backed servers, adapters, etc.
 - **`@mcp-ui/client`** is a **focused UI/host library** with a more granular React component split.
 
-After the recent commits, **`mcp-ts`’s host behavior is much closer to `mcp-ui`**: proxy sandboxing, CSP hooks, optional client with overrides, streaming/cancellation props, host context, and fullscreen display mode. The main structural difference remains **monolithic `AppHost` + thin React** versus **`AppRenderer` + `AppFrame`**, and **`mcp-ts`’s preload/cache story** is a differentiator for tool-heavy apps.
+**`mcp-ts`’s host behavior is much closer to `mcp-ui`** in several areas: proxy sandboxing, CSP hooks, optional client with overrides, streaming/cancellation props, host context, and fullscreen display mode. The main structural difference remains **monolithic `AppHost` + thin React** versus **`AppRenderer` + `AppFrame`**, and **`mcp-ts`’s preload/cache story** is a differentiator for tool-heavy apps.
 
 When choosing: prefer **`mcp-ui`** if you want the reference React decomposition and are building only the host UI layer; prefer **`mcp-ts`** if you already use (or want) the full client/server stack and a single dependency for SSE + OAuth + apps.

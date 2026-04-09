@@ -6,7 +6,11 @@
 /** SSE client for real-time connections */
 export { SSEClient, type SSEClientOptions } from './core/sse-client';
 export { AppHost, DEFAULT_MCP_APP_CSP } from './core/app-host';
-export { APP_HOST_PROTOCOL, APP_HOST_DEFAULTS } from './core/constants';
+export {
+  APP_HOST_DEFAULTS,
+  SANDBOX_PROXY_READY_METHOD,
+  SANDBOX_RESOURCE_READY_METHOD,
+} from './core/constants.js';
 
 
 

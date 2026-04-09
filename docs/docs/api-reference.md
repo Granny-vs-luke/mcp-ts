@@ -699,7 +699,7 @@ function ToolCallRenderer({ name, args, result, status }) {
       result={result}
       status={status}
       sandbox={{
-        url: '/sandbox.html?contentType=rawhtml',
+        url: '/sandbox.html',
         csp: DEFAULT_MCP_APP_CSP,
       }}
       className="my-custom-class"
@@ -730,8 +730,11 @@ import {
   AppHost,
   DEFAULT_MCP_APP_CSP,
   APP_HOST_DEFAULTS,
-  APP_HOST_PROTOCOL,
 } from '@mcp-ts/sdk/client';
+import {
+  SANDBOX_PROXY_READY_METHOD,
+  SANDBOX_RESOURCE_READY_METHOD,
+} from '@modelcontextprotocol/ext-apps';
 ```
 
 #### Constructor
@@ -767,7 +770,7 @@ new AppHost(client: AppHostClient | null, iframe: HTMLIFrameElement, options?: A
 
 - **`DEFAULT_MCP_APP_CSP`** — Sensible baseline CSP object for `sandbox.csp` (extend or narrow per app).
 - **`APP_HOST_DEFAULTS`** — Default timeout, host info label, URI schemes, theme/platform hints.
-- **`APP_HOST_PROTOCOL`** — `postMessage` types used between host and sandbox proxy (`PROXY_READY`, `HTML_CONTENT`, etc.).
+- **`SANDBOX_PROXY_READY_METHOD`** / **`SANDBOX_RESOURCE_READY_METHOD`** — Re-exported from **`@modelcontextprotocol/ext-apps`** for custom sandbox pages (same as importing from that package directly).
 
 ---
 

@@ -30,9 +30,9 @@ const ToolCallRenderer: React.FC<RenderProps> = (props) => {
         input={args}
         result={result}
         status={normalizedStatus}
-        sandbox={{ 
-          url: '/sandbox.html?contentType=rawhtml',
-          csp: DEFAULT_MCP_APP_CSP
+        sandbox={{
+          url: '/sandbox.html',
+          csp: DEFAULT_MCP_APP_CSP,
         }}
       />
     </>
