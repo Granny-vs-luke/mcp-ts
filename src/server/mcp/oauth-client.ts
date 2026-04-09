@@ -516,16 +516,39 @@ export class MCPClient {
         error instanceof SDKUnauthorizedError ||
         (error instanceof Error && error.message.toLowerCase().includes('unauthorized'))
       ) {
+        /** Set when the SDK calls redirectToAuthorization on the OAuth provider */
+        let authUrl = '';
+        if (this.oauthProvider) {
+          authUrl = (this.oauthProvider.authUrl || '').trim();
+        }
+
+        /**
+         * 401 without a usable URL means metadata/DCR failed or the server never started
+         * an interactive OAuth flow — not recoverable as "pending OAuth".
+         */
+        if (!authUrl) {
+          const detail =
+            error instanceof Error && error.message.trim().length > 0
+              ? error.message.trim()
+              : 'Unauthorized';
+          const message =
+            detail.toLowerCase() === 'unauthorized'
+              ? 'OAuth authorization URL not available'
+              : `OAuth authorization URL not available: ${detail}`;
+          this.emitError(message, 'auth');
+          this.emitStateChange('FAILED');
+          try {
+            await storage.removeSession(this.identity, this.sessionId);
+          } catch {
+            // best-effort cleanup
+          }
+          throw new Error(message);
+        }
+
         this.emitStateChange('AUTHENTICATING');
         // Save session with 10min TTL for OAuth pending state
         console.log(`[MCPClient] Saving session ${this.sessionId} with 10min TTL (OAuth pending)`);
         await this.saveSession(Math.floor(STATE_EXPIRATION_MS / 1000), false);
-
-        /** Get OAuth authorization URL if available */
-        let authUrl = '';
-        if (this.oauthProvider) {
-          authUrl = this.oauthProvider.authUrl || '';
-        }
 
         if (this.serverId) {
           this._onConnectionEvent.fire({
