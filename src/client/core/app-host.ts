@@ -329,6 +329,15 @@ export class AppHost {
     this.bridge.sendToolCancelled({ reason });
   }
 
+  /**
+   * Tell the guest UI the resource is being torn down (unload / cleanup).
+   * Forwards to {@link AppBridge.teardownResource} on `@modelcontextprotocol/ext-apps/app-bridge`.
+   */
+  teardownResource(params: Record<string, unknown> = {}): void {
+    this.log('Sending resource teardown to app');
+    this.bridge.teardownResource(params as never);
+  }
+
   // ============================================
   // Private: Initialization
   // ============================================
@@ -491,8 +500,8 @@ export class AppHost {
 
   private async readMcpAppHtml(uri: string): Promise<string> {
     const sessionId = await this.getSessionId();
-    if (!sessionId) {
-      throw new Error('No active session. Wait, wait, actually if we have no client we assume onReadResource handles it?');
+    if (!sessionId && !this.options.onReadResource) {
+      throw new Error('No active session.');
     }
     const response = await this.fetchResourceWithCache(sessionId, uri);
     if (!response?.contents?.length) {
@@ -507,10 +516,15 @@ export class AppHost {
     return html;
   }
 
-  private async fetchResourceWithCache(sessionId: string, uri: string): Promise<ResourceResponse> {
+  private async fetchResourceWithCache(sessionId: string | undefined, uri: string): Promise<ResourceResponse> {
     if (this.options.onReadResource) {
       return await this.options.onReadResource(uri);
     }
+    
+    if (!sessionId) {
+      throw new Error('No active session');
+    }
+
     if (!this.client) {
       throw new Error('No client to read resource from');
     }

@@ -11,6 +11,8 @@ import React, {
   useRef,
   memo,
   useMemo,
+  forwardRef,
+  useImperativeHandle,
   type MutableRefObject,
 } from 'react';
 import { useAppHost, type UseAppHostOptions } from './use-app-host.js';
@@ -43,6 +45,14 @@ export interface McpAppMetadata {
   sessionId: string;
 }
 
+/**
+ * Imperative handle for {@link useMcpApps}'s `McpAppRenderer` (via `ref`),
+ * aligned with `@mcp-ui/client`'s `AppRendererHandle.teardownResource`.
+ */
+export interface McpAppRendererHandle {
+  teardownResource: (params?: Record<string, unknown>) => void;
+}
+
 /** Props for {@link useMcpApps}'s `McpAppRenderer` (client is supplied via the hook). */
 export interface McpAppRendererProps extends Pick<UseAppHostOptions, 'sandbox' | 'hostContext' | 'onCallTool' | 'onReadResource' | 'onFallbackRequest' | 'onMessage' | 'onOpenLink' | 'onLoggingMessage' | 'onSizeChanged' | 'onError'> {
   name: string;
@@ -66,29 +76,32 @@ type McpAppViewProps = McpAppRendererProps & {
 };
 
 /** Renders one MCP App in a sandboxed iframe; reads the latest client from `clientRef` each render. */
-const McpAppView = memo(function McpAppView({
-  clientRef,
-  name,
-  toolResourceUri,
-  html,
-  input,
-  result,
-  status = 'idle',
-  toolInputPartial,
-  toolCancelled,
-  sandbox,
-  hostContext,
-  onCallTool,
-  onReadResource,
-  onFallbackRequest,
-  onMessage,
-  onOpenLink,
-  onLoggingMessage,
-  onSizeChanged,
-  onError: onHostError,
-  className,
-  loader,
-}: McpAppViewProps) {
+const McpAppViewInner = forwardRef<McpAppRendererHandle, McpAppViewProps>(function McpAppView(
+  {
+    clientRef,
+    name,
+    toolResourceUri,
+    html,
+    input,
+    result,
+    status = 'idle',
+    toolInputPartial,
+    toolCancelled,
+    sandbox,
+    hostContext,
+    onCallTool,
+    onReadResource,
+    onFallbackRequest,
+    onMessage,
+    onOpenLink,
+    onLoggingMessage,
+    onSizeChanged,
+    onError: onHostError,
+    className,
+    loader,
+  },
+  ref,
+) {
   const mcpClient = clientRef.current;
   const metadata = getMcpAppMetadata(mcpClient, name);
   const sseClient = mcpClient?.sseClient ?? null;
@@ -165,6 +178,17 @@ const McpAppView = memo(function McpAppView({
       return { mode: params.mode };
     }
   });
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      teardownResource: (params?: Record<string, unknown>) => {
+        host?.teardownResource(params ?? {});
+      },
+    }),
+    [host],
+  );
+
   const [isLaunched, setIsLaunched] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -327,6 +351,9 @@ const McpAppView = memo(function McpAppView({
   );
 });
 
+const McpAppView = memo(McpAppViewInner);
+McpAppView.displayName = 'McpAppView';
+
 /**
  * Helpers scoped to one `mcpClient`. Pass the client here once; `McpAppRenderer` only needs per-tool props (`name`, `input`, `result`, `status`).
  *
@@ -343,9 +370,13 @@ export function useMcpApps(mcpClient: McpClient | null) {
   );
 
   const McpAppRenderer = useMemo(() => {
-    const Renderer = memo(function McpAppRenderer(props: McpAppRendererProps) {
-      return <McpAppView clientRef={clientRef} {...props} />;
+    const Inner = forwardRef<McpAppRendererHandle, McpAppRendererProps>(function McpAppRenderer(
+      props,
+      ref,
+    ) {
+      return <McpAppView ref={ref} clientRef={clientRef} {...props} />;
     });
+    const Renderer = memo(Inner);
     Renderer.displayName = 'McpAppRenderer';
     return Renderer;
   }, []);
