@@ -20,6 +20,11 @@ The server exposes:
 - `POST /{subject}/{mcp_server}/mcp` (streamable-http style)
 - `POST /{subject}/{mcp_server}/sse` (SSE response)
 
+Notes on Streamable HTTP compatibility:
+- Clients using `@modelcontextprotocol/sdk` may attempt an optional `GET /mcp` with `Accept: text/event-stream` to open a
+  long-lived SSE message stream. Ensure this endpoint stays open, sends initial SSE bytes immediately, and is not buffered
+  by your reverse proxy.
+
 Management endpoints:
 - `GET /manage/agents/details`
 - `GET /manage/agents/stream` (SSE live updates for connect/disconnect)
