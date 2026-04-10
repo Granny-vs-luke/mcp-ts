@@ -68,7 +68,7 @@ export interface SandboxConfig {
  */
 export const DEFAULT_MCP_APP_CSP: McpUiResourceCsp = {
   'default-src': "'self'",
-  'script-src':  "'self' 'unsafe-inline' 'unsafe-eval' https:",
+  'script-src':  "'self' 'unsafe-inline' 'unsafe-eval' https: blob:",
   'style-src':   "'self' 'unsafe-inline' https:",
   'connect-src': "'self' https: wss:",
   'img-src':     "'self' data: https: blob:",
@@ -223,8 +223,6 @@ export class AppHost {
     if (!htmlToRender && source.uri) {
       if (this.isMcpUri(source.uri)) {
         htmlToRender = await this.readMcpAppHtml(source.uri);
-      } else {
-        htmlToRender = await this.fetchHtml(source.uri);
       }
     }
 
@@ -492,11 +490,6 @@ export class AppHost {
     await onReady;
   }
 
-  private async fetchHtml(url: string): Promise<string> {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Failed to load url: ${url}`);
-    return await res.text();
-  }
 
   private async readMcpAppHtml(uri: string): Promise<string> {
     const sessionId = await this.getSessionId();
