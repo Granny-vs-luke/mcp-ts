@@ -28,6 +28,7 @@ export default defineConfig({
   treeshake: true,
   external: [
     'react',
+    'react-dom',
     'vue',
     'ioredis',
     '@modelcontextprotocol/sdk',

@@ -181,6 +181,8 @@ class ManagedMCPServer:
         try:
             if method == "initialize":
                 result = _normalize_initialize_result(self._initialize_result, requested_protocol)
+            elif method == "ping":
+                result = await self.session.send_ping()
             elif method in {"tools/list", "list_tools"}:
                 result = await self.session.list_tools()
             elif method in {"tools/call", "call_tool"}:

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { SSEClient } from '../core/sse-client';
-import { AppHost } from '../core/app-host';
+import type { AppHostClient } from '../core/types';
+import { AppHost, type AppHostOptions } from '../core/app-host';
 
 /**
  * Hook to host an MCP App in a React component
@@ -16,19 +16,17 @@ import { AppHost } from '../core/app-host';
  * @param options - Optional configuration
  * @returns Object containing the AppHost instance (or null) and error state
  */
+export type UseAppHostOptions = AppHostOptions;
+
 export function useAppHost(
-    client: SSEClient,
+    client: AppHostClient | null,
     iframeRef: React.RefObject<HTMLIFrameElement>,
-    options?: {
-        /** Callback when the App sends a message (e.g. to chat) */
-        onMessage?: (params: { role: string; content: unknown }) => void;
-    }
+    options?: UseAppHostOptions
 ) {
     const [host, setHost] = useState<AppHost | null>(null);
     const [error, setError] = useState<Error | null>(null);
     const initializingRef = useRef(false);
 
-    // Store latest callback in ref to avoid re-initializing AppHost on callback change
     const onMessageRef = useRef(options?.onMessage);
     useEffect(() => {
         onMessageRef.current = options?.onMessage;
@@ -42,13 +40,8 @@ export function useAppHost(
 
         const initHost = async () => {
             try {
-                // Initialize AppHost with security enforcement
-                const appHost = new AppHost(client, iframeRef.current!);
-
-                // Register message handler
-                appHost.onAppMessage = (params) => {
-                    onMessageRef.current?.(params);
-                };
+                // Initialize AppHost with security enforcement and options
+                const appHost = new AppHost(client, iframeRef.current!, options);
 
                 // Set host immediately so launch can be called
                 // (launch will wait for bridge if needed)

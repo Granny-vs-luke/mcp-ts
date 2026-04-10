@@ -545,19 +545,31 @@ async def invoke_capability_streamable_http(
 async def mcp_transport_info(subject: str, mcp_server: str, request: Request) -> JSONResponse:
     accept = _header_value(request, "accept")
     if "text/event-stream" in accept:
-        logger.debug("mcp_get_sse_compat path=%s subject=%s mcp_server=%s", request.url.path, subject, mcp_server)
+        logger.debug("mcp_get_sse_stream path=%s subject=%s mcp_server=%s", request.url.path, subject, mcp_server)
 
         async def _stream_transport() -> object:
-            payload = {
-                "transport": "streamable-http",
-                "subject": subject,
-                "mcp_server": mcp_server,
-                "methods": ["POST"],
-            }
-            yield f"event: info\ndata: {json.dumps(payload)}\n\n"
-            yield "event: done\ndata: {}\n\n"
+            # Keep the stream open. Some clients treat the server as "disconnected"
+            # if the optional GET SSE stream immediately closes.
+            retry_ms = 10_000
+            yield f"retry: {retry_ms}\n\n"
+            yield "event: ready\ndata: {}\n\n"
+            try:
+                while True:
+                    await asyncio.sleep(15)
+                    # Comment line is ignored by SSE parsers and acts as a keep-alive.
+                    yield f": keep-alive {time.time()}\n\n"
+            except asyncio.CancelledError:
+                return
 
-        return StreamingResponse(_stream_transport(), media_type="text/event-stream")
+        return StreamingResponse(
+            _stream_transport(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
     return JSONResponse(
         content={
             "transport": "streamable-http",
@@ -606,7 +618,15 @@ async def invoke_capability_sse(
         yield f"event: result\ndata: {json.dumps(result_payload)}\n\n"
         yield "event: done\ndata: {}\n\n"
 
-    return StreamingResponse(_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 def run() -> None:

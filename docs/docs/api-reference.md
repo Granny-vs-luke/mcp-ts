@@ -610,7 +610,7 @@ const {
 
 ### `useMcpApps(mcpClient)`
 
-React hook for rendering MCP Apps - interactive UI components from MCP servers.
+React hook for rendering **MCP Apps** (interactive tool UIs in a sandboxed iframe via AppBridge).
 
 ```typescript
 import { useMcpApps } from '@mcp-ts/sdk/client/react';
@@ -619,46 +619,74 @@ const { getAppMetadata, McpAppRenderer } = useMcpApps(mcpClient);
 ```
 
 **Parameters:**
-- `mcpClient` - The MCP client from `useMcp()` or context (required)
+
+- `mcpClient` — Object shaped like `useMcp()`’s return (at minimum `connections` with tools and optional `sseClient` for forwarding). May be `null` when disconnected.
 
 **Returns:**
-- `getAppMetadata(toolName: string)` - Function to look up MCP app metadata by tool name
-- `McpAppRenderer` - React component for rendering MCP apps
+
+- `getAppMetadata(toolName: string)` — Resolves UI metadata for a tool (strips `tool_<id>_` prefixes).
+- `McpAppRenderer` — Stable, memoized component; pass per-tool-call props.
 
 #### `getAppMetadata(toolName: string)`
-
-Looks up MCP app metadata for a given tool name. Automatically handles tool name prefixes (e.g., `tool_abc123_get-time` → `get-time`).
 
 **Returns:** `McpAppMetadata | undefined`
 
 ```typescript
 interface McpAppMetadata {
-  toolName: string;      // Base tool name
-  resourceUri: string;   // MCP resource URI for the app UI
-  sessionId: string;     // Session ID for the MCP connection
+  toolName: string;
+  resourceUri: string;
+  sessionId: string;
 }
 ```
+
+URI resolution uses `tool.mcpApp.resourceUri`, then `tool._meta?.ui?.resourceUri`, then `tool._meta?.['ui/resourceUri']`.
 
 #### `McpAppRenderer` Component
 
-Returned from `useMcpApps(mcpClient)` together with `getAppMetadata`. The hook closes over `mcpClient`, so each `<McpAppRenderer />` only needs the active tool call: `name`, optional `input` / `result`, and `status`.
+The hook closes over `mcpClient`. Each renderer needs the active tool identity and call state. For `ui://` / `mcp-app://` HTML (and any injected HTML path), you must pass **`sandbox`** with your hosted proxy page (see [MCP Apps](./mcp-apps.md)).
 
-**Props:**
+**Props (`McpAppRendererProps`):**
 
 ```typescript
 interface McpAppRendererProps {
-  name: string;                        // Tool name; SDK matches this to server tool / app metadata
-  input?: Record<string, unknown>;     // Tool arguments
-  result?: unknown;                    // Tool execution result
-  status: 'executing' | 'inProgress' | 'complete' | 'idle';
-  className?: string;                  // Custom CSS classes for container
+  name: string;
+  input?: Record<string, unknown>;
+  result?: unknown;
+  status?: 'executing' | 'inProgress' | 'complete' | 'idle';
+
+  toolResourceUri?: string;
+  html?: string;
+
+  sandbox?: SandboxConfig;
+  hostContext?: Record<string, unknown>;
+
+  toolInputPartial?: unknown;
+  toolCancelled?: boolean;
+
+  onCallTool?: (params: { name: string; arguments?: Record<string, unknown> }) => Promise<unknown>;
+  onReadResource?: (uri: string) => Promise<{ contents: Array<{ text?: string; blob?: string }> }>;
+  onFallbackRequest?: (request: unknown) => Promise<unknown>;
+  onMessage?: /* AppBridge */ (params, extra) => Promise<unknown>;
+  onOpenLink?: (params, extra) => Promise<unknown>;
+  onLoggingMessage?: (params: { level?: string; data?: string }) => void;
+  onSizeChanged?: (params: { width?: number; height?: number }) => void;
+  onError?: (error: Error) => void;
+
+  className?: string;
+  loader?: React.ReactNode;
+}
+
+interface SandboxConfig {
+  url: URL | string;
+  permissions?: string;
+  csp?: Record<string, string>;
 }
 ```
 
-**Example:**
+**Example (recommended: sandbox + default CSP):**
 
 ```tsx
-import { useMcpApps } from '@mcp-ts/sdk/client/react';
+import { useMcpApps, DEFAULT_MCP_APP_CSP } from '@mcp-ts/sdk/client/react';
 
 function ToolCallRenderer({ name, args, result, status }) {
   const { mcpClient } = useMcpContext();
@@ -670,11 +698,79 @@ function ToolCallRenderer({ name, args, result, status }) {
       input={args}
       result={result}
       status={status}
+      sandbox={{
+        url: '/sandbox.html',
+        csp: DEFAULT_MCP_APP_CSP,
+      }}
       className="my-custom-class"
     />
   );
 }
 ```
+
+#### `useAppHost(client, iframeRef, options?)`
+
+Lower-level React helper that constructs an **`AppHost`** for a given `HTMLIFrameElement` ref. Accepts the same options as `AppHostOptions` (sandbox, callbacks, `hostContext`, etc.). The hook currently initializes only when **`client`** is non-null; prefer **`McpAppRenderer`** for the usual `useMcp` integration.
+
+```typescript
+import { useAppHost } from '@mcp-ts/sdk/client/react';
+
+// sseClient: SSEClient | null from useMcp() / mcpClient.sseClient
+const { host, error } = useAppHost(sseClient, iframeRef, { sandbox: { ... } });
+```
+
+---
+
+### `AppHost` class
+
+Core MCP App host: AppBridge setup, sandbox proxy launch, resource fetch/cache, and tool I/O. Import from **`@mcp-ts/sdk/client`**.
+
+```typescript
+import {
+  AppHost,
+  DEFAULT_MCP_APP_CSP,
+  APP_HOST_DEFAULTS,
+} from '@mcp-ts/sdk/client';
+import {
+  SANDBOX_PROXY_READY_METHOD,
+  SANDBOX_RESOURCE_READY_METHOD,
+} from '@modelcontextprotocol/ext-apps';
+```
+
+#### Constructor
+
+```typescript
+new AppHost(client: AppHostClient | null, iframe: HTMLIFrameElement, options?: AppHostOptions);
+```
+
+- **`client`** — Usually `SSEClient`. If `null`, you must implement **`onCallTool`** / **`onReadResource`** (and any other paths your app uses) yourself.
+- **`options`** — See below.
+
+#### `AppHostOptions` (selected fields)
+
+- `debug?: boolean`
+- `sandbox?: SandboxConfig` — **Required** when launching with HTML to inject (fetched `ui://` HTML or `html` string).
+- `hostContext?: Record<string, unknown>` — Theme, locale, dimensions, etc.; synced to the guest via AppBridge.
+- `onCallTool`, `onReadResource`, `onFallbackRequest`, `onMessage`, `onOpenLink`, `onLoggingMessage`, `onSizeChanged`, `onError`, `onRequestDisplayMode` — Optional; override defaults (forwarding to `client` when provided and connected).
+
+#### Methods
+
+| Method | Description |
+|--------|-------------|
+| `start(): Promise<void>` | Prepares handlers; bridge connects during `launch()`. |
+| `preload(tools: Array<{ _meta?: unknown }>): void` | Warms resource cache for tools with UI metadata. |
+| `launch(source: { uri?: string; html?: string }, sessionId?: string): Promise<void>` | Loads UI (fetch `uri` or use `html`), runs sandbox proxy when needed, connects AppBridge. |
+| `sendToolInput(args: Record<string, unknown>): void` | Sends tool arguments to the guest. |
+| `sendToolResult(result: unknown): void` | Sends final tool result. |
+| `sendToolCancelled(reason: string): void` | Notifies cancellation. |
+| `sendToolInputPartial(params: unknown): void` | Streaming partial input. |
+| `setHostContext(context: Record<string, unknown>): void` | Updates host context on the bridge. |
+
+#### Constants
+
+- **`DEFAULT_MCP_APP_CSP`** — Sensible baseline CSP object for `sandbox.csp` (extend or narrow per app).
+- **`APP_HOST_DEFAULTS`** — Default timeout, host info label, URI schemes, theme/platform hints.
+- **`SANDBOX_PROXY_READY_METHOD`** / **`SANDBOX_RESOURCE_READY_METHOD`** — Re-exported from **`@modelcontextprotocol/ext-apps`** for custom sandbox pages (same as importing from that package directly).
 
 ---
 

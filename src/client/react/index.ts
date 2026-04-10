@@ -13,6 +13,7 @@ export { useAppHost } from './use-app-host.js';
 export {
   useMcpApps,
   type McpAppRendererProps,
+  type McpAppRendererHandle,
   type McpAppMetadata,
 } from './use-mcp-apps.js';
 

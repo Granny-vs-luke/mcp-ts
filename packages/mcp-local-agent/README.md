@@ -73,6 +73,35 @@ With this mode:
 - `AGENT_ID` and `CAPABILITIES` are derived from JWT claims (`sub`, `capabilities`) if not explicitly set
 - Local MCP calls are handled via MCP client sessions for `mcpServers`
 
+## Troubleshooting: Gemini CLI
+
+Gemini CLI uses the official MCP Streamable HTTP transport (`@modelcontextprotocol/sdk`).
+Some versions may try to open an **optional GET SSE stream** by sending:
+
+- `GET <httpUrl>` with `Accept: text/event-stream`
+
+If your remote proxy responds with a short-lived SSE payload (instead of a real long-lived MCP message stream),
+Gemini may mark the server as **Disconnected**.
+
+Fix:
+- Ensure your remote proxy supports a proper long-lived MCP SSE message stream on `GET /mcp`
+  when `Accept: text/event-stream`, and make sure your reverse proxy does not buffer the stream.
+
+Gemini CLI config should use `httpUrl` (streamable HTTP), pointing at the `/mcp` endpoint:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "httpUrl": "https://<your-host>/<subject>/filesystem/mcp",
+      "timeout": 30000
+    }
+  }
+}
+```
+
+If your server requires auth, add headers (Gemini supports custom headers per server).
+
 ## mcpServers + mcpassistant-gateway-bridge
 
 You can run MCP servers from config (supergateway-style) and derive local HTTP endpoints:

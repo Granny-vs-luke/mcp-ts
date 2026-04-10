@@ -285,22 +285,33 @@ export function useMcp(options: UseMcpOptions): McpClient {
             }
 
             case 'auth_required': {
-                // Handle OAuth redirect
-                if (event.authUrl) {
-                    onLog?.('info', `OAuth required - redirecting to ${event.authUrl}`, { authUrl: event.authUrl });
+                const url = (event.authUrl || '').trim();
+                if (!url) {
+                    onLog?.('error', 'OAuth required but authorization URL is missing', { sessionId: event.sessionId });
+                    const index = connections.value.findIndex((c) => c.sessionId === event.sessionId);
+                    if (index !== -1) {
+                        connections.value[index] = {
+                            ...connections.value[index],
+                            state: 'FAILED',
+                            error: 'OAuth authorization URL not available',
+                            authUrl: undefined,
+                        };
+                    }
+                    break;
+                }
+                onLog?.('info', `OAuth required - redirecting to ${url}`, { authUrl: url });
 
-                    // Suppress redirects/popups for background auto-restore on page load.
-                    if (!suppressAuthRedirectSessions.value.has(event.sessionId)) {
-                        if (onRedirect) {
-                            onRedirect(event.authUrl);
-                        } else if (typeof window !== 'undefined') {
-                            window.location.href = event.authUrl;
-                        }
+                // Suppress redirects/popups for background auto-restore on page load.
+                if (!suppressAuthRedirectSessions.value.has(event.sessionId)) {
+                    if (onRedirect) {
+                        onRedirect(url);
+                    } else if (typeof window !== 'undefined') {
+                        window.location.href = url;
                     }
                 }
                 const index = connections.value.findIndex((c) => c.sessionId === event.sessionId);
                 if (index !== -1) {
-                    connections.value[index] = { ...connections.value[index], state: 'AUTHENTICATING', authUrl: event.authUrl };
+                    connections.value[index] = { ...connections.value[index], state: 'AUTHENTICATING', authUrl: url };
                 }
                 break;
             }

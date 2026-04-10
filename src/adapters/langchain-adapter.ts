@@ -37,7 +37,7 @@ export class LangChainAdapter {
         if (!this.DynamicStructuredTool) {
             try {
                 const langchain = await import('@langchain/core/tools');
-                this.DynamicStructuredTool = langchain.DynamicStructuredTool;
+                this.DynamicStructuredTool = langchain.DynamicStructuredTool as any;
 
                 const zod = await import('zod');
                 this.z = zod.z;

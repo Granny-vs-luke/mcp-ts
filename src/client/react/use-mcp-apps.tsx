@@ -11,10 +11,14 @@ import React, {
   useRef,
   memo,
   useMemo,
+  forwardRef,
+  useImperativeHandle,
   type MutableRefObject,
 } from 'react';
-import { useAppHost } from './use-app-host.js';
+import { useAppHost, type UseAppHostOptions } from './use-app-host.js';
 import type { SSEClient } from '../core/sse-client.js';
+import { APP_HOST_DEFAULTS } from '../core/constants.js';
+import type { SandboxConfig } from '../core/app-host.js';
 
 export interface McpClient {
   connections: Array<{
@@ -41,14 +45,26 @@ export interface McpAppMetadata {
   sessionId: string;
 }
 
+/**
+ * Imperative handle for {@link useMcpApps}'s `McpAppRenderer` (via `ref`),
+ * aligned with `@mcp-ui/client`'s `AppRendererHandle.teardownResource`.
+ */
+export interface McpAppRendererHandle {
+  teardownResource: (params?: Record<string, unknown>) => void;
+}
+
 /** Props for {@link useMcpApps}'s `McpAppRenderer` (client is supplied via the hook). */
-export interface McpAppRendererProps {
+export interface McpAppRendererProps extends Pick<UseAppHostOptions, 'sandbox' | 'hostContext' | 'onCallTool' | 'onReadResource' | 'onFallbackRequest' | 'onMessage' | 'onOpenLink' | 'onLoggingMessage' | 'onSizeChanged' | 'onError'> {
   name: string;
+  toolResourceUri?: string;
+  html?: string;
   input?: Record<string, unknown>;
   result?: unknown;
-  status: 'executing' | 'inProgress' | 'complete' | 'idle';
-  /** Custom CSS class for the container */
+  status?: 'executing' | 'inProgress' | 'complete' | 'idle';
+  toolInputPartial?: any;
+  toolCancelled?: boolean;
   className?: string;
+  loader?: React.ReactNode;
 }
 
 type McpAppViewProps = McpAppRendererProps & {
@@ -60,22 +76,119 @@ type McpAppViewProps = McpAppRendererProps & {
 };
 
 /** Renders one MCP App in a sandboxed iframe; reads the latest client from `clientRef` each render. */
-const McpAppView = memo(function McpAppView({
-  clientRef,
-  name,
-  input,
-  result,
-  status,
-  className,
-}: McpAppViewProps) {
+const McpAppViewInner = forwardRef<McpAppRendererHandle, McpAppViewProps>(function McpAppView(
+  {
+    clientRef,
+    name,
+    toolResourceUri,
+    html,
+    input,
+    result,
+    status = 'idle',
+    toolInputPartial,
+    toolCancelled,
+    sandbox,
+    hostContext,
+    onCallTool,
+    onReadResource,
+    onFallbackRequest,
+    onMessage,
+    onOpenLink,
+    onLoggingMessage,
+    onSizeChanged,
+    onError: onHostError,
+    className,
+    loader,
+  },
+  ref,
+) {
   const mcpClient = clientRef.current;
   const metadata = getMcpAppMetadata(mcpClient, name);
   const sseClient = mcpClient?.sseClient ?? null;
-  const resourceUri = metadata?.resourceUri;
+  const resourceUri = toolResourceUri || metadata?.resourceUri;
   const appSessionId = metadata?.sessionId;
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const { host, error: hostError } = useAppHost(sseClient as SSEClient, iframeRef);
+  const containerRef = useRef<HTMLDivElement>(null);
+  // Tracks the last height (px) reported by the guest before/after fullscreen so we
+  // can restore it when the native fullscreen API exits and the guest fires a stale
+  // resize event that would otherwise collapse the iframe to 0.
+  const preFullscreenHeightRef = useRef<number | null>(null);
+  const displayModeRef = useRef<'inline' | 'fullscreen'>('inline');
+  const [displayMode, setDisplayMode] = useState<'inline' | 'fullscreen'>('inline');
+
+  const setDisplayModeWithRef = (mode: 'inline' | 'fullscreen') => {
+    displayModeRef.current = mode;
+    setDisplayMode(mode);
+  };
+
+  const { host, error: hostError } = useAppHost(sseClient as any, iframeRef, {
+    sandbox,
+    hostContext,
+    onCallTool,
+    onReadResource,
+    onFallbackRequest,
+    onMessage,
+    onOpenLink,
+    onLoggingMessage,
+    // Intercept onSizeChanged: when exiting fullscreen, ignore guest resize events
+    // that arrive with the shrunken viewport dimensions, and restore the pre-fullscreen height.
+    onSizeChanged: (params) => {
+      if (displayModeRef.current === 'inline' && preFullscreenHeightRef.current !== null) {
+        // Guest fired a resize right after fullscreen exit – restore the saved height
+        const savedHeight = preFullscreenHeightRef.current;
+        preFullscreenHeightRef.current = null;
+        if (iframeRef.current) {
+          iframeRef.current.style.height = `${savedHeight}px`;
+        }
+        return;
+      }
+      onSizeChanged?.(params);
+    },
+    onError: onHostError,
+    onRequestDisplayMode: async (params) => {
+      if (params.mode === 'fullscreen') {
+        // Snapshot current iframe height so we can restore on exit
+        if (iframeRef.current) {
+          const h = iframeRef.current.getBoundingClientRect().height;
+          if (h > 0) preFullscreenHeightRef.current = h;
+        }
+        try {
+          if (containerRef.current?.requestFullscreen) {
+            await containerRef.current.requestFullscreen();
+          } else if ((containerRef.current as any)?.webkitRequestFullscreen) {
+            await (containerRef.current as any).webkitRequestFullscreen();
+          }
+          setDisplayModeWithRef('fullscreen');
+        } catch (err) {
+          console.warn('[McpAppHost] requestFullscreen failed:', err);
+          preFullscreenHeightRef.current = null;
+          return { mode: 'inline' };
+        }
+      } else if (params.mode === 'inline') {
+        // Eagerly restore height — don't wait for a guest onsizechange that may never arrive
+        restoreHeightAfterFullscreen();
+        try {
+          if (document.fullscreenElement) {
+            await document.exitFullscreen();
+          }
+        } catch (err) {}
+        setDisplayModeWithRef('inline');
+      }
+      return { mode: params.mode };
+    }
+  });
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      teardownResource: (params?: Record<string, unknown>) => {
+        host?.teardownResource(params ?? {});
+      },
+    }),
+    [host],
+  );
+
   const [isLaunched, setIsLaunched] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -90,14 +203,38 @@ const McpAppView = memo(function McpAppView({
     setError(null);
   }, [resourceUri, appSessionId]);
 
+  // Eagerly restore the iframe's pre-fullscreen height at every exit point.
+  // The guest app may NOT fire onSizeChanged after exiting fullscreen, so we cannot
+  // rely on the onSizeChanged interceptor to restore the height.
+  const restoreHeightAfterFullscreen = () => {
+    const savedHeight = preFullscreenHeightRef.current;
+    if (savedHeight && iframeRef.current) {
+      iframeRef.current.style.height = `${savedHeight}px`;
+    }
+    preFullscreenHeightRef.current = null;
+  };
+
   useEffect(() => {
-    if (!host || !resourceUri || !appSessionId) return;
+    const onFullscreenChange = () => {
+      const isFullscreen = !!document.fullscreenElement;
+      // Use ref to avoid stale closure (ESC key exit path)
+      if (!isFullscreen && displayModeRef.current === 'fullscreen') {
+        restoreHeightAfterFullscreen();
+        setDisplayModeWithRef('inline');
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []); // stable – reads from refs only, no stale closure over state
+
+  useEffect(() => {
+    if (!host || (!resourceUri && !html)) return;
 
     host
-      .launch(resourceUri, appSessionId)
+      .launch({ uri: resourceUri, html }, appSessionId)
       .then(() => setIsLaunched(true))
       .catch((err) => setError(err instanceof Error ? err : new Error(String(err))));
-  }, [host, resourceUri, appSessionId]);
+  }, [host, resourceUri, html, appSessionId]);
 
   useEffect(() => {
     if (!host || !isLaunched || !resourceUri || !appSessionId || !input) return;
@@ -132,7 +269,30 @@ const McpAppView = memo(function McpAppView({
     lastStatusRef.current = status;
   }, [status]);
 
-  if (!metadata || !sseClient) {
+  useEffect(() => {
+    if (!host) return;
+    // Merge user-provided hostContext with our internal displayMode, then notify the guest.
+    // This causes Excalidraw (and other MCP apps) to switch between inline/fullscreen UI mode.
+    const mergedCtx = {
+      theme: APP_HOST_DEFAULTS.THEME,
+      platform: APP_HOST_DEFAULTS.PLATFORM,
+      containerDimensions: { maxHeight: APP_HOST_DEFAULTS.MAX_HEIGHT },
+      availableDisplayModes: ['inline', 'fullscreen'],
+      ...(hostContext || {}),
+      displayMode, // always override with our authoritative state
+    };
+    host.setHostContext(mergedCtx);
+  }, [host, hostContext, displayMode]);
+
+  useEffect(() => {
+    if (host && toolInputPartial) host.sendToolInputPartial(toolInputPartial);
+  }, [host, toolInputPartial]);
+
+  useEffect(() => {
+    if (host && toolCancelled) host.sendToolCancelled("User cancelled");
+  }, [host, toolCancelled]);
+
+  if (!metadata && !html && !toolResourceUri) {
     return null;
   }
 
@@ -145,23 +305,54 @@ const McpAppView = memo(function McpAppView({
     );
   }
 
+  const opacityClass = isLaunched ? 'opacity-100' : 'opacity-0';
+  let containerClass = `w-full border border-gray-700 rounded bg-transparent my-2 relative ${className || ''}`;
+  let iframeClass = `w-full transition-opacity duration-300 ${opacityClass}`;
+
+  // When native fullscreen is active, the container naturally expands via the browser API.
+  // We only need to satisfy flex layout so the iframe fills 100% of the fullscreen viewport.
+  if (displayMode === 'fullscreen') {
+    containerClass = `w-full h-full bg-black m-0 p-0 flex flex-col relative`;
+    iframeClass = `w-full flex-1 transition-opacity duration-300 ${opacityClass}`;
+  }
+
   return (
-    <div className={`w-full border border-gray-700 rounded overflow-hidden bg-white min-h-96 my-2 relative ${className || ''}`}>
+    <div ref={containerRef} className={containerClass}>
+      {displayMode === 'fullscreen' && (
+        <div className="absolute top-0 right-0 p-2 z-[100000] w-full bg-gradient-to-b from-black/80 to-transparent flex justify-end">
+          <button 
+            title="Exit Fullscreen"
+            onClick={() => {
+              // Eagerly restore height before the browser animation completes
+              restoreHeightAfterFullscreen();
+              if (document.fullscreenElement) document.exitFullscreen();
+              setDisplayModeWithRef('inline');
+            }} 
+            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-md shadow flex items-center gap-2 border border-gray-600 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+            <span className="text-sm font-medium">Exit</span>
+          </button>
+        </div>
+      )}
       <iframe
         ref={iframeRef}
         sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads"
-        className="w-full h-full min-h-96"
-        style={{ height: 'auto' }}
+        allow="fullscreen"
+        className={iframeClass}
         title="MCP App"
       />
-      {!isLaunched && (
-        <div className="absolute inset-0 bg-gray-900/50 flex items-center justify-center pointer-events-none">
-          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      {!isLaunched && loader && (
+        <div className="absolute inset-0 bg-transparent flex items-center justify-center pointer-events-none z-10">
+          {loader}
         </div>
       )}
     </div>
   );
 });
+
+const McpAppView = memo(McpAppViewInner);
+McpAppView.displayName = 'McpAppView';
 
 /**
  * Helpers scoped to one `mcpClient`. Pass the client here once; `McpAppRenderer` only needs per-tool props (`name`, `input`, `result`, `status`).
@@ -179,9 +370,13 @@ export function useMcpApps(mcpClient: McpClient | null) {
   );
 
   const McpAppRenderer = useMemo(() => {
-    const Renderer = memo(function McpAppRenderer(props: McpAppRendererProps) {
-      return <McpAppView clientRef={clientRef} {...props} />;
+    const Inner = forwardRef<McpAppRendererHandle, McpAppRendererProps>(function McpAppRenderer(
+      props,
+      ref,
+    ) {
+      return <McpAppView ref={ref} clientRef={clientRef} {...props} />;
     });
+    const Renderer = memo(Inner);
     Renderer.displayName = 'McpAppRenderer';
     return Renderer;
   }, []);

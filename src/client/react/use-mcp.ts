@@ -343,21 +343,32 @@ export function useMcp(options: UseMcpOptions): McpClient {
         }
 
         case 'auth_required': {
-          // Handle OAuth redirect
-          if (event.authUrl) {
-            onLog?.('info', `OAuth required - redirecting to ${event.authUrl}`, { authUrl: event.authUrl });
+          const url = (event.authUrl || '').trim();
+          if (!url) {
+            onLog?.('error', 'OAuth required but authorization URL is missing', { sessionId: event.sessionId });
+            return prev.map((c: McpConnection) =>
+              c.sessionId === event.sessionId
+                ? {
+                    ...c,
+                    state: 'FAILED',
+                    error: 'OAuth authorization URL not available',
+                    authUrl: undefined,
+                  }
+                : c
+            );
+          }
+          onLog?.('info', `OAuth required - redirecting to ${url}`, { authUrl: url });
 
-            // Suppress redirects/popups for auto-restore on page load.
-            if (!suppressAuthRedirectSessionsRef.current.has(event.sessionId)) {
-              if (onRedirect) {
-                onRedirect(event.authUrl);
-              } else if (typeof window !== 'undefined') {
-                window.location.href = event.authUrl;
-              }
+          // Suppress redirects/popups for auto-restore on page load.
+          if (!suppressAuthRedirectSessionsRef.current.has(event.sessionId)) {
+            if (onRedirect) {
+              onRedirect(url);
+            } else if (typeof window !== 'undefined') {
+              window.location.href = url;
             }
           }
           return prev.map((c: McpConnection) =>
-            c.sessionId === event.sessionId ? { ...c, state: 'AUTHENTICATING', authUrl: event.authUrl } : c
+            c.sessionId === event.sessionId ? { ...c, state: 'AUTHENTICATING', authUrl: url } : c
           );
         }
 
