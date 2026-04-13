@@ -128,6 +128,7 @@ Run all servers in config:
 
 ```bash
 mcpassistant-gateway-bridge --config ./.mcpassistant/mcp.json
+uv run --project ".\packages\mcp-local-agent" mcpassistant-gateway                                                       
 ```
 
 
