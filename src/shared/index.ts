@@ -73,3 +73,33 @@ export {
   type ToolUiConfig,
 } from './tool-utils.js';
 
+// Tool Router — Context window optimization
+export {
+  ToolRouter,
+  type ToolRouterOptions,
+  type ToolRouterStrategy,
+  type ToolGroupInfo,
+} from './tool-router.js';
+
+export {
+  ToolIndex,
+  type ToolSummary,
+  type IndexedTool,
+  type ToolIndexOptions,
+  type EmbedFn,
+} from './tool-index.js';
+
+export {
+  SchemaCompressor,
+  type CompactTool,
+  type CompressionStats,
+} from './schema-compressor.js';
+
+export {
+  createSearchToolDefinition,
+  createGetSchemaToolDefinition,
+  createListGroupsToolDefinition,
+  executeMetaTool,
+  isMetaTool,
+} from './meta-tools.js';
+

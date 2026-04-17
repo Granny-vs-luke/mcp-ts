@@ -2,6 +2,8 @@ import { MCPClient } from '../server/mcp/oauth-client';
 import { MultiSessionClient } from '../server/mcp/multi-session-client';
 import type { DynamicStructuredTool, StructuredTool } from '@langchain/core/tools';
 import type { z } from 'zod';
+import { ToolRouter } from '../shared/tool-router.js';
+import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
 
 export interface LangChainAdapterOptions {
     /** 
@@ -16,6 +18,12 @@ export interface LangChainAdapterOptions {
      * @default false
      */
     simplifyErrors?: boolean;
+
+    /**
+     * Optional ToolRouter for intelligent tool selection.
+     * See AIAdapterOptions.toolRouter for details.
+     */
+    toolRouter?: ToolRouter;
 }
 
 /**
@@ -99,6 +107,11 @@ export class LangChainAdapter {
      * Fetches tools from the MCP server and converts them to LangChain StructuredTools.
      */
     async getTools(): Promise<StructuredTool[]> {
+        // If a ToolRouter is provided, use its filtered output
+        if (this.options.toolRouter) {
+            return this.getToolsViaRouter(this.options.toolRouter);
+        }
+
         // Use duck typing instead of instanceof to handle module bundling issues
         const isMultiSession = typeof (this.client as any).getClients === 'function';
         const clients = isMultiSession
@@ -116,6 +129,62 @@ export class LangChainAdapter {
             })
         );
         return results.flat();
+    }
+
+    /**
+     * Build StructuredTools from a ToolRouter's filtered output.
+     */
+    private async getToolsViaRouter(router: ToolRouter): Promise<StructuredTool[]> {
+        await this.ensureDependencies();
+
+        const filteredTools = await router.getFilteredTools();
+
+        return filteredTools.map((tool) => {
+            const schema = this.jsonSchemaToZod(tool.inputSchema);
+
+            return new this.DynamicStructuredTool!({
+                name: tool.name,
+                description: tool.description || `Tool ${tool.name}`,
+                schema: schema,
+                func: async (args: any) => {
+                    try {
+                        // Handle meta-tool calls via the router
+                        if (isMetaTool(tool.name)) {
+                            const result = await executeMetaTool(tool.name, args, router);
+                            if (result) {
+                                return result.content.map((c: any) => c.text ?? '').join('\n');
+                            }
+                        }
+
+                        // Route to the correct MCP client
+                        const indexedTool = router.getToolSchema(tool.name);
+                        if (!indexedTool) {
+                            throw new Error(`Tool "${tool.name}" not found.`);
+                        }
+
+                        const isMultiSession = typeof (this.client as any).getClients === 'function';
+                        const clients = isMultiSession
+                            ? (this.client as MultiSessionClient).getClients()
+                            : [this.client as MCPClient];
+
+                        const targetClient = clients.find(
+                            (c) => typeof c.getSessionId === 'function' && c.getSessionId() === indexedTool.sessionId
+                        ) ?? clients.find((c) => c.isConnected());
+
+                        if (!targetClient) {
+                            throw new Error(`No connected client found for tool "${tool.name}"`);
+                        }
+
+                        return await targetClient.callTool(tool.name, args);
+                    } catch (error: any) {
+                        if (this.options.simplifyErrors) {
+                            return `Error: ${error.message}`;
+                        }
+                        throw error;
+                    }
+                },
+            });
+        });
     }
 
     /**

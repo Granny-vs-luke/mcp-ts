@@ -2,6 +2,8 @@ import { MCPClient } from '../server/mcp/oauth-client';
 import { MultiSessionClient } from '../server/mcp/multi-session-client';
 import type { JSONSchema7 } from 'json-schema';
 import type { ToolSet } from 'ai';
+import { ToolRouter } from '../shared/tool-router.js';
+import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
 
 export interface AIAdapterOptions {
     /** 
@@ -9,6 +11,17 @@ export interface AIAdapterOptions {
      * Defaults to the client's serverId.
      */
     prefix?: string;
+
+    /**
+     * Optional ToolRouter for intelligent tool selection.
+     *
+     * When provided with `strategy: 'search'`, the adapter exposes only
+     * meta-tools (search_tools, get_tool_schema) instead of all tool schemas,
+     * reducing context window usage by 80–95%.
+     *
+     * When not provided, all tools are returned as before (backward-compatible).
+     */
+    toolRouter?: ToolRouter;
 }
 
 /**
@@ -80,6 +93,11 @@ export class AIAdapter {
     async getTools(): Promise<ToolSet> {
         await this.ensureJsonSchema();
 
+        // If a ToolRouter is provided, use its filtered output
+        if (this.options.toolRouter) {
+            return this.getToolsViaRouter(this.options.toolRouter);
+        }
+
         // Use duck typing instead of instanceof to handle module bundling issues
         // MultiSessionClient has getClients(), MCPClient does not
         const isMultiSession = typeof (this.client as any).getClients === 'function';
@@ -104,6 +122,58 @@ export class AIAdapter {
         );
 
         return results.reduce((acc, tools) => ({ ...acc, ...tools }), {});
+    }
+
+    /**
+     * Build a ToolSet from a ToolRouter's filtered output.
+     * For meta-tools (search/schema), wires up executors automatically.
+     */
+    private async getToolsViaRouter(router: ToolRouter): Promise<ToolSet> {
+        const filteredTools = await router.getFilteredTools();
+
+        // @ts-ignore: ToolSet type inference can be tricky with dynamic imports
+        return Object.fromEntries(
+            filteredTools.map((tool) => [
+                tool.name,
+                {
+                    description: tool.description,
+                    inputSchema: this.jsonSchema!(tool.inputSchema as JSONSchema7),
+                    execute: async (args: any) => {
+                        // Handle meta-tool calls via the router
+                        if (isMetaTool(tool.name)) {
+                            const result = await executeMetaTool(tool.name, args, router);
+                            if (result) {
+                                return result.content.map((c: any) => c.text ?? '').join('\n');
+                            }
+                        }
+
+                        // For real tools discovered via search, find the right client and call
+                        const indexedTool = router.getToolSchema(tool.name);
+                        if (!indexedTool) {
+                            throw new Error(
+                                `Tool "${tool.name}" not found. Use mcp_search_tools to discover available tools.`
+                            );
+                        }
+
+                        // Route to the correct MCP client by sessionId
+                        const isMultiSession = typeof (this.client as any).getClients === 'function';
+                        const clients = isMultiSession
+                            ? (this.client as MultiSessionClient).getClients()
+                            : [this.client as MCPClient];
+
+                        const targetClient = clients.find(
+                            (c) => typeof c.getSessionId === 'function' && c.getSessionId() === indexedTool.sessionId
+                        ) ?? clients.find((c) => c.isConnected());
+
+                        if (!targetClient) {
+                            throw new Error(`No connected client found for tool "${tool.name}"`);
+                        }
+
+                        return await targetClient.callTool(tool.name, args);
+                    },
+                },
+            ])
+        );
     }
 
     /**
