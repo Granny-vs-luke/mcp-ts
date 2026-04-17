@@ -76,21 +76,37 @@ export function createGetSchemaToolDefinition(): Tool {
 }
 
 /**
- * Creates the `mcp_list_tool_groups` tool definition.
+ * Creates the `mcp_execute_tool` tool definition.
  *
- * Lets the LLM see what tool categories/servers are available and
- * how many tools each has.
+ * This is the execution meta-tool — the LLM calls this to execute any
+ * tool discovered via `mcp_search_tools`. The LLM should first call
+ * `mcp_get_tool_schema` to know the correct arguments.
+ *
+ * Inspired by Composio's `COMPOSIO_MULTI_EXECUTE_TOOL` pattern:
+ * instead of registering every real tool with the framework, we proxy
+ * all execution through a single meta-tool.
  */
-export function createListGroupsToolDefinition(): Tool {
+export function createExecuteToolDefinition(): Tool {
   return {
-    name: 'mcp_list_tool_groups',
+    name: 'mcp_execute_tool',
     description:
-      'List all available tool groups/categories with tool counts. ' +
-      'Groups are organized by MCP server. Use this to understand ' +
-      'what capabilities are available before searching.',
+      'Execute a tool that was discovered via mcp_search_tools. ' +
+      'You MUST call mcp_get_tool_schema first to know the correct parameters. ' +
+      'Pass the exact tool name and its arguments.',
     inputSchema: {
       type: 'object' as const,
-      properties: {},
+      properties: {
+        toolName: {
+          type: 'string',
+          description: 'The exact tool name from mcp_search_tools results.',
+        },
+        args: {
+          type: 'object',
+          description: "Arguments matching the tool's inputSchema. Omit or pass {} if the tool takes no parameters.",
+          additionalProperties: true,
+        },
+      },
+      required: ['toolName'],
     },
   };
 }
@@ -100,17 +116,25 @@ export function createListGroupsToolDefinition(): Tool {
 // ---------------------------------------------------------------------------
 
 /**
+ * Callback for executing a real MCP tool via the correct client.
+ * Provided by adapters that wire up client routing.
+ */
+export type CallToolFn = (toolName: string, args: Record<string, unknown>) => Promise<any>;
+
+/**
  * Execute a meta-tool call and return the result in MCP CallToolResult format.
  *
  * @param toolName - One of the meta-tool names (mcp_search_tools, etc.)
  * @param args - The arguments from the LLM's tool call
  * @param router - The ToolRouter to query
+ * @param callToolFn - Optional callback for executing real tools (required for mcp_execute_tool)
  * @returns MCP-compatible CallToolResult, or null if this isn't a meta-tool
  */
 export async function executeMetaTool(
   toolName: string,
   args: Record<string, unknown>,
-  router: ToolRouter
+  router: ToolRouter,
+  callToolFn?: CallToolFn
 ): Promise<CallToolResult | null> {
   switch (toolName) {
     case 'mcp_search_tools': {
@@ -164,30 +188,59 @@ export async function executeMetaTool(
       };
     }
 
-    case 'mcp_list_tool_groups': {
-      const groups = router.getGroups();
+    case 'mcp_execute_tool': {
+      const targetToolName = String(args.toolName ?? '');
+      const toolArgs = (args.args as Record<string, unknown>) ?? {};
 
-      if (groups.size === 0) {
+      if (!targetToolName) {
         return {
-          content: [{ type: 'text', text: 'No tool groups available. No MCP servers are connected.' }],
-          isError: false,
+          content: [{ type: 'text', text: 'Missing required parameter "toolName". Specify which tool to execute.' }],
+          isError: true,
         };
       }
 
-      const lines: string[] = ['Available tool groups:\n'];
-      for (const [groupName, info] of groups) {
-        const status = info.active ? '✓ active' : '○ inactive';
-        lines.push(`• **${groupName}** — ${info.tools.length} tools [${status}]`);
-        // Show first 3 tool names as preview
-        const preview = info.tools.slice(0, 3).join(', ');
-        const more = info.tools.length > 3 ? `, +${info.tools.length - 3} more` : '';
-        lines.push(`  Tools: ${preview}${more}`);
+      // Verify the tool exists in our index
+      const tool = router.getToolSchema(targetToolName);
+      if (!tool) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Tool "${targetToolName}" not found. Use mcp_search_tools to discover available tools first.`,
+            },
+          ],
+          isError: true,
+        };
       }
 
-      return {
-        content: [{ type: 'text', text: lines.join('\n') }],
-        isError: false,
-      };
+      if (!callToolFn) {
+        return {
+          content: [{ type: 'text', text: 'Tool execution is not available. No callToolFn was configured.' }],
+          isError: true,
+        };
+      }
+
+      try {
+        const result = await callToolFn(targetToolName, toolArgs);
+
+        // Normalize result to text
+        if (result && typeof result === 'object' && 'content' in result) {
+          // Already MCP CallToolResult format
+          return result as CallToolResult;
+        }
+
+        const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+        return {
+          content: [{ type: 'text', text }],
+          isError: false,
+        };
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: 'text', text: `Tool execution failed: ${errorMessage}` }],
+          isError: true,
+        };
+      }
     }
 
     default:
@@ -200,6 +253,6 @@ export function isMetaTool(toolName: string): boolean {
   return (
     toolName === 'mcp_search_tools' ||
     toolName === 'mcp_get_tool_schema' ||
-    toolName === 'mcp_list_tool_groups'
+    toolName === 'mcp_execute_tool'
   );
 }

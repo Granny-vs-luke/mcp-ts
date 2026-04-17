@@ -32,7 +32,7 @@ import { SchemaCompressor, type CompactTool } from './schema-compressor.js';
 import {
   createSearchToolDefinition,
   createGetSchemaToolDefinition,
-  createListGroupsToolDefinition,
+  createExecuteToolDefinition,
 } from './meta-tools.js';
 
 // ---------------------------------------------------------------------------
@@ -114,6 +114,7 @@ export interface ToolGroupInfo {
 interface MCPClientLike {
   isConnected(): boolean;
   listTools(): Promise<{ tools: Tool[] }>;
+  callTool(name: string, args: Record<string, unknown>): Promise<any>;
   getServerId?(): string | undefined;
   getSessionId?(): string;
 }
@@ -286,6 +287,38 @@ export class ToolRouter {
     await this.ensureInitialized();
   }
 
+  /**
+   * Execute a tool by routing to the correct MCP client.
+   * Used by the `mcp_execute_tool` meta-tool to proxy tool calls.
+   *
+   * Looks up the tool in the index to find its sessionId, then routes
+   * to the matching client. Falls back to the first connected client.
+   */
+  async callTool(toolName: string, args: Record<string, unknown>): Promise<any> {
+    await this.ensureInitialized();
+
+    const indexedTool = this.getToolSchema(toolName);
+    if (!indexedTool) {
+      throw new Error(
+        `Tool "${toolName}" not found. Use mcp_search_tools to discover available tools.`
+      );
+    }
+
+    const clients = this.getClients();
+    const targetClient =
+      clients.find(
+        (c) =>
+          typeof c.getSessionId === 'function' &&
+          c.getSessionId() === indexedTool.sessionId
+      ) ?? clients.find((c) => c.isConnected());
+
+    if (!targetClient) {
+      throw new Error(`No connected client found for tool "${toolName}"`);
+    }
+
+    return await targetClient.callTool(toolName, args);
+  }
+
   // -----------------------------------------------------------------------
   // Internals
   // -----------------------------------------------------------------------
@@ -408,7 +441,7 @@ export class ToolRouter {
     return [
       createSearchToolDefinition(),
       createGetSchemaToolDefinition(),
-      createListGroupsToolDefinition(),
+      createExecuteToolDefinition(),
     ];
   }
 }

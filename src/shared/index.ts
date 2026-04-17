@@ -98,8 +98,9 @@ export {
 export {
   createSearchToolDefinition,
   createGetSchemaToolDefinition,
-  createListGroupsToolDefinition,
+  createExecuteToolDefinition,
   executeMetaTool,
   isMetaTool,
+  type CallToolFn,
 } from './meta-tools.js';
 

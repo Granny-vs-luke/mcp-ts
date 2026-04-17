@@ -133,6 +133,10 @@ export class LangChainAdapter {
 
     /**
      * Build StructuredTools from a ToolRouter's filtered output.
+     *
+     * In `search` strategy, only meta-tools are registered with the framework.
+     * Real tool execution is proxied through `mcp_execute_tool` which uses
+     * `router.callTool()` to route to the correct MCP client.
      */
     private async getToolsViaRouter(router: ToolRouter): Promise<StructuredTool[]> {
         await this.ensureDependencies();
@@ -150,32 +154,20 @@ export class LangChainAdapter {
                     try {
                         // Handle meta-tool calls via the router
                         if (isMetaTool(tool.name)) {
-                            const result = await executeMetaTool(tool.name, args, router);
+                            const result = await executeMetaTool(
+                                tool.name,
+                                args,
+                                router,
+                                (name, toolArgs) => router.callTool(name, toolArgs)
+                            );
                             if (result) {
                                 return result.content.map((c: any) => c.text ?? '').join('\n');
                             }
                         }
 
-                        // Route to the correct MCP client
-                        const indexedTool = router.getToolSchema(tool.name);
-                        if (!indexedTool) {
-                            throw new Error(`Tool "${tool.name}" not found.`);
-                        }
-
-                        const isMultiSession = typeof (this.client as any).getClients === 'function';
-                        const clients = isMultiSession
-                            ? (this.client as MultiSessionClient).getClients()
-                            : [this.client as MCPClient];
-
-                        const targetClient = clients.find(
-                            (c) => typeof c.getSessionId === 'function' && c.getSessionId() === indexedTool.sessionId
-                        ) ?? clients.find((c) => c.isConnected());
-
-                        if (!targetClient) {
-                            throw new Error(`No connected client found for tool "${tool.name}"`);
-                        }
-
-                        return await targetClient.callTool(tool.name, args);
+                        // For non-meta tools in 'all' or 'groups' strategy,
+                        // route directly to the correct MCP client
+                        return await router.callTool(tool.name, args);
                     } catch (error: any) {
                         if (this.options.simplifyErrors) {
                             return `Error: ${error.message}`;

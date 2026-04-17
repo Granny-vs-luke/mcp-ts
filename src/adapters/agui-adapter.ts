@@ -28,6 +28,8 @@
 
 import { MCPClient } from '../server/mcp/oauth-client.js';
 import { MultiSessionClient } from '../server/mcp/multi-session-client.js';
+import { ToolRouter } from '../shared/tool-router.js';
+import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
 
 /**
  * Extended JSON Schema properties that Pydantic's strict validation rejects.
@@ -96,6 +98,11 @@ export interface AguiAdapterOptions {
      * @default serverId or 'mcp'
      */
     prefix?: string;
+
+    /**
+     * Optional ToolRouter for intelligent tool selection.
+     */
+    toolRouter?: ToolRouter;
 }
 
 /**
@@ -132,6 +139,10 @@ export class AguiAdapter {
      * Get tools with handlers for MCP tool execution.
      */
     async getTools(): Promise<AguiTool[]> {
+        if (this.options.toolRouter) {
+            return this.getToolsViaRouter(this.options.toolRouter);
+        }
+
         if (this.isMultiSession()) {
             const clients = (this.client as MultiSessionClient).getClients();
             const allTools: AguiTool[] = [];
@@ -147,6 +158,10 @@ export class AguiAdapter {
      * Get tool definitions in JSON Schema format for passing to remote agents.
      */
     async getToolDefinitions(): Promise<AguiToolDefinition[]> {
+        if (this.options.toolRouter) {
+            return this.getToolDefinitionsViaRouter(this.options.toolRouter);
+        }
+
         if (this.isMultiSession()) {
             const clients = (this.client as MultiSessionClient).getClients();
             const allTools: AguiToolDefinition[] = [];
@@ -216,6 +231,54 @@ export class AguiAdapter {
                 description: tool.description || `Execute ${tool.name}`,
                 parameters: cleanSchema(tool.inputSchema),
                 _meta: { ...mcpTool._meta, sessionId: (client as any).getSessionId?.() },
+            };
+        });
+    }
+
+    /**
+     * Build AG-UI tools from a ToolRouter's filtered output.
+     *
+     * In `search` strategy, only meta-tools are registered with the framework.
+     * Real tool execution is proxied through `mcp_execute_tool` which uses
+     * `router.callTool()` to route to the correct MCP client.
+     */
+    private async getToolsViaRouter(router: ToolRouter): Promise<AguiTool[]> {
+        const filteredTools = await router.getFilteredTools();
+
+        return filteredTools.map(tool => {
+            return {
+                name: tool.name,
+                description: tool.description || `Execute ${tool.name}`,
+                parameters: cleanSchema(tool.inputSchema),
+                handler: async (args: any) => {
+                    if (isMetaTool(tool.name)) {
+                        const result = await executeMetaTool(
+                            tool.name,
+                            args,
+                            router,
+                            (name, toolArgs) => router.callTool(name, toolArgs)
+                        );
+                        if (result) {
+                            return result.content.map((c: any) => c.text ?? '').join('\n');
+                        }
+                        return "Failed to execute meta-tool";
+                    }
+
+                    // For non-meta tools in 'all' or 'groups' strategy,
+                    // route directly to the correct MCP client
+                    return await router.callTool(tool.name, args);
+                }
+            };
+        });
+    }
+
+    private async getToolDefinitionsViaRouter(router: ToolRouter): Promise<AguiToolDefinition[]> {
+        const filteredTools = await router.getFilteredTools();
+        return filteredTools.map(tool => {
+            return {
+                name: tool.name,
+                description: tool.description || `Execute ${tool.name}`,
+                parameters: cleanSchema(tool.inputSchema)
             };
         });
     }
