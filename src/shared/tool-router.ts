@@ -116,6 +116,7 @@ interface MCPClientLike {
   listTools(): Promise<{ tools: Tool[] }>;
   callTool(name: string, args: Record<string, unknown>): Promise<any>;
   getServerId?(): string | undefined;
+  getServerName?(): string | undefined;
   getSessionId?(): string;
 }
 
@@ -207,11 +208,23 @@ export class ToolRouter {
   }
 
   /**
-   * Get the full tool definition by exact name.
-   * Used by the `mcp_get_tool_schema` meta-tool.
+   * Get the full tool definition by name.
+   * If tool name is ambiguous, use namespace to specify the server.
    */
-  getToolSchema(toolName: string): IndexedTool | undefined {
-    return this.index.getToolByName(toolName);
+  getToolSchema(toolName: string, namespace?: string): IndexedTool | undefined {
+    const matches = this.index.getTool(toolName, namespace);
+
+    if (matches.length === 0) return undefined;
+
+    if (matches.length > 1) {
+      const servers = matches.map((m) => m.serverName).join(', ');
+      throw new Error(
+        `Tool "${toolName}" is provided by multiple servers: [${servers}]. ` +
+          `Please specify the desired "serverName" as a namespace.`
+      );
+    }
+
+    return matches[0];
   }
 
   /**
@@ -290,17 +303,20 @@ export class ToolRouter {
   /**
    * Execute a tool by routing to the correct MCP client.
    * Used by the `mcp_execute_tool` meta-tool to proxy tool calls.
-   *
-   * Looks up the tool in the index to find its sessionId, then routes
-   * to the matching client. Falls back to the first connected client.
    */
-  async callTool(toolName: string, args: Record<string, unknown>): Promise<any> {
+  async callTool(
+    toolName: string,
+    args: Record<string, unknown>,
+    namespace?: string
+  ): Promise<any> {
     await this.ensureInitialized();
 
-    const indexedTool = this.getToolSchema(toolName);
+    const indexedTool = this.getToolSchema(toolName, namespace);
     if (!indexedTool) {
       throw new Error(
-        `Tool "${toolName}" not found. Use mcp_search_tools to discover available tools.`
+        `Tool "${toolName}" not found${
+          namespace ? ` on server "${namespace}"` : ''
+        }. Use mcp_search_tools to discover available tools.`
       );
     }
 
@@ -345,13 +361,16 @@ export class ToolRouter {
         const { tools } = await client.listTools();
         const serverId =
           typeof client.getServerId === 'function' ? client.getServerId() ?? 'unknown' : 'unknown';
+        const serverName =
+          (typeof client.getServerName === 'function' ? client.getServerName() : undefined) ??
+          serverId;
         const sessionId =
           typeof client.getSessionId === 'function' ? client.getSessionId() ?? 'unknown' : 'unknown';
 
         for (const tool of tools) {
           result.push({
             ...tool,
-            serverName: serverId,
+            serverName: serverName,
             sessionId,
           });
         }

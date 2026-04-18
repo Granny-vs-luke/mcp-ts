@@ -69,6 +69,11 @@ export function createGetSchemaToolDefinition(): Tool {
           type: 'string',
           description: 'The exact tool name returned by mcp_search_tools.',
         },
+        serverName: {
+          type: 'string',
+          description:
+            'Optional: The server name provided in mcp_search_tools. Required if multiple tools have the same name.',
+        },
       },
       required: ['toolName'],
     },
@@ -100,9 +105,15 @@ export function createExecuteToolDefinition(): Tool {
           type: 'string',
           description: 'The exact tool name from mcp_search_tools results.',
         },
+        serverName: {
+          type: 'string',
+          description:
+            'Optional: The server name provided in mcp_search_tools. Required if multiple tools have the same name.',
+        },
         args: {
           type: 'object',
-          description: "Arguments matching the tool's inputSchema. Omit or pass {} if the tool takes no parameters.",
+          description:
+            "Arguments matching the tool's inputSchema. Omit or pass {} if the tool takes no parameters.",
           additionalProperties: true,
         },
       },
@@ -119,7 +130,11 @@ export function createExecuteToolDefinition(): Tool {
  * Callback for executing a real MCP tool via the correct client.
  * Provided by adapters that wire up client routing.
  */
-export type CallToolFn = (toolName: string, args: Record<string, unknown>) => Promise<any>;
+export type CallToolFn = (
+  toolName: string,
+  args: Record<string, unknown>,
+  namespace?: string
+) => Promise<any>;
 
 /**
  * Execute a meta-tool call and return the result in MCP CallToolResult format.
@@ -162,7 +177,8 @@ export async function executeMetaTool(
 
     case 'mcp_get_tool_schema': {
       const name = String(args.toolName ?? '');
-      const tool = router.getToolSchema(name);
+      const namespace = String(args.serverName ?? '') || undefined;
+      const tool = router.getToolSchema(name, namespace);
 
       if (!tool) {
         return {
@@ -190,6 +206,7 @@ export async function executeMetaTool(
 
     case 'mcp_execute_tool': {
       const targetToolName = String(args.toolName ?? '');
+      const namespace = String(args.serverName ?? '') || undefined;
       const toolArgs = (args.args as Record<string, unknown>) ?? {};
 
       if (!targetToolName) {
@@ -200,7 +217,7 @@ export async function executeMetaTool(
       }
 
       // Verify the tool exists in our index
-      const tool = router.getToolSchema(targetToolName);
+      const tool = router.getToolSchema(targetToolName, namespace);
       if (!tool) {
         return {
           content: [
@@ -221,7 +238,7 @@ export async function executeMetaTool(
       }
 
       try {
-        const result = await callToolFn(targetToolName, toolArgs);
+        const result = await callToolFn(targetToolName, toolArgs, namespace);
 
         // Normalize result to text
         if (result && typeof result === 'object' && 'content' in result) {

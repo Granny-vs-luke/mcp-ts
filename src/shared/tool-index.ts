@@ -104,8 +104,8 @@ function classifyChar(ch: string): number {
 // ---------------------------------------------------------------------------
 
 export class ToolIndex {
-  /** All indexed tools keyed by name. */
-  private tools = new Map<string, IndexedTool>();
+  /** All indexed tools keyed by name (supports duplicates). */
+  private tools = new Map<string, IndexedTool[]>();
 
   /** Pre-computed search text for keyword matching (lowercase). */
   private searchTexts = new Map<string, string>();
@@ -147,7 +147,10 @@ export class ToolIndex {
     const allTokenSets: Map<string, Set<string>> = new Map();
 
     for (const tool of tools) {
-      this.tools.set(tool.name, tool);
+      if (!this.tools.has(tool.name)) {
+        this.tools.set(tool.name, []);
+      }
+      this.tools.get(tool.name)!.push(tool);
 
       const text = this.buildSearchableText(tool).toLowerCase();
       this.searchTexts.set(tool.name, text);
@@ -290,15 +293,15 @@ export class ToolIndex {
     // 4. Sort and return top-K
     finalScores.sort((a, b) => b.score - a.score);
 
-    return finalScores.slice(0, topK).map(({ name }) => {
-      const tool = this.tools.get(name)!;
-      return {
+    return finalScores.slice(0, topK).flatMap(({ name }) => {
+      const toolList = this.tools.get(name)!;
+      return toolList.map((tool) => ({
         name: tool.name,
         description: tool.description ?? '',
         serverName: tool.serverName,
         sessionId: tool.sessionId,
         estimatedTokens: ToolIndex.estimateTokens(tool),
-      };
+      }));
     });
   }
 
@@ -306,9 +309,15 @@ export class ToolIndex {
   // Accessors
   // -----------------------------------------------------------------------
 
-  /** Get the full tool definition by exact name. */
-  getToolByName(name: string): IndexedTool | undefined {
-    return this.tools.get(name);
+  /**
+   * Get tool definition(s) by name.
+   * If namespace is provided, it tries to match sessionId or serverName.
+   */
+  getTool(name: string, namespace?: string): IndexedTool[] {
+    const list = this.tools.get(name) ?? [];
+    if (!namespace) return list;
+
+    return list.filter((t) => t.sessionId === namespace || t.serverName === namespace);
   }
 
   /** All indexed tool names. */
@@ -316,16 +325,22 @@ export class ToolIndex {
     return [...this.tools.keys()];
   }
 
-  /** Number of indexed tools. */
+  /** Number of indexed tools (including duplicates). */
   get size(): number {
-    return this.tools.size;
+    let count = 0;
+    for (const list of this.tools.values()) {
+      count += list.length;
+    }
+    return count;
   }
 
   /** Total estimated token cost of all indexed tool schemas. */
   getTotalTokenCost(): number {
     let total = 0;
-    for (const tool of this.tools.values()) {
-      total += ToolIndex.estimateTokens(tool);
+    for (const list of this.tools.values()) {
+      for (const tool of list) {
+        total += ToolIndex.estimateTokens(tool);
+      }
     }
     return total;
   }

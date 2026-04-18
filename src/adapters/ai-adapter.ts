@@ -148,7 +148,7 @@ export class AIAdapter {
                                 tool.name,
                                 args,
                                 router,
-                                (name, toolArgs) => router.callTool(name, toolArgs)
+                                (name, toolArgs, namespace) => router.callTool(name, toolArgs, namespace)
                             );
                             if (result) {
                                 return result.content.map((c: any) => c.text ?? '').join('\n');
