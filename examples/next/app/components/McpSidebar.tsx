@@ -3,7 +3,7 @@
 import { nanoid } from "nanoid";
 import { PanelLeftClose } from "lucide-react";
 import { useState } from "react";
-import { useMcp } from "@mcp-ts/sdk/client/react";
+import { useMcp, useMcpApps } from "@mcp-ts/sdk/client/react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import ConnectForm from "./dashboard/ConnectForm";
@@ -45,6 +45,7 @@ export default function McpSidebar({ onCollapse }: { onCollapse: () => void }) {
     disconnect,
     callTool,
     finishAuth,
+    sseClient,
   } = useMcp({
     url: "/api/mcp",
     identity,
@@ -73,6 +74,8 @@ export default function McpSidebar({ onCollapse }: { onCollapse: () => void }) {
       }
     },
   });
+
+  const { McpAppRenderer } = useMcpApps({ connections, sseClient });
 
   useOAuthPopup(connections as Connection[], finishAuth);
 
@@ -200,6 +203,7 @@ export default function McpSidebar({ onCollapse }: { onCollapse: () => void }) {
         onExecute={executeToolWrapper}
         isExecuting={isExecuting}
         toolResult={toolResult}
+        McpAppRenderer={McpAppRenderer}
       />
     </aside>
   );

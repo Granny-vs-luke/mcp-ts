@@ -1,0 +1,146 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "mcp-ts",
+  "github": "https://github.com/zonlabs/mcp-ts",
+  "theme": "mint",
+  "logo": {
+    "dark": "/images/logo.svg",
+    "light": "/images/logo.svg"
+  },
+  "favicon": "/images/favicon.ico",
+  "colors": {
+    "primary": "#E24A4A",
+    "light": "#FF6B6B",
+    "dark": "#B33A3A"
+  },
+  "navbar": {
+    "links": [
+      {
+        "type": "github",
+        "href": "https://github.com/zonlabs/mcp-ts"
+      }
+    ]
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "mcp",
+      "chatgpt",
+      "claude",
+      "cursor",
+      "vscode"
+    ]
+  },
+  "topbarLinks": [],
+  "navigation": {
+    "anchors": [
+      {
+        "icon": "github",
+        "href": "https://github.com/zonlabs/mcp-ts"
+      }
+    ],
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Framework Guides",
+            "icon": "square-code",
+            "pages": [
+              "nextjs",
+              "react",
+              "vue",
+              "node-express"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              {
+                "group": "Intelligent Routing",
+                "icon": "route",
+                "expanded": false,
+                "pages": [
+                  "core-concepts/tool-router",
+                  "core-concepts/meta-tools"
+                ]
+              },
+              {
+                "group": "Storage",
+                "icon": "database",
+                "expanded": false,
+                "pages": [
+                  "storage/overview",
+                  "storage/redis",
+                  "storage/supabase",
+                  "storage/file-system",
+                  "storage/in-memory"
+                ]
+              },
+              {
+                "group": "Adapters",
+                "icon": "plug",
+                "expanded": false,
+                "pages": [
+                  "adapters/overview",
+                  "adapters/ai-sdk",
+                  "adapters/langchain",
+                  "adapters/mastra",
+                  "adapters/agui"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "mcp-apps"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "faq"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Server-Side",
+            "pages": [
+              "api-reference/server",
+              "api-reference/storage",
+              "api-reference/tool-router"
+            ]
+          },
+          {
+            "group": "Client-Side",
+            "pages": [
+              "api-reference/client"
+            ]
+          },
+          {
+            "group": "Other",
+            "pages": [
+              "api-reference/types"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "footerSocials": {
+    "github": "https://github.com/zonlabs/mcp-ts"
+  }
+}

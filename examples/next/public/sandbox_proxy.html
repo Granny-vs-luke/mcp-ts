@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Sandbox Proxy</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: transparent;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        /**
+         * MCP Sandbox Proxy
+         * 
+         * This proxy isolates guest MCP App content from the host domain.
+         * It listens for content to render and establishes the PostMessageTransport.
+         */
+        const SANDBOX_PROXY_READY_METHOD = 'ui/notifications/sandbox-proxy-ready';
+        const SANDBOX_RESOURCE_READY_METHOD = 'ui/notifications/sandbox-resource-ready';
+
+        // 1. Notify host that the proxy is ready
+        window.parent.postMessage({ method: SANDBOX_PROXY_READY_METHOD }, '*');
+
+        // 2. Listen for the resource (HTML) to render
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.method === SANDBOX_RESOURCE_READY_METHOD) {
+                const { html, csp } = event.data.params;
+                
+                // Note: In a production environment, you would apply the CSP here
+                // via meta tags if not already handled by server headers.
+                
+                // Replace the document content with the provided HTML
+                document.open();
+                document.write(html);
+                document.close();
+            }
+        });
+    </script>
+</body>
+</html>
