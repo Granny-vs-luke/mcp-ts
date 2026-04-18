@@ -25,9 +25,9 @@ import type { ToolRouter } from './tool-router.js';
  */
 export function createSearchToolDefinition(): Tool {
   return {
-    name: 'mcp_search_tools',
+    name: 'mcp_search_tool_bm25',
     description:
-      'Search the catalog of available tools by describing what you need. ' +
+      'Search the catalog of available tools using BM25 natural language ranking. ' +
       'Returns tool names, descriptions, and server info. ' +
       'Use this FIRST to find relevant tools before calling them. ' +
       'Example queries: "database query", "send email", "github pull request".',
@@ -37,6 +37,35 @@ export function createSearchToolDefinition(): Tool {
         query: {
           type: 'string',
           description: 'Natural language description of the capability you need.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return (default: 5, max: 20).',
+        },
+      },
+      required: ['query'],
+    },
+  };
+}
+
+/**
+ * Creates the `mcp_search_tool_regex` tool definition.
+ * 
+ * Matches Anthropic's tool_search_tool_regex exactly (takes a 'query' regex pattern).
+ */
+export function createRegexSearchToolDefinition(): Tool {
+  return {
+    name: 'mcp_search_tool_regex',
+    description:
+      'Search the catalog of available tools using a Python-style regex pattern. ' +
+      'Matches against tool names, descriptions, and parameter descriptions. ' +
+      'Example patterns: "^github_", "weather", "(?i)slack".',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Regex pattern to search for (e.g., "^get_.*_data", "database").',
         },
         limit: {
           type: 'number',
@@ -60,19 +89,19 @@ export function createGetSchemaToolDefinition(): Tool {
     name: 'mcp_get_tool_schema',
     description:
       'Get the full input schema (parameters) for a specific tool. ' +
-      'Call this after mcp_search_tools to get the parameter details ' +
+      'Call this after mcp_search_tool_bm25 to get the parameter details ' +
       'needed to call a tool correctly.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         toolName: {
           type: 'string',
-          description: 'The exact tool name returned by mcp_search_tools.',
+          description: 'The exact tool name returned by mcp_search_tool_bm25.',
         },
         serverName: {
           type: 'string',
           description:
-            'Optional: The server name provided in mcp_search_tools. Required if multiple tools have the same name.',
+            'Optional: The server name provided in mcp_search_tool_bm25. Required if multiple tools have the same name.',
         },
       },
       required: ['toolName'],
@@ -95,7 +124,7 @@ export function createExecuteToolDefinition(): Tool {
   return {
     name: 'mcp_execute_tool',
     description:
-      'Execute a tool that was discovered via mcp_search_tools. ' +
+      'Execute a tool that was discovered via mcp_search_tool_bm25. ' +
       'You MUST call mcp_get_tool_schema first to know the correct parameters. ' +
       'Pass the exact tool name and its arguments.',
     inputSchema: {
@@ -103,12 +132,12 @@ export function createExecuteToolDefinition(): Tool {
       properties: {
         toolName: {
           type: 'string',
-          description: 'The exact tool name from mcp_search_tools results.',
+          description: 'The exact tool name from mcp_search_tool_bm25 results.',
         },
         serverName: {
           type: 'string',
           description:
-            'Optional: The server name provided in mcp_search_tools. Required if multiple tools have the same name.',
+            'Optional: The server name provided in mcp_search_tool_bm25. Required if multiple tools have the same name.',
         },
         args: {
           type: 'object',
@@ -152,6 +181,7 @@ export async function executeMetaTool(
   callToolFn?: CallToolFn
 ): Promise<CallToolResult | null> {
   switch (toolName) {
+    case 'mcp_search_tool_bm25':
     case 'mcp_search_tools': {
       const query = String(args.query ?? '');
       const limit = Math.min(Number(args.limit) || 5, 20);
@@ -160,6 +190,29 @@ export async function executeMetaTool(
 
       const text = results.length === 0
         ? 'No tools found matching your query. Try different keywords.'
+        : results
+            .map(
+              (t, i) =>
+                `${i + 1}. **${t.name}** (server: ${t.serverName})\n` +
+                `   ${t.description}\n` +
+                `   Estimated tokens: ${t.estimatedTokens}`
+            )
+            .join('\n');
+
+      return {
+        content: [{ type: 'text', text }],
+        isError: false,
+      };
+    }
+
+    case 'mcp_search_tool_regex': {
+      const pattern = String(args.query ?? '');
+      const limit = Math.min(Number(args.limit) || 5, 20);
+
+      const results = await router.searchToolsRegex(pattern, limit);
+
+      const text = results.length === 0
+        ? 'No tools matched your regex pattern. Try a broader pattern.'
         : results
             .map(
               (t, i) =>
@@ -185,7 +238,7 @@ export async function executeMetaTool(
           content: [
             {
               type: 'text',
-              text: `Tool "${name}" not found. Use mcp_search_tools to find available tools first.`,
+              text: `Tool "${name}" not found. Use mcp_search_tool_bm25 to find available tools first.`,
             },
           ],
           isError: true,
@@ -223,7 +276,7 @@ export async function executeMetaTool(
           content: [
             {
               type: 'text',
-              text: `Tool "${targetToolName}" not found. Use mcp_search_tools to discover available tools first.`,
+              text: `Tool "${targetToolName}" not found. Use mcp_search_tool_bm25 to discover available tools first.`,
             },
           ],
           isError: true,
@@ -268,6 +321,8 @@ export async function executeMetaTool(
 /** Check if a tool name is one of the meta-tools. */
 export function isMetaTool(toolName: string): boolean {
   return (
+    toolName === 'mcp_search_tool_bm25' ||
+    toolName === 'mcp_search_tool_regex' ||
     toolName === 'mcp_search_tools' ||
     toolName === 'mcp_get_tool_schema' ||
     toolName === 'mcp_execute_tool'

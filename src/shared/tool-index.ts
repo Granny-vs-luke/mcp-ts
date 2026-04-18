@@ -119,6 +119,12 @@ export class ToolIndex {
   /** Optional: pre-computed embedding vectors per tool. */
   private embeddings = new Map<string, number[]>();
 
+  /** BM25: document lengths in tokens for each tool. */
+  private docLengths = new Map<string, number>();
+
+  /** BM25: average document length across the entire index. */
+  private avgDocLength = 0;
+
   private options: Required<ToolIndexOptions>;
 
   constructor(options: ToolIndexOptions = {}) {
@@ -142,9 +148,12 @@ export class ToolIndex {
     this.idf.clear();
     this.tfVectors.clear();
     this.embeddings.clear();
+    this.docLengths.clear();
+    this.avgDocLength = 0;
 
     // 1. Populate tool map + search text
     const allTokenSets: Map<string, Set<string>> = new Map();
+    let totalLength = 0;
 
     for (const tool of tools) {
       if (!this.tools.has(tool.name)) {
@@ -172,7 +181,14 @@ export class ToolIndex {
 
       this.tfVectors.set(tool.name, tf);
       allTokenSets.set(tool.name, uniqueTokens);
+
+      const length = tokens.length;
+      this.docLengths.set(tool.name, length);
+      totalLength += length;
     }
+
+    // Compute average document length
+    this.avgDocLength = totalLength / (tools.length || 1);
 
     // 2. Compute IDF
     const totalDocs = tools.length || 1;
@@ -224,38 +240,31 @@ export class ToolIndex {
     const queryLower = query.toLowerCase();
     const queryTokens = this.tokenize(queryLower);
 
-    // 1. Keyword scores (TF-IDF cosine)
+    // 1. Keyword scores (BM25)
     const keywordScores = new Map<string, number>();
 
-    // Build query vector
-    const queryTf = new Map<string, number>();
-    for (const tok of queryTokens) {
-      queryTf.set(tok, (queryTf.get(tok) ?? 0) + 1);
-    }
-    const maxQueryTf = Math.max(...queryTf.values(), 1);
-    const queryVector = new Map<string, number>();
-    for (const [tok, tf] of queryTf) {
-      const idf = this.idf.get(tok) ?? 0;
-      queryVector.set(tok, (tf / maxQueryTf) * idf);
-    }
+    const k1 = 1.2;
+    const b = 0.75;
 
     for (const [name, docTf] of this.tfVectors) {
-      let dot = 0;
-      let docMag = 0;
+      let score = 0;
+      const docLen = this.docLengths.get(name) ?? 0;
 
-      for (const [tok, tfVal] of docTf) {
+      for (const tok of queryTokens) {
+        const tfVal = docTf.get(tok) ?? 0;
+        if (tfVal === 0) continue;
+
         const idf = this.idf.get(tok) ?? 0;
-        const docWeight = tfVal * idf;
-        const queryWeight = queryVector.get(tok) ?? 0;
-        dot += docWeight * queryWeight;
-        docMag += docWeight * docWeight;
+
+        // BM25 formula:
+        // score = idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (docLen / avgDocLength)))
+        const numerator = tfVal * (k1 + 1);
+        const denominator = tfVal + k1 * (1 - b + b * (docLen / this.avgDocLength));
+        
+        score += idf * (numerator / denominator);
       }
 
-      let queryMag = 0;
-      for (const w of queryVector.values()) queryMag += w * w;
-
-      const denom = Math.sqrt(docMag) * Math.sqrt(queryMag);
-      keywordScores.set(name, denom > 0 ? dot / denom : 0);
+      keywordScores.set(name, score);
     }
 
     // 2. Embedding scores (optional)
@@ -303,6 +312,59 @@ export class ToolIndex {
         estimatedTokens: ToolIndex.estimateTokens(tool),
       }));
     });
+  }
+
+  /**
+   * Search tools using a regex pattern.
+   * Matches against name, description, and parameter metadata.
+   */
+  searchRegex(pattern: string, topK = 5): ToolSummary[] {
+    if (this.tools.size === 0) return [];
+
+    try {
+      // Handle Anthropic-style (?i) case-insensitive flag which JS doesn't support natively in string
+      let flags = '';
+      let cleanPattern = pattern;
+      if (pattern.includes('(?i)')) {
+        flags = 'i';
+        cleanPattern = pattern.replace(/\(\?i\)/g, '');
+      }
+
+      const regex = new RegExp(cleanPattern, flags || undefined);
+      const matches: Array<{ name: string; score: number }> = [];
+
+      for (const [name, text] of this.searchTexts) {
+        if (regex.test(text) || regex.test(name)) {
+          // Use a simple heuristic for ranking regex matches: 
+          // 1. Exact name match (highest)
+          // 2. Name starts with pattern
+          // 3. Name contains pattern
+          // 4. Description contains pattern (lowest)
+          let score = 1;
+          if (name === cleanPattern) score = 10;
+          else if (name.startsWith(cleanPattern)) score = 5;
+          else if (name.toLowerCase().includes(cleanPattern.toLowerCase())) score = 2;
+
+          matches.push({ name, score });
+        }
+      }
+
+      matches.sort((a, b) => b.score - a.score);
+
+      return matches.slice(0, topK).flatMap(({ name }) => {
+        const toolList = this.tools.get(name)!;
+        return toolList.map((tool) => ({
+          name: tool.name,
+          description: tool.description ?? '',
+          serverName: tool.serverName,
+          sessionId: tool.sessionId,
+          estimatedTokens: ToolIndex.estimateTokens(tool),
+        }));
+      });
+    } catch (err) {
+      console.warn('[ToolIndex] Regex search failed:', err);
+      return [];
+    }
   }
 
   // -----------------------------------------------------------------------

@@ -31,6 +31,7 @@ import { ToolIndex, type IndexedTool, type ToolSummary, type EmbedFn } from './t
 import { SchemaCompressor, type CompactTool } from './schema-compressor.js';
 import {
   createSearchToolDefinition,
+  createRegexSearchToolDefinition,
   createGetSchemaToolDefinition,
   createExecuteToolDefinition,
 } from './meta-tools.js';
@@ -166,7 +167,7 @@ export class ToolRouter {
    * This is the main method adapters should call.
    *
    * - `all`    → returns all tools (unchanged behavior)
-   * - `search` → returns only meta-tools (search_tools, get_tool_schema, list_tool_groups)
+   * - `search` → returns only meta-tools (mcp_search_tool_bm25, mcp_get_tool_schema, mcp_execute_tool)
    * - `groups` → returns tools from active groups only
    */
   async getFilteredTools(): Promise<Tool[]> {
@@ -205,6 +206,15 @@ export class ToolRouter {
   async searchTools(query: string, topK?: number): Promise<ToolSummary[]> {
     await this.ensureInitialized();
     return this.index.search(query, topK ?? this.maxTools);
+  }
+
+  /**
+   * Search tools by regex pattern.
+   * Matches against name, description, and parameter metadata.
+   */
+  async searchToolsRegex(pattern: string, topK?: number): Promise<ToolSummary[]> {
+    await this.ensureInitialized();
+    return this.index.searchRegex(pattern, topK ?? this.maxTools);
   }
 
   /**
@@ -316,7 +326,7 @@ export class ToolRouter {
       throw new Error(
         `Tool "${toolName}" not found${
           namespace ? ` on server "${namespace}"` : ''
-        }. Use mcp_search_tools to discover available tools.`
+        }. Use mcp_search_tool_bm25 or mcp_search_tool_regex to discover available tools.`
       );
     }
 
@@ -459,6 +469,7 @@ export class ToolRouter {
   private getMetaToolDefinitions(): Tool[] {
     return [
       createSearchToolDefinition(),
+      createRegexSearchToolDefinition(),
       createGetSchemaToolDefinition(),
       createExecuteToolDefinition(),
     ];
