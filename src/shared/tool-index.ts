@@ -1,9 +1,11 @@
 /**
  * ToolIndex — Lightweight in-memory search index for MCP tool discovery.
  *
- * Supports two scoring strategies:
- *   • keyword  – tokenized TF-IDF-style matching (zero external deps)
- *   • embedding – cosine-similarity over caller-supplied vectors
+ * Supports two search methods:
+ *   • BM25      – Okapi BM25 ranking over tokenized tool metadata (zero external deps)
+ *   • regex     – Pattern matching against tool names, descriptions, and parameters
+ *   • embedding – (optional) cosine-similarity over caller-supplied vectors,
+ *                 blended with BM25 scores
  *
  * @packageDocumentation
  */

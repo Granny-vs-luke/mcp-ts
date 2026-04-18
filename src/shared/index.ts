@@ -22,6 +22,8 @@ export * from './errors';
 
 // Types
 export type {
+  ToolClient,
+  ToolClientProvider,
   ToolInfo,
   McpRpcRequest,
   McpRpcResponse,
@@ -78,6 +80,7 @@ export {
   ToolRouter,
   type ToolRouterOptions,
   type ToolRouterStrategy,
+  type ToolRouterClientInput,
   type ToolGroupInfo,
 } from './tool-router.js';
 
@@ -97,6 +100,7 @@ export {
 
 export {
   createSearchToolDefinition,
+  createRegexSearchToolDefinition,
   createGetSchemaToolDefinition,
   createExecuteToolDefinition,
   executeMetaTool,

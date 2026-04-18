@@ -27,6 +27,7 @@
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { ToolClient, ToolClientProvider } from './types.js';
 import { ToolIndex, type IndexedTool, type ToolSummary, type EmbedFn } from './tool-index.js';
 import { SchemaCompressor, type CompactTool } from './schema-compressor.js';
 import {
@@ -109,23 +110,14 @@ export interface ToolGroupInfo {
 }
 
 // ---------------------------------------------------------------------------
-// Lightweight MCP client interface (duck-typed to avoid circular deps)
+// Client Input Types
 // ---------------------------------------------------------------------------
 
-interface MCPClientLike {
-  isConnected(): boolean;
-  listTools(): Promise<{ tools: Tool[] }>;
-  callTool(name: string, args: Record<string, unknown>): Promise<any>;
-  getServerId?(): string | undefined;
-  getServerName?(): string | undefined;
-  getSessionId?(): string;
-}
-
-interface MultiSessionClientLike {
-  getClients(): MCPClientLike[];
-}
-
-type ClientInput = MultiSessionClientLike | MCPClientLike[];
+/**
+ * Accepted client input for ToolRouter.
+ * Pass a `ToolClientProvider` (e.g. MultiSessionClient), or an array of `ToolClient` instances.
+ */
+export type ToolRouterClientInput = ToolClientProvider | ToolClient[];
 
 // ---------------------------------------------------------------------------
 // ToolRouter
@@ -143,7 +135,7 @@ export class ToolRouter {
   private initialized = false;
 
   constructor(
-    private client: ClientInput,
+    private client: ToolRouterClientInput,
     private options: ToolRouterOptions = {}
   ) {
     this.strategy = options.strategy ?? 'all';
@@ -392,16 +384,16 @@ export class ToolRouter {
     return result;
   }
 
-  /** Duck-typed client resolution. */
-  private getClients(): MCPClientLike[] {
+  /** Resolve the client input to a flat array of ToolClient instances. */
+  private getClients(): ToolClient[] {
     if (Array.isArray(this.client)) {
       return this.client;
     }
-    if (typeof (this.client as MultiSessionClientLike).getClients === 'function') {
-      return (this.client as MultiSessionClientLike).getClients();
+    if (typeof (this.client as ToolClientProvider).getClients === 'function') {
+      return (this.client as ToolClientProvider).getClients();
     }
     // Single client
-    return [this.client as unknown as MCPClientLike];
+    return [this.client as unknown as ToolClient];
   }
 
   /** Build group map from custom config or auto-detect from server names. */
@@ -465,7 +457,7 @@ export class ToolRouter {
     return filtered.slice(0, this.maxTools);
   }
 
-  /** The 3 meta-tool definitions exposed in `search` strategy. */
+  /** The 4 meta-tool definitions exposed in `search` strategy. */
   private getMetaToolDefinitions(): Tool[] {
     return [
       createSearchToolDefinition(),

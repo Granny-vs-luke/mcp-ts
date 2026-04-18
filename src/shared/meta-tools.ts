@@ -3,8 +3,14 @@
  * load MCP tools on-demand, following Anthropic's Tool Search pattern.
  *
  * Instead of injecting 50+ full tool schemas into the context window, you
- * inject just these 2 meta-tools (~800 tokens). The LLM calls them to
- * find and load only the tools it actually needs.
+ * inject just these 4 meta-tools. The LLM calls them to find and load
+ * only the tools it actually needs.
+ *
+ * Meta-tools:
+ *   • `mcp_search_tool_bm25`  — BM25 natural language search
+ *   • `mcp_search_tool_regex` — Regex pattern search
+ *   • `mcp_get_tool_schema`   — Get full inputSchema for a discovered tool
+ *   • `mcp_execute_tool`      — Execute a discovered tool
  *
  * @packageDocumentation
  */
@@ -17,10 +23,10 @@ import type { ToolRouter } from './tool-router.js';
 // ---------------------------------------------------------------------------
 
 /**
- * Creates the `mcp_search_tools` tool definition.
+ * Creates the `mcp_search_tool_bm25` tool definition.
  *
  * This tool lets the LLM search the full catalog of available MCP tools
- * using a natural-language query. Returns tool names and descriptions
+ * using a BM25 natural-language query. Returns tool names and descriptions
  * without the full inputSchema to save context space.
  */
 export function createSearchToolDefinition(): Tool {
@@ -80,9 +86,10 @@ export function createRegexSearchToolDefinition(): Tool {
 /**
  * Creates the `mcp_get_tool_schema` tool definition.
  *
- * After discovering tools via `mcp_search_tools`, the LLM calls this
- * to load the full inputSchema for a specific tool so it can construct
- * the correct arguments.
+ * After discovering tools via `mcp_search_tool_bm25` or
+ * `mcp_search_tool_regex`, the LLM calls this to load the full
+ * inputSchema for a specific tool so it can construct the correct
+ * arguments.
  */
 export function createGetSchemaToolDefinition(): Tool {
   return {
@@ -113,11 +120,11 @@ export function createGetSchemaToolDefinition(): Tool {
  * Creates the `mcp_execute_tool` tool definition.
  *
  * This is the execution meta-tool — the LLM calls this to execute any
- * tool discovered via `mcp_search_tools`. The LLM should first call
- * `mcp_get_tool_schema` to know the correct arguments.
+ * tool discovered via `mcp_search_tool_bm25` or `mcp_search_tool_regex`.
+ * The LLM should first call `mcp_get_tool_schema` to know the correct
+ * arguments.
  *
- * Inspired by Composio's `COMPOSIO_MULTI_EXECUTE_TOOL` pattern:
- * instead of registering every real tool with the framework, we proxy
+ * Instead of registering every real tool with the framework, we proxy
  * all execution through a single meta-tool.
  */
 export function createExecuteToolDefinition(): Tool {
@@ -168,7 +175,7 @@ export type CallToolFn = (
 /**
  * Execute a meta-tool call and return the result in MCP CallToolResult format.
  *
- * @param toolName - One of the meta-tool names (mcp_search_tools, etc.)
+ * @param toolName - One of the meta-tool names (mcp_search_tool_bm25, mcp_search_tool_regex, etc.)
  * @param args - The arguments from the LLM's tool call
  * @param router - The ToolRouter to query
  * @param callToolFn - Optional callback for executing real tools (required for mcp_execute_tool)
@@ -181,8 +188,7 @@ export async function executeMetaTool(
   callToolFn?: CallToolFn
 ): Promise<CallToolResult | null> {
   switch (toolName) {
-    case 'mcp_search_tool_bm25':
-    case 'mcp_search_tools': {
+    case 'mcp_search_tool_bm25': {
       const query = String(args.query ?? '');
       const limit = Math.min(Number(args.limit) || 5, 20);
 
@@ -323,7 +329,6 @@ export function isMetaTool(toolName: string): boolean {
   return (
     toolName === 'mcp_search_tool_bm25' ||
     toolName === 'mcp_search_tool_regex' ||
-    toolName === 'mcp_search_tools' ||
     toolName === 'mcp_get_tool_schema' ||
     toolName === 'mcp_execute_tool'
   );
