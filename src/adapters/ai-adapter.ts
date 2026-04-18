@@ -136,32 +136,49 @@ export class AIAdapter {
 
         // @ts-ignore: ToolSet type inference can be tricky with dynamic imports
         return Object.fromEntries(
-            filteredTools.map((tool) => [
-                tool.name,
-                {
-                    description: tool.description,
-                    inputSchema: this.jsonSchema!(tool.inputSchema as JSONSchema7),
-                    execute: async (args: any) => {
-                        // Handle meta-tool calls via the router
-                        if (isMetaTool(tool.name)) {
-                            const result = await executeMetaTool(
-                                tool.name,
-                                args,
-                                router,
-                                (name, toolArgs, namespace) => router.callTool(name, toolArgs, namespace)
-                            );
-                            if (result) {
-                                return result.content.map((c: any) => c.text ?? '').join('\n');
-                            }
-                        }
+            filteredTools.map((tool) => {
+                const routedTool = tool as typeof tool & { sessionId?: string; serverName?: string };
+                const namespace = routedTool.serverName ?? routedTool.sessionId;
+                const toolKey = isMetaTool(tool.name)
+                    ? tool.name
+                    : this.getRouterToolKey(tool.name, routedTool.sessionId, routedTool.serverName);
 
-                        // For non-meta tools in 'all' or 'groups' strategy,
-                        // route directly to the correct MCP client
-                        return await router.callTool(tool.name, args);
+                return [
+                    toolKey,
+                    {
+                        description: tool.description,
+                        inputSchema: this.jsonSchema!(tool.inputSchema as JSONSchema7),
+                        execute: async (args: any) => {
+                            // Handle meta-tool calls via the router
+                            if (isMetaTool(tool.name)) {
+                                const result = await executeMetaTool(
+                                    tool.name,
+                                    args,
+                                    router,
+                                    (name, toolArgs, targetNamespace) => router.callTool(name, toolArgs, targetNamespace)
+                                );
+                                if (result) {
+                                    return result.content.map((c: any) => c.text ?? '').join('\n');
+                                }
+                            }
+
+                            // For non-meta tools in 'all' or 'groups' strategy,
+                            // route directly to the correct MCP client
+                            return await router.callTool(tool.name, args, namespace);
+                        },
                     },
-                },
-            ])
+                ];
+            })
         );
+    }
+
+    private getRouterToolKey(toolName: string, sessionId?: string, serverName?: string): string {
+        const namespace = sessionId ?? serverName ?? 'mcp';
+        const normalized = namespace
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '') || 'mcp';
+        return `tool_${normalized}_${toolName}`;
     }
 
     /**

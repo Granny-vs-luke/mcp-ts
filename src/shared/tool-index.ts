@@ -109,7 +109,13 @@ export class ToolIndex {
   /** All indexed tools keyed by name (supports duplicates). */
   private tools = new Map<string, IndexedTool[]>();
 
-  /** Pre-computed search text for keyword matching (lowercase). */
+  /** Direct lookup from unique document key to indexed tool metadata. */
+  private toolDocuments = new Map<string, IndexedTool>();
+
+  /** Precomputed lightweight summaries keyed by document. */
+  private toolSummaries = new Map<string, ToolSummary>();
+
+  /** Pre-computed search text for keyword matching (lowercase), keyed by document. */
   private searchTexts = new Map<string, string>();
 
   /** Pre-computed IDF values per token (computed once on build). */
@@ -126,6 +132,9 @@ export class ToolIndex {
 
   /** BM25: average document length across the entire index. */
   private avgDocLength = 0;
+
+  /** Cached total estimated token cost across all indexed tools. */
+  private totalTokenCost = 0;
 
   private options: Required<ToolIndexOptions>;
 
@@ -146,25 +155,40 @@ export class ToolIndex {
    */
   async buildIndex(tools: IndexedTool[]): Promise<void> {
     this.tools.clear();
+    this.toolDocuments.clear();
+    this.toolSummaries.clear();
     this.searchTexts.clear();
     this.idf.clear();
     this.tfVectors.clear();
     this.embeddings.clear();
     this.docLengths.clear();
     this.avgDocLength = 0;
+    this.totalTokenCost = 0;
 
     // 1. Populate tool map + search text
     const allTokenSets: Map<string, Set<string>> = new Map();
     let totalLength = 0;
 
     for (const tool of tools) {
+      const docKey = this.getDocumentKey(tool);
+
       if (!this.tools.has(tool.name)) {
         this.tools.set(tool.name, []);
       }
       this.tools.get(tool.name)!.push(tool);
+      this.toolDocuments.set(docKey, tool);
+      const estimatedTokens = ToolIndex.estimateTokens(tool);
+      this.toolSummaries.set(docKey, {
+        name: tool.name,
+        description: tool.description ?? '',
+        serverName: tool.serverName,
+        sessionId: tool.sessionId,
+        estimatedTokens,
+      });
+      this.totalTokenCost += estimatedTokens;
 
       const text = this.buildSearchableText(tool).toLowerCase();
-      this.searchTexts.set(tool.name, text);
+      this.searchTexts.set(docKey, text);
 
       const tokens = this.tokenize(text);
       const tf = new Map<string, number>();
@@ -181,11 +205,11 @@ export class ToolIndex {
         tf.set(k, v / maxTf);
       }
 
-      this.tfVectors.set(tool.name, tf);
-      allTokenSets.set(tool.name, uniqueTokens);
+      this.tfVectors.set(docKey, tf);
+      allTokenSets.set(docKey, uniqueTokens);
 
       const length = tokens.length;
-      this.docLengths.set(tool.name, length);
+      this.docLengths.set(docKey, length);
       totalLength += length;
     }
 
@@ -248,9 +272,9 @@ export class ToolIndex {
     const k1 = 1.2;
     const b = 0.75;
 
-    for (const [name, docTf] of this.tfVectors) {
+    for (const [docKey, docTf] of this.tfVectors) {
       let score = 0;
-      const docLen = this.docLengths.get(name) ?? 0;
+      const docLen = this.docLengths.get(docKey) ?? 0;
 
       for (const tok of queryTokens) {
         const tfVal = docTf.get(tok) ?? 0;
@@ -266,7 +290,7 @@ export class ToolIndex {
         score += idf * (numerator / denominator);
       }
 
-      keywordScores.set(name, score);
+      keywordScores.set(docKey, score);
     }
 
     // 2. Embedding scores (optional)
@@ -277,8 +301,8 @@ export class ToolIndex {
         const [queryEmbedding] = await this.options.embedFn([queryLower]);
         if (queryEmbedding) {
           embeddingScores = new Map();
-          for (const [name, vec] of this.embeddings) {
-            embeddingScores.set(name, this.cosineSimilarity(queryEmbedding, vec));
+          for (const [docKey, vec] of this.embeddings) {
+            embeddingScores.set(docKey, this.cosineSimilarity(queryEmbedding, vec));
           }
         }
       } catch {
@@ -288,31 +312,24 @@ export class ToolIndex {
 
     // 3. Blend scores
     const kw = this.options.keywordWeight;
-    const finalScores: Array<{ name: string; score: number }> = [];
+    const finalScores: Array<{ docKey: string; score: number }> = [];
 
-    for (const name of this.tools.keys()) {
-      const kwScore = keywordScores.get(name) ?? 0;
-      const embScore = embeddingScores?.get(name) ?? 0;
+    for (const docKey of this.toolDocuments.keys()) {
+      const kwScore = keywordScores.get(docKey) ?? 0;
+      const embScore = embeddingScores?.get(docKey) ?? 0;
 
       const score = embeddingScores ? kw * kwScore + (1 - kw) * embScore : kwScore;
 
       if (score > 0) {
-        finalScores.push({ name, score });
+        finalScores.push({ docKey, score });
       }
     }
 
     // 4. Sort and return top-K
     finalScores.sort((a, b) => b.score - a.score);
 
-    return finalScores.slice(0, topK).flatMap(({ name }) => {
-      const toolList = this.tools.get(name)!;
-      return toolList.map((tool) => ({
-        name: tool.name,
-        description: tool.description ?? '',
-        serverName: tool.serverName,
-        sessionId: tool.sessionId,
-        estimatedTokens: ToolIndex.estimateTokens(tool),
-      }));
+    return finalScores.slice(0, topK).map(({ docKey }) => {
+      return this.toolSummaries.get(docKey)!;
     });
   }
 
@@ -333,35 +350,31 @@ export class ToolIndex {
       }
 
       const regex = new RegExp(cleanPattern, flags || undefined);
-      const matches: Array<{ name: string; score: number }> = [];
+      const matches: Array<{ docKey: string; score: number }> = [];
 
-      for (const [name, text] of this.searchTexts) {
-        if (regex.test(text) || regex.test(name)) {
+      for (const [docKey, text] of this.searchTexts) {
+        const tool = this.toolDocuments.get(docKey);
+        if (!tool) continue;
+
+        if (regex.test(text) || regex.test(tool.name)) {
           // Use a simple heuristic for ranking regex matches: 
           // 1. Exact name match (highest)
           // 2. Name starts with pattern
           // 3. Name contains pattern
           // 4. Description contains pattern (lowest)
           let score = 1;
-          if (name === cleanPattern) score = 10;
-          else if (name.startsWith(cleanPattern)) score = 5;
-          else if (name.toLowerCase().includes(cleanPattern.toLowerCase())) score = 2;
+          if (tool.name === cleanPattern) score = 10;
+          else if (tool.name.startsWith(cleanPattern)) score = 5;
+          else if (tool.name.toLowerCase().includes(cleanPattern.toLowerCase())) score = 2;
 
-          matches.push({ name, score });
+          matches.push({ docKey, score });
         }
       }
 
       matches.sort((a, b) => b.score - a.score);
 
-      return matches.slice(0, topK).flatMap(({ name }) => {
-        const toolList = this.tools.get(name)!;
-        return toolList.map((tool) => ({
-          name: tool.name,
-          description: tool.description ?? '',
-          serverName: tool.serverName,
-          sessionId: tool.sessionId,
-          estimatedTokens: ToolIndex.estimateTokens(tool),
-        }));
+      return matches.slice(0, topK).map(({ docKey }) => {
+        return this.toolSummaries.get(docKey)!;
       });
     } catch (err) {
       console.warn('[ToolIndex] Regex search failed:', err);
@@ -400,13 +413,7 @@ export class ToolIndex {
 
   /** Total estimated token cost of all indexed tool schemas. */
   getTotalTokenCost(): number {
-    let total = 0;
-    for (const list of this.tools.values()) {
-      for (const tool of list) {
-        total += ToolIndex.estimateTokens(tool);
-      }
-    }
-    return total;
+    return this.totalTokenCost;
   }
 
   // -----------------------------------------------------------------------
@@ -458,6 +465,10 @@ export class ToolIndex {
     }
 
     return parts.join(' ');
+  }
+
+  private getDocumentKey(tool: IndexedTool): string {
+    return `${tool.sessionId}::${tool.serverName}::${tool.name}`;
   }
 
   /** Simple whitespace + camelCase + snake_case tokenizer. */

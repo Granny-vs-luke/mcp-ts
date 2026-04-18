@@ -246,8 +246,12 @@ export class AguiAdapter {
         const filteredTools = await router.getFilteredTools();
 
         return filteredTools.map(tool => {
+            const routedTool = tool as typeof tool & { sessionId?: string; serverName?: string };
+            const namespace = routedTool.serverName ?? routedTool.sessionId;
             return {
-                name: tool.name,
+                name: isMetaTool(tool.name)
+                    ? tool.name
+                    : this.getRouterToolKey(tool.name, routedTool.sessionId, routedTool.serverName),
                 description: tool.description || `Execute ${tool.name}`,
                 parameters: cleanSchema(tool.inputSchema),
                 handler: async (args: any) => {
@@ -266,7 +270,7 @@ export class AguiAdapter {
 
                     // For non-meta tools in 'all' or 'groups' strategy,
                     // route directly to the correct MCP client
-                    return await router.callTool(tool.name, args);
+                    return await router.callTool(tool.name, args, namespace);
                 }
             };
         });
@@ -275,11 +279,23 @@ export class AguiAdapter {
     private async getToolDefinitionsViaRouter(router: ToolRouter): Promise<AguiToolDefinition[]> {
         const filteredTools = await router.getFilteredTools();
         return filteredTools.map(tool => {
+            const routedTool = tool as typeof tool & { sessionId?: string; serverName?: string };
             return {
-                name: tool.name,
+                name: isMetaTool(tool.name)
+                    ? tool.name
+                    : this.getRouterToolKey(tool.name, routedTool.sessionId, routedTool.serverName),
                 description: tool.description || `Execute ${tool.name}`,
                 parameters: cleanSchema(tool.inputSchema)
             };
         });
+    }
+
+    private getRouterToolKey(toolName: string, sessionId?: string, serverName?: string): string {
+        const namespace = sessionId ?? serverName ?? 'mcp';
+        const normalized = namespace
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '') || 'mcp';
+        return `tool_${normalized}_${toolName}`;
     }
 }

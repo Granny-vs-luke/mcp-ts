@@ -144,10 +144,14 @@ export class LangChainAdapter {
         const filteredTools = await router.getFilteredTools();
 
         return filteredTools.map((tool) => {
+            const routedTool = tool as typeof tool & { sessionId?: string; serverName?: string };
+            const namespace = routedTool.serverName ?? routedTool.sessionId;
             const schema = this.jsonSchemaToZod(tool.inputSchema);
 
             return new this.DynamicStructuredTool!({
-                name: tool.name,
+                name: isMetaTool(tool.name)
+                    ? tool.name
+                    : this.getRouterToolKey(tool.name, routedTool.sessionId, routedTool.serverName),
                 description: tool.description || `Tool ${tool.name}`,
                 schema: schema,
                 func: async (args: any) => {
@@ -167,7 +171,7 @@ export class LangChainAdapter {
 
                         // For non-meta tools in 'all' or 'groups' strategy,
                         // route directly to the correct MCP client
-                        return await router.callTool(tool.name, args);
+                        return await router.callTool(tool.name, args, namespace);
                     } catch (error: any) {
                         if (this.options.simplifyErrors) {
                             return `Error: ${error.message}`;
@@ -177,6 +181,15 @@ export class LangChainAdapter {
                 },
             });
         });
+    }
+
+    private getRouterToolKey(toolName: string, sessionId?: string, serverName?: string): string {
+        const namespace = sessionId ?? serverName ?? 'mcp';
+        const normalized = namespace
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '') || 'mcp';
+        return `tool_${normalized}_${toolName}`;
     }
 
     /**

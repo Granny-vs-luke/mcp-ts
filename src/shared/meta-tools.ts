@@ -187,6 +187,20 @@ export async function executeMetaTool(
   router: ToolRouter,
   callToolFn?: CallToolFn
 ): Promise<CallToolResult | null> {
+  const getToolSchemaSafely = (name: string, namespace?: string): { tool?: Tool; error?: CallToolResult } => {
+    try {
+      return { tool: router.getToolSchema(name, namespace) };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      return {
+        error: {
+          content: [{ type: 'text', text: errorMessage }],
+          isError: true,
+        },
+      };
+    }
+  };
+
   switch (toolName) {
     case 'mcp_search_tool_bm25': {
       const query = String(args.query ?? '');
@@ -237,7 +251,11 @@ export async function executeMetaTool(
     case 'mcp_get_tool_schema': {
       const name = String(args.toolName ?? '');
       const namespace = String(args.serverName ?? '') || undefined;
-      const tool = router.getToolSchema(name, namespace);
+      const { tool, error } = getToolSchemaSafely(name, namespace);
+
+      if (error) {
+        return error;
+      }
 
       if (!tool) {
         return {
@@ -276,7 +294,11 @@ export async function executeMetaTool(
       }
 
       // Verify the tool exists in our index
-      const tool = router.getToolSchema(targetToolName, namespace);
+      const { tool, error } = getToolSchemaSafely(targetToolName, namespace);
+      if (error) {
+        return error;
+      }
+
       if (!tool) {
         return {
           content: [
