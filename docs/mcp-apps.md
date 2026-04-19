@@ -1,5 +1,6 @@
 ---
 title: "MCP Apps"
+sidebarTitle: "MCP Apps"
 description: "Rendering interactive tool UIs for MCP tools."
 icon: "window"
 ---

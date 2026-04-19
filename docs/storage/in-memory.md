@@ -1,6 +1,8 @@
 ---
 title: "In-Memory"
+sidebarTitle: "In-Memory"
 description: "Fast, ephemeral session storage for testing and local development."
+icon: "memory"
 ---
 
 ## In-Memory (Testing)

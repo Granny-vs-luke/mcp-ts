@@ -1,5 +1,6 @@
 ---
 title: "Vue.js"
+sidebarTitle: "Vue.js"
 description: "Managing MCP connections in Vue 3 applications with the useMcp composable."
 icon: "vuejs"
 ---

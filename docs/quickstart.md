@@ -1,5 +1,6 @@
 ---
-title: "Quickstart"
+title: "Quickstart Guide"
+sidebarTitle: "Quickstart"
 description: "Get up and running with mcp-ts in 5 minutes."
 icon: "rocket"
 ---

@@ -1,6 +1,8 @@
 ---
 title: "Mastra"
+sidebarTitle: "Mastra"
 description: "High-performance MCP integration for the Mastra framework."
+icon: "bolt"
 ---
 
 The `MastraAdapter` converts MCP tools into the format expected by the [Mastra](https://mastra.ai) framework.

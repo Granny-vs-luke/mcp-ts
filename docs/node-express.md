@@ -1,5 +1,6 @@
 ---
 title: "Node.js / Express"
+sidebarTitle: "Node.js / Express"
 description: "Complete guide for integrating mcp-ts with Node.js and Express applications."
 icon: "node-js"
 ---

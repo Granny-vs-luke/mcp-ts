@@ -1,6 +1,8 @@
 ---
 title: "LangChain"
+sidebarTitle: "LangChain"
 description: "Connect LangChain agents to any MCP server."
+icon: "link"
 ---
 
 The `LangChainAdapter` converts MCP tools into LangChain's `DynamicStructuredTool` format.

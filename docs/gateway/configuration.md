@@ -1,6 +1,8 @@
 ---
-title: Configuration
-description: Configure your local MCP servers for cloud access.
+title: "Gateway Configuration"
+sidebarTitle: "Configuration"
+description: "Configure your local MCP servers for cloud access."
+icon: "gear"
 ---
 
 The MCP Gateway reads its server definitions from a simple JSON configuration file.

@@ -1,5 +1,6 @@
 ---
 title: "Next.js"
+sidebarTitle: "Next.js"
 description: "Complete guide for integrating mcp-ts with Next.js applications."
 icon: "n"
 ---

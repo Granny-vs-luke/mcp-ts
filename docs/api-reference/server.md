@@ -1,5 +1,6 @@
 ---
 title: "Server-Side API"
+sidebarTitle: "Server-Side"
 description: "Core server-side operations and client classes for mcp-ts."
 icon: "server"
 ---

@@ -1,5 +1,6 @@
 ---
-title: "Tool Router & Discovery"
+title: "Tool Router API"
+sidebarTitle: "Tool Router"
 description: "Middleware layer for intelligent MCP tool selection to optimize context window usage."
 icon: "route"
 ---

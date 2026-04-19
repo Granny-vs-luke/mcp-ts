@@ -1,3 +1,10 @@
+---
+title: "MCP App Host Comparison"
+sidebarTitle: "Host Comparison"
+description: "Comparison between mcp-ts and mcp-ui for hosting MCP Apps."
+icon: "scales-balanced"
+---
+
 # MCP App Host Comparison: `mcp-ts` vs `mcp-ui`
 
 This document compares how **`@mcp-ts/sdk`** (client `AppHost`, React `useMcpApps` / `McpAppRenderer`) and **`@mcp-ui/client`** host MCP Apps: architecture, security, and feature overlap.

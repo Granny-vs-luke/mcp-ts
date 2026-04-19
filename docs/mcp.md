@@ -1,6 +1,7 @@
 ---
-title: MCP
-description: Access mcp-ts documentation directly within your LLM environment.
+title: "MCP"
+sidebarTitle: "MCP"
+description: "Access mcp-ts documentation directly within your LLM environment."
 icon: "puzzle-piece"
 ---
 

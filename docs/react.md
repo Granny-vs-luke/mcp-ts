@@ -1,5 +1,6 @@
 ---
 title: "React"
+sidebarTitle: "React"
 description: "Managing MCP connections in React applications with the useMcp hook."
 icon: "react"
 ---

@@ -1,6 +1,8 @@
 ---
 title: "Supabase"
+sidebarTitle: "Supabase"
 description: "Scalable session storage using Supabase/PostgreSQL."
+icon: "bolt"
 ---
 
 **Cloud-native PostgreSQL storage with built-in security and row-level security (RLS).**

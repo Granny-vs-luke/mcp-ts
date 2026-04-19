@@ -1,5 +1,6 @@
 ---
 title: "Tool Router"
+sidebarTitle: "Tool Router"
 description: "Intelligent middleware for managing large tool catalogs and context window optimization."
 icon: "route"
 ---

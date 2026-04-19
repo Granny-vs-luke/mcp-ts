@@ -1,5 +1,6 @@
 ---
 title: "Client-Side API"
+sidebarTitle: "Client-Side"
 description: "React hooks and client utilities for mcp-ts."
 icon: "desktop"
 ---

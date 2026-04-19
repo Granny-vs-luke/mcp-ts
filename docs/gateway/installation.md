@@ -1,6 +1,8 @@
 ---
-title: Installation
-description: Get up and running with the MCP Gateway in seconds.
+title: "Gateway Installation"
+sidebarTitle: "Installation"
+description: "Get up and running with the MCP Gateway in seconds."
+icon: "download"
 ---
 
 The MCP Gateway is distributed as a lightweight CLI tool. The easiest way to run it is using `uv`.

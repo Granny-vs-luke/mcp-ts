@@ -1,5 +1,6 @@
 ---
 title: "Showcase"
+sidebarTitle: "Showcase"
 description: "A featured walkthrough followed by focused examples for agent UIs, middleware, and MCP-powered app experiences."
 icon: "video"
 ---

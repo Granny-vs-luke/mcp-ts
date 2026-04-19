@@ -1,5 +1,6 @@
 ---
 title: "FAQ"
+sidebarTitle: "FAQ"
 description: "Frequently asked questions about mcp-ts."
 icon: "question"
 ---

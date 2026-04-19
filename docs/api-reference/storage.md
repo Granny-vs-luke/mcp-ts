@@ -1,5 +1,6 @@
 ---
 title: "Storage API"
+sidebarTitle: "Storage"
 description: "Global storage API methods and custom backend integration."
 icon: "database"
 ---

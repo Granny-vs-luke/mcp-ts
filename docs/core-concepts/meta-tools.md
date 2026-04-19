@@ -1,5 +1,6 @@
 ---
 title: "Meta Tools"
+sidebarTitle: "Meta Tools"
 description: "Technical reference for the system tools that power on-demand tool discovery."
 icon: "wand-magic-sparkles"
 ---

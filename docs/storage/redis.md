@@ -1,6 +1,8 @@
 ---
 title: "Redis"
+sidebarTitle: "Redis"
 description: "High-performance session storage using Redis."
+icon: "rocket"
 ---
 
 **Recommended for production and serverless deployments.**

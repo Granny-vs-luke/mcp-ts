@@ -1,6 +1,8 @@
 ---
-title: Overview
-description: Bridge local MCP servers to cloud clients like ChatGPT and Claude.
+title: "Gateway Overview"
+sidebarTitle: "Overview"
+description: "Bridge local MCP servers to cloud clients like ChatGPT and Claude."
+icon: "network-wired"
 ---
 
 ![MCP Gateway](/images/gateway.png)
