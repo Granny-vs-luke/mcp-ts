@@ -8,7 +8,7 @@
     "mcp-server-docs": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/server.ts --format esm --clean --minify --platform node",
+    "build": "tsup",
     "postbuild": "node -e \"const fs=require('fs'); if(fs.existsSync('../../docs')) fs.cpSync('../../docs', './dist/docs', {recursive: true})\"",
     "start": "node dist/index.js",
     "start:http": "tsup src/http.ts --format esm --onSuccess \"node dist/http.js\"",
