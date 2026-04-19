@@ -5,7 +5,7 @@
   "theme": "mint",
   "logo": {
     "light": "/images/logo-light.svg",
-    "dark": "/images/logo-light.svg"
+    "dark": "/images/logo-dark.svg"
   },
   "favicon": "/images/favicon.ico",
   "colors": {
