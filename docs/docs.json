@@ -4,8 +4,8 @@
   "github": "https://github.com/zonlabs/mcp-ts",
   "theme": "mint",
   "logo": {
-    "dark": "/images/logo-dark.svg",
-    "light": "/images/logo-light.svg"
+    "light": "/images/logo-light.svg",
+    "dark": "/images/logo-light.svg"
   },
   "favicon": "/images/favicon.ico",
   "colors": {
