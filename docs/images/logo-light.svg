@@ -9,7 +9,5 @@
   </g>
   
   <!-- "toolkit" Text Style: Modern Two-Tone Dark for Light Theme -->
-  <text x="185" y="112" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="105" letter-spacing="-2">
-    <tspan font-weight="400" fill="#666666">tool</tspan><tspan font-weight="800" fill="#111111">kit</tspan>
-  </text>
+  <text x="185" y="112" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="105" letter-spacing="-2" xml:space="preserve"><tspan font-weight="400" fill="#666666">tool</tspan><tspan font-weight="800" fill="#111111">kit</tspan></text>
 </svg>

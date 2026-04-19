@@ -1,5 +1,6 @@
 ---
 title: "Installation"
+sidebarTitle: "Installation"
 description: "Get started with mcp-ts in your JavaScript or TypeScript project."
 icon: "download"
 ---

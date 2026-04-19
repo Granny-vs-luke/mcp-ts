@@ -9,7 +9,5 @@
   </g>
   
   <!-- "toolkit" Text Style: Modern Two-Tone Lowercase -->
-  <text x="185" y="112" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="105" letter-spacing="-2">
-    <tspan font-weight="400" fill="#aaaaaa">tool</tspan><tspan font-weight="800" fill="#ffffff">kit</tspan>
-  </text>
+  <text x="185" y="112" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="105" letter-spacing="-2" xml:space="preserve"><tspan font-weight="400" fill="#aaaaaa">tool</tspan><tspan font-weight="800" fill="#ffffff">kit</tspan></text>
 </svg>
