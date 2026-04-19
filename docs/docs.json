@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/schema.json",
-  "name": "Toolkit",
+  "name": "MCP Toolkit",
   "github": "https://github.com/zonlabs/mcp-ts",
   "theme": "mint",
   "logo": {

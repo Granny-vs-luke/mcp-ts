@@ -28,3 +28,6 @@ venv/
 build/
 
 /mcp-ui
+.agents/
+skills-lock.json
+.vercel
