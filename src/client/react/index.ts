@@ -12,6 +12,8 @@ export { useAppHost } from './use-app-host.js';
 // Simplified MCP Apps Hook - the main API
 export {
   useMcpApps,
+  McpAppRenderer,
+  getMcpAppMetadata,
   type McpAppRendererProps,
   type McpAppRendererHandle,
   type McpAppMetadata,

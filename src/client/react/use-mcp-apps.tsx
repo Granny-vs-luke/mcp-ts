@@ -15,7 +15,9 @@ import React, {
   useImperativeHandle,
   type MutableRefObject,
 } from 'react';
-import { useAppHost, type UseAppHostOptions } from './use-app-host.js';
+import type { UseAppHostOptions } from './use-app-host.js';
+import { useAppHost } from './use-app-host.js';
+import { resolveMetaToolProxy } from '../../shared/meta-tools.js';
 import type { SSEClient } from '../core/sse-client.js';
 import { APP_HOST_DEFAULTS } from '../core/constants.js';
 import type { SandboxConfig } from '../core/app-host.js';
@@ -56,9 +58,10 @@ export interface McpAppRendererHandle {
 /** Props for {@link useMcpApps}'s `McpAppRenderer` (client is supplied via the hook). */
 export interface McpAppRendererProps extends Pick<UseAppHostOptions, 'sandbox' | 'hostContext' | 'onCallTool' | 'onReadResource' | 'onFallbackRequest' | 'onMessage' | 'onOpenLink' | 'onLoggingMessage' | 'onSizeChanged' | 'onError'> {
   name: string;
+  client?: McpClient | null;
   toolResourceUri?: string;
   html?: string;
-  input?: Record<string, unknown>;
+  input?: Record<string, unknown> | null;
   result?: unknown;
   status?: 'executing' | 'inProgress' | 'complete' | 'idle';
   toolInputPartial?: any;
@@ -102,8 +105,10 @@ const McpAppViewInner = forwardRef<McpAppRendererHandle, McpAppViewProps>(functi
   },
   ref,
 ) {
+  
   const mcpClient = clientRef.current;
-  const metadata = getMcpAppMetadata(mcpClient, name);
+  const { toolName: resolvedToolName, args: resolvedInput } = resolveMetaToolProxy(name, input);
+  const metadata = getMcpAppMetadata(mcpClient, resolvedToolName, resolvedInput);
   const sseClient = mcpClient?.sseClient ?? null;
   const resourceUri = toolResourceUri || metadata?.resourceUri;
   const appSessionId = metadata?.sessionId;
@@ -194,7 +199,7 @@ const McpAppViewInner = forwardRef<McpAppRendererHandle, McpAppViewProps>(functi
 
   const sentInputRef = useRef(false);
   const sentResultRef = useRef(false);
-  const lastInputRef = useRef(input);
+  const lastInputRef = useRef(resolvedInput);
   const lastResultRef = useRef(result);
   const lastStatusRef = useRef(status);
 
@@ -236,15 +241,16 @@ const McpAppViewInner = forwardRef<McpAppRendererHandle, McpAppViewProps>(functi
       .catch((err) => setError(err instanceof Error ? err : new Error(String(err))));
   }, [host, resourceUri, html, appSessionId]);
 
+  // Send tool inputs
   useEffect(() => {
-    if (!host || !isLaunched || !resourceUri || !appSessionId || !input) return;
+    if (!host || !isLaunched || !resourceUri || !appSessionId || !resolvedInput) return;
 
-    if (!sentInputRef.current || JSON.stringify(input) !== JSON.stringify(lastInputRef.current)) {
+    if (!sentInputRef.current || JSON.stringify(resolvedInput) !== JSON.stringify(lastInputRef.current)) {
       sentInputRef.current = true;
-      lastInputRef.current = input;
-      host.sendToolInput(input);
+      lastInputRef.current = resolvedInput;
+      host.sendToolInput(resolvedInput);
     }
-  }, [host, isLaunched, input, resourceUri, appSessionId, name]);
+  }, [host, isLaunched, resolvedInput, resourceUri, appSessionId, resolvedToolName]);
 
   useEffect(() => {
     if (!host || !isLaunched || !resourceUri || !appSessionId || result === undefined) return;
@@ -259,7 +265,7 @@ const McpAppViewInner = forwardRef<McpAppRendererHandle, McpAppViewProps>(functi
           : result;
       host.sendToolResult(formattedResult);
     }
-  }, [host, isLaunched, result, status, resourceUri, appSessionId, name]);
+  }, [host, isLaunched, result, status, resourceUri, appSessionId, resolvedToolName]);
 
   useEffect(() => {
     if (status === 'executing' && lastStatusRef.current !== 'executing') {
@@ -355,33 +361,43 @@ const McpAppView = memo(McpAppViewInner);
 McpAppView.displayName = 'McpAppView';
 
 /**
+ * Renders an interactive MCP application inside a sandboxed iframe.
+ */
+export const McpAppRenderer = memo(
+  forwardRef<McpAppRendererHandle, McpAppRendererProps>(function McpAppRenderer(
+    { client, ...props },
+    ref
+  ) {
+    const clientRef = useRef(client || null);
+    clientRef.current = client || null;
+
+    return <McpAppView ref={ref} clientRef={clientRef} {...props} />;
+  })
+);
+
+/**
  * Helpers scoped to one `mcpClient`. Pass the client here once; `McpAppRenderer` only needs per-tool props (`name`, `input`, `result`, `status`).
  *
  * @param mcpClient - From `useMcp()` or context (for example `useMcpContext()`).
+ * @deprecated Use the standalone `<McpAppRenderer>` component and `getMcpAppMetadata` utility directly.
  */
 export function useMcpApps(mcpClient: McpClient | null) {
-  // Stable `McpAppRenderer` type: parent re-renders and `connections` updates must not remount the iframe.
-  const clientRef = useRef(mcpClient);
-  clientRef.current = mcpClient;
-
   const getAppMetadata = useCallback(
-    (toolName: string) => getMcpAppMetadata(clientRef.current, toolName),
-    []
+    (toolName: string) => getMcpAppMetadata(mcpClient, toolName),
+    [mcpClient]
   );
 
-  const McpAppRenderer = useMemo(() => {
-    const Inner = forwardRef<McpAppRendererHandle, McpAppRendererProps>(function McpAppRenderer(
-      props,
-      ref,
-    ) {
-      return <McpAppView ref={ref} clientRef={clientRef} {...props} />;
-    });
-    const Renderer = memo(Inner);
-    Renderer.displayName = 'McpAppRenderer';
-    return Renderer;
-  }, []);
+  const BoundMcpAppRenderer = useMemo(() => {
+    const Renderer = forwardRef<McpAppRendererHandle, Omit<McpAppRendererProps, 'client'>>(
+      function BoundMcpAppRenderer(props, ref) {
+        return <McpAppRenderer ref={ref} client={mcpClient} {...props} />;
+      }
+    );
+    Renderer.displayName = 'BoundMcpAppRenderer';
+    return memo(Renderer);
+  }, [mcpClient]);
 
-  return { getAppMetadata, McpAppRenderer };
+  return { getAppMetadata, McpAppRenderer: BoundMcpAppRenderer };
 }
 
 function extractToolName(fullName: string): string {
@@ -389,13 +405,15 @@ function extractToolName(fullName: string): string {
   return match?.[1] || fullName;
 }
 
-function getMcpAppMetadata(
+export function getMcpAppMetadata(
   mcpClient: McpClient | null,
-  toolName: string
+  toolName: string,
+  input?: Record<string, unknown> | null
 ): McpAppMetadata | undefined {
   if (!mcpClient) return undefined;
 
-  const extractedName = extractToolName(toolName);
+  const { toolName: proxyToolName } = resolveMetaToolProxy(toolName, input);
+  const extractedName = extractToolName(proxyToolName);
 
   for (const conn of mcpClient.connections) {
     for (const tool of conn.tools) {

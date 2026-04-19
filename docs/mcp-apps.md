@@ -17,7 +17,7 @@ graph TB
             useMcp["useMcp Hook"]
             SSEClient["SSEClient"]
             ToolRenderer["ToolRenderer"]
-            useMcpApps["useMcpApps Hook"]
+            McpAppRenderer["McpAppRenderer"]
 
             subgraph Iframe["Sandbox proxy + guest iframe"]
                 McpAppUI["MCP App UI"]
@@ -32,8 +32,8 @@ graph TB
 
     useMcp --> SSEClient
     SSEClient -->|"HTTP/SSE"| Server
-    ToolRenderer --> useMcpApps
-    useMcpApps -->|"AppBridge<br/>(PostMessage)"| McpAppUI
+    ToolRenderer --> McpAppRenderer
+    McpAppRenderer -->|"AppBridge<br/>(PostMessage)"| McpAppUI
     McpAppUI -->|"Tool Calls (optional)"| SSEClient
 ```
 
@@ -79,17 +79,17 @@ Pass **`sandbox`** on every `McpAppRenderer` that loads server UI resources (HTM
 
 ```tsx
 import { useRenderToolCall } from "@copilotkit/react-core";
-import { useMcpApps, DEFAULT_MCP_APP_CSP } from "@mcp-ts/sdk/client/react";
+import { McpAppRenderer, DEFAULT_MCP_APP_CSP } from "@mcp-ts/sdk/client/react";
 import { useMcpContext } from "./mcp-context";
 
 function ToolRenderer() {
   const { mcpClient } = useMcpContext();
-  const { McpAppRenderer } = useMcpApps(mcpClient);
 
   useRenderToolCall({
     name: "*",
     render: ({ name, args, result, status }) => (
       <McpAppRenderer
+        client={mcpClient}
         name={name}
         input={args}
         result={result}
@@ -143,9 +143,12 @@ If your agent streams tool arguments or can cancel a run, pass through:
 
 If `onCallTool` / `onReadResource` are omitted, the host forwards to `mcpClient.sseClient` using the session inferred from the tool metadata.
 
-## Tool metadata
+## Tool metadata & Proxy Unwrapping
 
-`getAppMetadata` and `McpAppRenderer` look up UI resources using the first match on the tool name (prefixes such as `tool_<id>_` are stripped). A resource URI may come from:
+`getMcpAppMetadata` and `McpAppRenderer` look up UI resources using the first match on the tool name. 
+Crucially, they both natively support unwrapping **ToolRouter proxies** (e.g., `mcp_execute_tool`). If a proxy wrapper is encountered, it seamlessly inspects the `input` arguments, resolves the true underlying tool name, strips any prefixes like `tool_github_...`, and returns the underlying UI.
+
+A resource URI may come from:
 
 - `tool.mcpApp.resourceUri`
 - `tool._meta?.ui?.resourceUri`
@@ -159,23 +162,24 @@ For advanced use, `AppHost` also exposes `preload(tools)` (see [API reference](/
 
 ## API summary
 
-### `useMcpApps(mcpClient)`
+### `getMcpAppMetadata(mcpClient, toolName, input?)`
 
 ```typescript
-function useMcpApps(mcpClient: McpClient | null): {
-  getAppMetadata: (toolName: string) => McpAppMetadata | undefined;
-  McpAppRenderer: React.NamedExoticComponent<McpAppRendererProps>;
-};
+function getMcpAppMetadata(
+  mcpClient: McpClient | null,
+  toolName: string,
+  input?: Record<string, unknown> | null
+): McpAppMetadata | undefined;
 ```
 
-- **`getAppMetadata`** — Returns `{ toolName, resourceUri, sessionId }` when the tool has a UI URI. Use for conditional UI; rendering does not require calling it first.
-- **`McpAppRenderer`** — Memoized component tied to the `mcpClient` you passed into `useMcpApps`. Pass per-invocation props (`name`, `input`, `result`, `status`, etc.).
+Returns `{ toolName, resourceUri, sessionId }` when the tool has a UI URI. Use for conditionally checking if an Interactive UI exists for a tool before rendering. If `toolName` is a proxy like `mcp_execute_tool`, supplying `input` will allow it to unwrap the proxy and find the target app accurately.
 
 ### `McpAppRendererProps`
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `name` | `string` | Tool name (matched against connection tools). |
+| `client` | `McpClient?` | Your active MCP client object. |
+| `name` | `string` | Tool name (matched against connection tools). Passes natively through proxy unwrapper. |
 | `input` | `Record<string, unknown>?` | Tool arguments; sent with `sendToolInput` after launch. |
 | `result` | `unknown?` | Final tool result; sent when `status === 'complete'`. |
 | `status` | `'executing' \| 'inProgress' \| 'complete' \| 'idle'` | Optional; default `'idle'`. |

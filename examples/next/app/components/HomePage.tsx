@@ -5,7 +5,7 @@ import { useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useMcp, useMcpApps } from "@mcp-ts/sdk/client/react";
+import { useMcp } from "@mcp-ts/sdk/client/react";
 import HomeChat from "./HomeChat";
 import McpSidebar from "./McpSidebar";
 
@@ -18,7 +18,7 @@ export default function HomePage() {
     identity: "demo-user-123",
     autoConnect: true,
     autoInitialize: true,
-    onLog: (level, message, metadata) => {
+    onLog: (level: string, message: string, metadata: any) => {
       console.log(`[${level}] ${message}`, metadata);
     },
     onRedirect: (url) => {
@@ -36,9 +36,6 @@ export default function HomePage() {
       }
     },
   });
-
-  // McpAppRenderer is derived from the same client so the iframe stays stable
-  const { McpAppRenderer, getAppMetadata } = useMcpApps(mcpClient);
 
   return (
     <TooltipProvider>
@@ -87,8 +84,7 @@ export default function HomePage() {
           {/* Chat renders MCP Apps inline after tool calls */}
           <HomeChat
             className="min-h-0 flex-1"
-            McpAppRenderer={McpAppRenderer}
-            getAppMetadata={getAppMetadata}
+            mcpClient={mcpClient}
           />
         </main>
       </div>

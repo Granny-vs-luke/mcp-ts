@@ -39,8 +39,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { RiRobot2Line } from "react-icons/ri";
 import type { ComponentType } from "react";
-import type { McpAppRendererProps } from "@mcp-ts/sdk/client/react";
-import { resolveMetaToolProxy } from "@mcp-ts/sdk/shared";
+import { McpAppRenderer, getMcpAppMetadata, type McpClient } from "@mcp-ts/sdk/client/react";
 
 /** True once the latest assistant turn has something to render (text or tool UI). */
 function assistantShowsProgress(m: UIMessage | undefined): boolean {
@@ -60,16 +59,12 @@ function assistantShowsProgress(m: UIMessage | undefined): boolean {
 
 interface HomeChatProps {
   className?: string;
-  /** McpAppRenderer from useMcpApps — renders interactive MCP App iframes. */
-  McpAppRenderer?: ComponentType<McpAppRendererProps>;
-  /** Function to get metadata for a given tool name to detect if it has a UI. */
-  getAppMetadata?: (toolName: string) => { resourceUri: string } | undefined;
+  mcpClient?: McpClient | null;
 }
 
 export default function HomeChat({
   className,
-  McpAppRenderer,
-  getAppMetadata,
+  mcpClient,
 }: HomeChatProps) {
   const { error, status, sendMessage, messages, regenerate, stop } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
@@ -119,12 +114,13 @@ export default function HomeChat({
                     const title = toolPart.title || frameToolName;
                     const input = toolPart.input as Record<string, unknown> | null | undefined;
 
-                    // Use SDK helper to unwrap mcp_execute_tool proxy and strip prefixes
-                    const { toolName: realToolName, args: realInput } = resolveMetaToolProxy(frameToolName, input);
+                    // The SDK handles unwrapping `mcp_execute_tool` internally
+                    const metadata = getMcpAppMetadata(mcpClient || null, frameToolName, input);
+                    const hasApp = !!metadata;
 
-                    // Determine whether to show an inline MCP App
-                    const metadata = realToolName && getAppMetadata ? getAppMetadata(realToolName) : undefined;
-                    const hasApp = McpAppRenderer && !!metadata;
+                    // If getMcpAppMetadata found an app, it unwrapped it. We can still render the raw frames
+                    // since McpAppRenderer also unwraps internally.
+                    const resolvedToolName = metadata ? metadata.toolName : frameToolName;
 
                     const appStatus =
                       toolPart.state === "input-streaming" || toolPart.state === "input-available"
@@ -135,62 +131,32 @@ export default function HomeChat({
 
                     if (toolPart.type === "dynamic-tool") {
                       return (
-                        <Tool key={index}>
-                          <ToolHeader
-                            type="dynamic-tool"
-                            state={toolPart.state}
-                            toolName={frameToolName}
-                            title={title}
-                          />
-                          <ToolContent>
-                            {hasApp && realToolName ? (
-                              /* ── Inline MCP App iframe ── */
-                              <McpAppRenderer
-                                name={realToolName}
-                                sandbox={{ url: "/sandbox_proxy.html" }}
-                                input={realInput}
-                                result={toolPart.output}
-                                status={appStatus}
-                                className="min-h-[420px] w-full"
-                                loader={
-                                  <div className="flex flex-col items-center gap-2 py-8">
-                                    <Spinner className="size-6 text-primary" />
-                                    <span className="text-xs text-muted-foreground">
-                                      Loading interactive app…
-                                    </span>
-                                  </div>
-                                }
+                        <div key={index} className="space-y-3">
+                          <Tool>
+                            <ToolHeader
+                              type="dynamic-tool"
+                              state={toolPart.state}
+                              toolName={frameToolName}
+                              title={title}
+                            />
+                            <ToolContent>
+                              {input != null ? (
+                                <ToolInput input={input} />
+                              ) : null}
+                              <ToolOutput
+                                errorText={toolPart.errorText}
+                                output={toolPart.output}
                               />
-                            ) : (
-                              <>
-                                {input != null ? (
-                                  <ToolInput input={input} />
-                                ) : null}
-                                <ToolOutput
-                                  errorText={toolPart.errorText}
-                                  output={toolPart.output}
-                                />
-                              </>
-                            )}
-                          </ToolContent>
-                        </Tool>
-                      );
-                    }
+                            </ToolContent>
+                          </Tool>
 
-                    return (
-                      <Tool key={index}>
-                        <ToolHeader
-                          type={toolPart.type}
-                          state={toolPart.state}
-                          title={title}
-                        />
-                        <ToolContent>
-                          {hasApp && realToolName ? (
+                          {hasApp && resolvedToolName ? (
                             /* ── Inline MCP App iframe ── */
                             <McpAppRenderer
-                              name={realToolName}
+                              client={mcpClient}
+                              name={frameToolName}
                               sandbox={{ url: "/sandbox_proxy.html" }}
-                              input={realInput}
+                              input={input}
                               result={toolPart.output}
                               status={appStatus}
                               className="min-h-[420px] w-full"
@@ -203,19 +169,51 @@ export default function HomeChat({
                                 </div>
                               }
                             />
-                          ) : (
-                            <>
-                              {input != null ? (
-                                <ToolInput input={input} />
-                              ) : null}
-                              <ToolOutput
-                                errorText={toolPart.errorText}
-                                output={toolPart.output}
-                              />
-                            </>
-                          )}
-                        </ToolContent>
-                      </Tool>
+                          ) : null}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={index} className="space-y-3">
+                        <Tool>
+                          <ToolHeader
+                            type={toolPart.type}
+                            state={toolPart.state}
+                            title={title}
+                          />
+                          <ToolContent>
+                            {input != null ? (
+                              <ToolInput input={input} />
+                            ) : null}
+                            <ToolOutput
+                              errorText={toolPart.errorText}
+                              output={toolPart.output}
+                            />
+                          </ToolContent>
+                        </Tool>
+                        
+                        {hasApp && resolvedToolName ? (
+                          /* ── Inline MCP App iframe ── */
+                          <McpAppRenderer
+                            client={mcpClient}
+                            name={frameToolName}
+                            sandbox={{ url: "/sandbox_proxy.html" }}
+                            input={input}
+                            result={toolPart.output}
+                            status={appStatus}
+                            className="min-h-[420px] w-full"
+                            loader={
+                              <div className="flex flex-col items-center gap-2 py-8">
+                                <Spinner className="size-6 text-primary" />
+                                <span className="text-xs text-muted-foreground">
+                                  Loading interactive app…
+                                </span>
+                              </div>
+                            }
+                          />
+                        ) : null}
+                      </div>
                     );
                   }
 
