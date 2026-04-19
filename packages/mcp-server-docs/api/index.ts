@@ -1,17 +1,16 @@
-/**
- * Vercel Serverless Function Entry Point
- * 
- * This file provides the serverless handler for Vercel deployment.
- * It wraps the MCP server to work with Vercel's serverless environment.
- */
-
-import { createServer } from "../server.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createServer, McpDocsServer } from "../src/server.js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-// Vercel serverless handler
+// We use the wrapper instance for persistent state (doc index)
+const serverWrapper = new McpDocsServer();
+let initialized = false;
+
+/**
+ * Main Vercel API handler for MCP Streamable HTTP
+ */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Enable CORS
+  // 1. Enable CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -20,23 +19,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  const server = createServer();
-  
+  // 2. Ensure server is initialized (only once per instance)
+  if (!initialized) {
+    await serverWrapper.initialize();
+    initialized = true;
+  }
+
   try {
     const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
+      sessionIdGenerator: undefined, // Stateless mode for serverless
       enableJsonResponse: true,
     });
 
+    // Cleanup on close
     res.on("close", () => {
       transport.close().catch(() => {});
-      server.close().catch(() => {});
     });
 
-    await server.connect(transport);
+    // Use the core McpServer instance from the wrapper
+    await serverWrapper.server.connect(transport);
+    
+    // 3. Handle the request
     await transport.handleRequest(req, res, req.body);
   } catch (error) {
-    console.error("MCP error:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[Vercel MCP Error] ${message}`);
+
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: "2.0",
