@@ -355,3 +355,33 @@ export function isMetaTool(toolName: string): boolean {
     toolName === 'mcp_execute_tool'
   );
 }
+
+/**
+ * Unwraps a meta-tool proxy call (like mcp_execute_tool) to find the real target tool name and arguments.
+ * Also automatically strips routing prefixes like tool_{serverId}_.
+ * 
+ * Useful for frontend components that need to determine the actual tool being executed by an AI agent.
+ */
+export function resolveMetaToolProxy(
+  toolName: string,
+  args: Record<string, unknown> | null | undefined
+): { toolName: string; args: Record<string, unknown> } {
+  // Unwrap mcp_execute_tool proxy arguments
+  if (toolName === 'mcp_execute_tool') {
+    const innerName = args?.toolName;
+    const innerArgs = args?.args;
+    return {
+      toolName: typeof innerName === 'string' && innerName ? innerName : toolName,
+      args: innerArgs && typeof innerArgs === 'object' && !Array.isArray(innerArgs)
+        ? (innerArgs as Record<string, unknown>)
+        : {},
+    };
+  }
+
+  // Strip tool_<serverId>_ prefix used by AIAdapter
+  const match = toolName.match(/(?:tool_[^_]+_)?(.+)$/);
+  const resolvedName = match?.[1] ?? toolName;
+
+  return { toolName: resolvedName, args: args ?? {} };
+}
+

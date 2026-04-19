@@ -5,11 +5,40 @@ import { useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useMcp, useMcpApps } from "@mcp-ts/sdk/client/react";
 import HomeChat from "./HomeChat";
 import McpSidebar from "./McpSidebar";
 
 export default function HomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // ── Single source of truth for the MCP client ──────────────────────────
+  const mcpClient = useMcp({
+    url: "/api/mcp",
+    identity: "demo-user-123",
+    autoConnect: true,
+    autoInitialize: true,
+    onLog: (level, message, metadata) => {
+      console.log(`[${level}] ${message}`, metadata);
+    },
+    onRedirect: (url) => {
+      const width = 600;
+      const height = 700;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
+      const popup = window.open(
+        url,
+        "mcp-auth-popup",
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`,
+      );
+      if (!popup) {
+        alert("Popup blocked! Allow popups for this site to complete authentication.");
+      }
+    },
+  });
+
+  // McpAppRenderer is derived from the same client so the iframe stays stable
+  const { McpAppRenderer, getAppMetadata } = useMcpApps(mcpClient);
 
   return (
     <TooltipProvider>
@@ -30,7 +59,11 @@ export default function HomePage() {
           )}
         >
           <div className="flex h-full w-[min(100vw,400px)] min-w-[min(100vw,400px)] flex-col">
-            <McpSidebar onCollapse={() => setSidebarOpen(false)} />
+            {/* Sidebar only handles connection management — no McpAppRenderer */}
+            <McpSidebar
+              mcpClient={mcpClient}
+              onCollapse={() => setSidebarOpen(false)}
+            />
           </div>
         </div>
 
@@ -51,7 +84,12 @@ export default function HomePage() {
               </span>
             </div>
           ) : null}
-          <HomeChat className="min-h-0 flex-1" />
+          {/* Chat renders MCP Apps inline after tool calls */}
+          <HomeChat
+            className="min-h-0 flex-1"
+            McpAppRenderer={McpAppRenderer}
+            getAppMetadata={getAppMetadata}
+          />
         </main>
       </div>
     </TooltipProvider>

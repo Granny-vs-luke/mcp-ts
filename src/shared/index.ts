@@ -105,6 +105,7 @@ export {
   createExecuteToolDefinition,
   executeMetaTool,
   isMetaTool,
+  resolveMetaToolProxy,
   type CallToolFn,
 } from './meta-tools.js';
 
