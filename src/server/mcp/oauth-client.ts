@@ -1108,7 +1108,9 @@ export class MCPClient {
    * @returns Server name or undefined
    */
   getServerName(): string | undefined {
-    return this.serverName;
+    const info = (this.client as any)?.getServerVersion();
+    console.log('server info ->', info);
+    return info?.title ?? info?.name ?? this.serverName;
   }
 
   /**

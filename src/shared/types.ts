@@ -4,6 +4,36 @@
 
 import { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
+// ---------------------------------------------------------------------------
+// Core Capability Interfaces
+// ---------------------------------------------------------------------------
+
+/**
+ * A client that can list and execute MCP tools.
+ *
+ * This is the structural interface that `ToolRouter`, adapters, and other
+ * consumers use to interact with any MCP client implementation.
+ * Both `MCPClient` and `createMcpClient()` satisfy this interface.
+ */
+export interface ToolClient {
+  isConnected(): boolean;
+  listTools(): Promise<{ tools: Tool[] }>;
+  callTool(name: string, args: Record<string, unknown>): Promise<any>;
+  getServerId?(): string | undefined;
+  getServerName?(): string | undefined;
+  getSessionId?(): string;
+}
+
+/**
+ * A provider that manages multiple `ToolClient` instances.
+ *
+ * `MultiSessionClient` satisfies this interface. Pass it directly
+ * to `ToolRouter` or adapters to aggregate tools from all connected servers.
+ */
+export interface ToolClientProvider {
+  getClients(): ToolClient[];
+}
+
 // Connect API types
 export interface ConnectRequest {
   serverUrl: string;

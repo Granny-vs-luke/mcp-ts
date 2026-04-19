@@ -2,6 +2,8 @@ import { MCPClient } from '../server/mcp/oauth-client';
 import { MultiSessionClient } from '../server/mcp/multi-session-client';
 import type { DynamicStructuredTool, StructuredTool } from '@langchain/core/tools';
 import type { z } from 'zod';
+import { ToolRouter } from '../shared/tool-router.js';
+import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
 
 export interface LangChainAdapterOptions {
     /** 
@@ -16,6 +18,12 @@ export interface LangChainAdapterOptions {
      * @default false
      */
     simplifyErrors?: boolean;
+
+    /**
+     * Optional ToolRouter for intelligent tool selection.
+     * See AIAdapterOptions.toolRouter for details.
+     */
+    toolRouter?: ToolRouter;
 }
 
 /**
@@ -99,6 +107,11 @@ export class LangChainAdapter {
      * Fetches tools from the MCP server and converts them to LangChain StructuredTools.
      */
     async getTools(): Promise<StructuredTool[]> {
+        // If a ToolRouter is provided, use its filtered output
+        if (this.options.toolRouter) {
+            return this.getToolsViaRouter(this.options.toolRouter);
+        }
+
         // Use duck typing instead of instanceof to handle module bundling issues
         const isMultiSession = typeof (this.client as any).getClients === 'function';
         const clients = isMultiSession
@@ -116,6 +129,67 @@ export class LangChainAdapter {
             })
         );
         return results.flat();
+    }
+
+    /**
+     * Build StructuredTools from a ToolRouter's filtered output.
+     *
+     * In `search` strategy, only meta-tools are registered with the framework.
+     * Real tool execution is proxied through `mcp_execute_tool` which uses
+     * `router.callTool()` to route to the correct MCP client.
+     */
+    private async getToolsViaRouter(router: ToolRouter): Promise<StructuredTool[]> {
+        await this.ensureDependencies();
+
+        const filteredTools = await router.getFilteredTools();
+
+        return filteredTools.map((tool) => {
+            const routedTool = tool as typeof tool & { sessionId?: string; serverName?: string };
+            const namespace = routedTool.serverName ?? routedTool.sessionId;
+            const schema = this.jsonSchemaToZod(tool.inputSchema);
+
+            return new this.DynamicStructuredTool!({
+                name: isMetaTool(tool.name)
+                    ? tool.name
+                    : this.getRouterToolKey(tool.name, routedTool.sessionId, routedTool.serverName),
+                description: tool.description || `Tool ${tool.name}`,
+                schema: schema,
+                func: async (args: any) => {
+                    try {
+                        // Handle meta-tool calls via the router
+                        if (isMetaTool(tool.name)) {
+                            const result = await executeMetaTool(
+                                tool.name,
+                                args,
+                                router,
+                                (name, toolArgs, namespace) => router.callTool(name, toolArgs, namespace)
+                            );
+                            if (result) {
+                                return result.content.map((c: any) => c.text ?? '').join('\n');
+                            }
+                        }
+
+                        // For non-meta tools in 'all' or 'groups' strategy,
+                        // route directly to the correct MCP client
+                        return await router.callTool(tool.name, args, namespace);
+                    } catch (error: any) {
+                        if (this.options.simplifyErrors) {
+                            return `Error: ${error.message}`;
+                        }
+                        throw error;
+                    }
+                },
+            });
+        });
+    }
+
+    private getRouterToolKey(toolName: string, sessionId?: string, serverName?: string): string {
+        const namespace = sessionId ?? serverName ?? 'mcp';
+        const normalized = namespace
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '') || 'mcp';
+        return `tool_${normalized}_${toolName}`;
     }
 
     /**

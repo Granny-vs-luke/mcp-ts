@@ -32,6 +32,8 @@ export type {
 } from '../shared/events';
 
 export type {
+  ToolClient,
+  ToolClientProvider,
   ToolInfo,
   McpRpcRequest,
   McpRpcResponse,

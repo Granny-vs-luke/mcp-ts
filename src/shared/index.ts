@@ -22,6 +22,8 @@ export * from './errors';
 
 // Types
 export type {
+  ToolClient,
+  ToolClientProvider,
   ToolInfo,
   McpRpcRequest,
   McpRpcResponse,
@@ -72,4 +74,37 @@ export {
   findToolByName,
   type ToolUiConfig,
 } from './tool-utils.js';
+
+// Tool Router — Context window optimization
+export {
+  ToolRouter,
+  type ToolRouterOptions,
+  type ToolRouterStrategy,
+  type ToolRouterClientInput,
+  type ToolGroupInfo,
+} from './tool-router.js';
+
+export {
+  ToolIndex,
+  type ToolSummary,
+  type IndexedTool,
+  type ToolIndexOptions,
+  type EmbedFn,
+} from './tool-index.js';
+
+export {
+  SchemaCompressor,
+  type CompactTool,
+  type CompressionStats,
+} from './schema-compressor.js';
+
+export {
+  createSearchToolDefinition,
+  createRegexSearchToolDefinition,
+  createGetSchemaToolDefinition,
+  createExecuteToolDefinition,
+  executeMetaTool,
+  isMetaTool,
+  type CallToolFn,
+} from './meta-tools.js';
 

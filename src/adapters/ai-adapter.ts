@@ -2,6 +2,8 @@ import { MCPClient } from '../server/mcp/oauth-client';
 import { MultiSessionClient } from '../server/mcp/multi-session-client';
 import type { JSONSchema7 } from 'json-schema';
 import type { ToolSet } from 'ai';
+import { ToolRouter } from '../shared/tool-router.js';
+import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
 
 export interface AIAdapterOptions {
     /** 
@@ -9,6 +11,17 @@ export interface AIAdapterOptions {
      * Defaults to the client's serverId.
      */
     prefix?: string;
+
+    /**
+     * Optional ToolRouter for intelligent tool selection.
+     *
+     * When provided with `strategy: 'search'`, the adapter exposes only
+     * meta-tools (search_tools, get_tool_schema) instead of all tool schemas,
+     * reducing context window usage by 80–95%.
+     *
+     * When not provided, all tools are returned as before (backward-compatible).
+     */
+    toolRouter?: ToolRouter;
 }
 
 /**
@@ -80,6 +93,11 @@ export class AIAdapter {
     async getTools(): Promise<ToolSet> {
         await this.ensureJsonSchema();
 
+        // If a ToolRouter is provided, use its filtered output
+        if (this.options.toolRouter) {
+            return this.getToolsViaRouter(this.options.toolRouter);
+        }
+
         // Use duck typing instead of instanceof to handle module bundling issues
         // MultiSessionClient has getClients(), MCPClient does not
         const isMultiSession = typeof (this.client as any).getClients === 'function';
@@ -104,6 +122,63 @@ export class AIAdapter {
         );
 
         return results.reduce((acc, tools) => ({ ...acc, ...tools }), {});
+    }
+
+    /**
+     * Build a ToolSet from a ToolRouter's filtered output.
+     *
+     * In `search` strategy, only meta-tools are registered with the framework.
+     * Real tool execution is proxied through `mcp_execute_tool` which uses
+     * `router.callTool()` to route to the correct MCP client.
+     */
+    private async getToolsViaRouter(router: ToolRouter): Promise<ToolSet> {
+        const filteredTools = await router.getFilteredTools();
+
+        // @ts-ignore: ToolSet type inference can be tricky with dynamic imports
+        return Object.fromEntries(
+            filteredTools.map((tool) => {
+                const routedTool = tool as typeof tool & { sessionId?: string; serverName?: string };
+                const namespace = routedTool.serverName ?? routedTool.sessionId;
+                const toolKey = isMetaTool(tool.name)
+                    ? tool.name
+                    : this.getRouterToolKey(tool.name, routedTool.sessionId, routedTool.serverName);
+
+                return [
+                    toolKey,
+                    {
+                        description: tool.description,
+                        inputSchema: this.jsonSchema!(tool.inputSchema as JSONSchema7),
+                        execute: async (args: any) => {
+                            // Handle meta-tool calls via the router
+                            if (isMetaTool(tool.name)) {
+                                const result = await executeMetaTool(
+                                    tool.name,
+                                    args,
+                                    router,
+                                    (name, toolArgs, targetNamespace) => router.callTool(name, toolArgs, targetNamespace)
+                                );
+                                if (result) {
+                                    return result.content.map((c: any) => c.text ?? '').join('\n');
+                                }
+                            }
+
+                            // For non-meta tools in 'all' or 'groups' strategy,
+                            // route directly to the correct MCP client
+                            return await router.callTool(tool.name, args, namespace);
+                        },
+                    },
+                ];
+            })
+        );
+    }
+
+    private getRouterToolKey(toolName: string, sessionId?: string, serverName?: string): string {
+        const namespace = sessionId ?? serverName ?? 'mcp';
+        const normalized = namespace
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '') || 'mcp';
+        return `tool_${normalized}_${toolName}`;
     }
 
     /**
