@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/static/img/mcp-ts-banner.svg" alt="MCP-TS Banner" width="100%" style="max-width: 1200px;" />
+  <img src="docs/images/mcp-ts-banner.svg" alt="MCP-TS Banner" width="100%" style="max-width: 1200px;" />
 </div>
 
 <div align="center">
@@ -10,13 +10,6 @@
 <br />
 
 
-<div align="center">
-
-| *Supported Frameworks* | *Agent Frameworks and Protocol* | *Storage Backends* |
-| :---: | :---: | :---: |
-| <img src="docs/static/img/framework/next.svg" width="35" height="35" /> <img src="docs/static/img/framework/node.svg" width="35" height="35" /> <img src="docs/static/img/framework/react.svg" width="35" height="35" /> <img src="docs/static/img/framework/vue.svg" width="35" height="35" /> <img src="docs/static/img/framework/express.svg" width="35" height="35" /> | <img src="docs/static/img/framework/vercel.svg" width="35" height="35" /> <img src="docs/static/img/agent-framework/langchain.svg" width="35" height="35" /> <img src="docs/static/img/agent-framework/mastra.svg" width="35" height="35" /> <img src="docs/static/img/agent-framework/agui.webp" width="35" height="35" /> | <img src="docs/static/img/storage-backend/redis.svg" width="35" height="35" /> <img src="docs/static/img/storage-backend/sqlite.svg" width="35" height="35" /> <img src="docs/static/img/storage-backend/filesystem.svg" width="35" height="35" /> <img src="docs/static/img/storage-backend/memory.svg" width="35" height="35" /> |
-
-</div>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@mcp-ts/sdk">
@@ -53,10 +46,10 @@ Check out working examples demonstrating the MCP Apps extension and agent integr
   <table cellspacing="5" cellpadding="0">
     <tr>
       <td width="50%">
-        <img src="docs/static/img/mcp-apps-img-1.png" alt="MCP Apps 1" width="100%" />
+        <img src="docs/images/mcp-apps-img-1.png" alt="MCP Apps 1" width="100%" />
       </td>
       <td width="50%">
-        <img src="docs/static/img/mcp-apps-img-2.png" alt="MCP Apps 2" width="100%" />
+        <img src="docs/images/mcp-apps-img-2.png" alt="MCP Apps 2" width="100%" />
       </td>
     </tr>
   </table>
@@ -73,7 +66,7 @@ That’s how `@mcp-ts` started.
 <br/>
 
 <div align="center">
-  <img src="docs/static/img/mcp-assistant.png" alt="MCP Assistant" width="100%" />
+  <img src="docs/images/mcp-assistant.png" alt="MCP Assistant" width="100%" />
 </div>
 
 <br/>
@@ -305,26 +298,26 @@ The library supports multiple storage backends. You can explicitly select one us
 
 ### 🧷 Configuration Examples
 
-1.  **<img src="docs/static/img/storage-backend/redis.svg" width="20" height="20" align="center" /> Redis** (Recommended for production)
+1.  **<img src="docs/images/storage-backend/redis.svg" width="20" height="20" align="center" /> Redis** (Recommended for production)
     ```bash
     MCP_TS_STORAGE_TYPE=redis
     REDIS_URL=redis://localhost:6379
     ```
 
-2.  **<img src="docs/static/img/storage-backend/sqlite.svg" width="20" height="20" align="center" /> SQLite** (Fast & Persistent)
+2.  **<img src="docs/images/storage-backend/sqlite.svg" width="20" height="20" align="center" /> SQLite** (Fast & Persistent)
     ```bash
     MCP_TS_STORAGE_TYPE=sqlite
     # Optional path
     MCP_TS_STORAGE_SQLITE_PATH=./sessions.db
     ```
 
-3.  **<img src="docs/static/img/storage-backend/filesystem.svg" width="20" height="20" align="center" /> File System** (Great for local dev)
+3.  **<img src="docs/images/storage-backend/filesystem.svg" width="20" height="20" align="center" /> File System** (Great for local dev)
     ```bash
     MCP_TS_STORAGE_TYPE=file
     MCP_TS_STORAGE_FILE=./sessions.json
     ```
 
-4.  **<img src="docs/static/img/storage-backend/memory.svg" width="20" height="20" align="center" /> In-Memory** (Default for testing)
+4.  **<img src="docs/images/storage-backend/memory.svg" width="20" height="20" align="center" /> In-Memory** (Default for testing)
     ```bash
     MCP_TS_STORAGE_TYPE=memory
     ```

@@ -1,11 +1,11 @@
 {
   "$schema": "https://mintlify.com/schema.json",
-  "name": "mcp-ts",
+  "name": "Toolkit",
   "github": "https://github.com/zonlabs/mcp-ts",
   "theme": "mint",
   "logo": {
-    "dark": "/images/logo.svg",
-    "light": "/images/logo.svg"
+    "dark": "/images/logo-dark.svg",
+    "light": "/images/logo-light.svg"
   },
   "favicon": "/images/favicon.ico",
   "colors": {
@@ -19,7 +19,12 @@
         "type": "github",
         "href": "https://github.com/zonlabs/mcp-ts"
       }
-    ]
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Sign In",
+      "href": "https://mcp-assistant.in/signin"
+    }
   },
   "contextual": {
     "options": [
@@ -31,7 +36,6 @@
       "vscode"
     ]
   },
-  "topbarLinks": [],
   "navigation": {
     "anchors": [
       {
@@ -42,18 +46,18 @@
     "tabs": [
       {
         "tab": "Documentation",
+        "icon": "book-open",
         "groups": [
           {
             "group": "Getting Started",
             "pages": [
-              "introduction",
+              "showcase",
               "quickstart",
               "installation"
             ]
           },
           {
             "group": "Framework Guides",
-            "icon": "square-code",
             "pages": [
               "nextjs",
               "react",
@@ -62,7 +66,7 @@
             ]
           },
           {
-            "group": "Advanced Features",
+            "group": "Core Concepts",
             "pages": [
               {
                 "group": "Intelligent Routing",
@@ -96,25 +100,36 @@
                   "adapters/mastra",
                   "adapters/agui"
                 ]
-              }
-            ]
-          },
-          {
-            "group": "Core Concepts",
-            "pages": [
+              },
               "mcp-apps"
             ]
           },
           {
             "group": "Resources",
             "pages": [
+              "mcp",
               "faq"
             ]
           }
         ]
       },
       {
+        "tab": "Gateway",
+        "icon": "network-wired",
+        "groups": [
+          {
+            "group": "Gateway",
+            "pages": [
+              "gateway/overview",
+              "gateway/installation",
+              "gateway/configuration"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "API Reference",
+        "icon": "code",
         "groups": [
           {
             "group": "Server-Side",
