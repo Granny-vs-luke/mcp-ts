@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 160" width="700" height="160" role="img" aria-label="toolkit Logo">
+  <!-- Rounded Red Icon on the left -->
+  <g transform="translate(0, 0)">
+    <rect width="160" height="160" rx="40" fill="#d30000"/>
+    <path d="M38 30 L80 48 L122 30" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect id="leftStick" x="33" y="25" width="10" height="110" rx="5" fill="#ffffff"/>
+    <rect id="middleStick" x="75" y="44" width="10" height="60" rx="5" fill="#ffffff"/>
+    <rect id="rightStick" x="117" y="25" width="10" height="60" rx="5" fill="#ffffff"/>
+  </g>
+  
+  <!-- "toolkit" Text Style: Modern Two-Tone Dark for Light Theme -->
+  <text x="185" y="112" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="105" letter-spacing="-2">
+    <tspan font-weight="400" fill="#666666">tool</tspan><tspan font-weight="800" fill="#111111">kit</tspan>
+  </text>
+</svg>

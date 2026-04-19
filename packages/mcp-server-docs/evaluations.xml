@@ -1,0 +1,42 @@
+<evaluation>
+  <qa_pair>
+    <question>How do I install mcp-ts?</question>
+    <answer>npm install @mcp-ts/sdk</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>What storage backends are supported by mcp-ts?</question>
+    <answer>Memory, File System, Redis, and Supabase.</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>How can I integrate mcp-ts with LangChain?</question>
+    <answer>Use the @mcp-ts/sdk/adapters/langchain adapter.</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>What is the ToolRouter used for?</question>
+    <answer>The ToolRouter handles intelligent routing and name collision resolution for multiple MCP servers.</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>How do I set up an MCP server with Redis persistence?</question>
+    <answer>Set the REDIS_URL environment variable and use the Redis storage adapter.</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>What are Interactive MCP Apps?</question>
+    <answer>Interactive MCP Apps are UI components served from MCP servers that render in a secure sandbox bridge.</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>How do I use the useMcp hook in React?</question>
+    <answer>Import { useMcp } from '@mcp-ts/sdk/client' and call it with a server URL and identity.</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Can I use mcp-ts with Vue.js?</answer>
+    <answer>Yes, mcp-ts provides a Vue adapter at @mcp-ts/sdk/client/vue.</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>What is the purpose of meta-tools in mcp-ts?</question>
+    <answer>Meta-tools provide additional capabilities like tool search and discovery through internal MCP calls.</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>How do I configure the Next.js API route for mcp-ts?</question>
+    <answer>Use createNextMcpHandler from @mcp-ts/sdk/server in your route file.</answer>
+  </qa_pair>
+</evaluation>

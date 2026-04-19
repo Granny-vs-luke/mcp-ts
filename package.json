@@ -86,7 +86,8 @@
     "test:debug": "npx playwright test --debug",
     "supabase:push": "supabase db push",
     "supabase:reset": "supabase db reset",
-    "supabase:status": "supabase status"
+    "supabase:status": "supabase status",
+    "mcp-docs": "npm run start --prefix packages/mcp-server-docs"
   },
   "keywords": [
     "mcp",

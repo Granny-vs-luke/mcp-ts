@@ -55,7 +55,10 @@ const {
 
 ---
 
-### `useMcpApps(mcpClient)`
+### `useMcpApps(mcpClient)` *(Deprecated)*
+
+> [!WARNING]  
+> `useMcpApps` is officially deprecated. You should now import `<McpAppRenderer>` and `getMcpAppMetadata` directly from `@mcp-ts/sdk/client/react` and use them without wrapping them in this hook.
 
 React hook for rendering **MCP Apps** (interactive tool UIs in a sandboxed iframe via AppBridge).
 
@@ -74,7 +77,7 @@ const { getAppMetadata, McpAppRenderer } = useMcpApps(mcpClient);
 - `getAppMetadata(toolName: string)` — Resolves UI metadata for a tool (strips `tool_<id>_` prefixes).
 - `McpAppRenderer` — Stable, memoized component; pass per-tool-call props.
 
-#### `getAppMetadata(toolName: string)`
+#### `getMcpAppMetadata(mcpClient, toolName, input?)`
 
 **Returns:** `McpAppMetadata | undefined`
 
@@ -86,16 +89,19 @@ interface McpAppMetadata {
 }
 ```
 
-URI resolution uses `tool.mcpApp.resourceUri`, then `tool._meta?.ui?.resourceUri`, then `tool._meta?.['ui/resourceUri']`.
+URI resolution uses `tool.mcpApp.resourceUri`, then `tool._meta?.ui?.resourceUri`, then `tool._meta?.['ui/resourceUri']`. 
+When `input` is provided, it automatically unwraps AI agent proxy calls (like `mcp_execute_tool`), resolves the true tool target, and returns the underlying UI metadata.
 
 #### `McpAppRenderer` Component
 
-The hook closes over `mcpClient`. Each renderer needs the active tool identity and call state. For `ui://` / `mcp-app://` HTML (and any injected HTML path), you must pass **`sandbox`** with your hosted proxy page (see [MCP Apps](/mcp-apps)).
+The standalone `<McpAppRenderer>` element is the primary engine for rendering inline MCP interactive apps inside a secure iframe Sandbox using AppBridge.
+For `ui://` / `mcp-app://` HTML (and any injected HTML path), you must pass **`sandbox`** with your hosted proxy page (see [MCP Apps](/mcp-apps)).
 
 **Props (`McpAppRendererProps`):**
 
 ```typescript
 interface McpAppRendererProps {
+  client?: McpClient | null;
   name: string;
   input?: Record<string, unknown>;
   result?: unknown;
@@ -133,14 +139,14 @@ interface SandboxConfig {
 **Example (recommended: sandbox + default CSP):**
 
 ```tsx
-import { useMcpApps, DEFAULT_MCP_APP_CSP } from '@mcp-ts/sdk/client/react';
+import { McpAppRenderer, DEFAULT_MCP_APP_CSP } from '@mcp-ts/sdk/client/react';
 
 function ToolCallRenderer({ name, args, result, status }) {
   const { mcpClient } = useMcpContext();
-  const { McpAppRenderer } = useMcpApps(mcpClient);
 
   return (
     <McpAppRenderer
+      client={mcpClient}
       name={name}
       input={args}
       result={result}

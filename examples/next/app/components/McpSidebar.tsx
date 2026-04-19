@@ -3,7 +3,7 @@
 import { nanoid } from "nanoid";
 import { PanelLeftClose } from "lucide-react";
 import { useState } from "react";
-import { useMcp, useMcpApps } from "@mcp-ts/sdk/client/react";
+import type { McpClient } from "@mcp-ts/sdk/client/react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import ConnectForm from "./dashboard/ConnectForm";
@@ -25,10 +25,13 @@ function statusDotClass(status: string) {
   }
 }
 
-export default function McpSidebar({ onCollapse }: { onCollapse: () => void }) {
-  const [identity] = useState("demo-user-123");
-  const [authToken] = useState("demo-auth-token");
+interface McpSidebarProps {
+  /** The shared MCP client from HomePage — single source of truth. */
+  mcpClient: McpClient;
+  onCollapse: () => void;
+}
 
+export default function McpSidebar({ mcpClient, onCollapse }: McpSidebarProps) {
   const [selectedTool, setSelectedTool] = useState<{
     sessionId: string;
     toolName: string;
@@ -36,35 +39,6 @@ export default function McpSidebar({ onCollapse }: { onCollapse: () => void }) {
 
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
-
-  const mcpClient = useMcp({
-    url: "/api/mcp",
-    identity,
-    authToken,
-    autoConnect: true,
-    autoInitialize: true,
-    onLog: (level, message, metadata) => {
-      console.log(`[${level}] ${message}`, metadata);
-    },
-    onRedirect: (url) => {
-      const width = 600;
-      const height = 700;
-      const left = window.screen.width / 2 - width / 2;
-      const top = window.screen.height / 2 - height / 2;
-
-      const popup = window.open(
-        url,
-        "mcp-auth-popup",
-        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`,
-      );
-
-      if (!popup) {
-        alert(
-          "Popup blocked! Allow popups for this site to complete authentication.",
-        );
-      }
-    },
-  });
 
   const {
     connections,
@@ -75,8 +49,6 @@ export default function McpSidebar({ onCollapse }: { onCollapse: () => void }) {
     callTool,
     finishAuth,
   } = mcpClient;
-
-  const { McpAppRenderer } = useMcpApps(mcpClient);
 
   useOAuthPopup(connections as Connection[], finishAuth);
 
@@ -195,6 +167,7 @@ export default function McpSidebar({ onCollapse }: { onCollapse: () => void }) {
         </div>
       </div>
 
+      {/* ToolExecutor: JSON run dialog only — no McpAppRenderer here */}
       <ToolExecutor
         selectedTool={selectedTool}
         onClose={() => {
@@ -204,7 +177,6 @@ export default function McpSidebar({ onCollapse }: { onCollapse: () => void }) {
         onExecute={executeToolWrapper}
         isExecuting={isExecuting}
         toolResult={toolResult}
-        McpAppRenderer={McpAppRenderer}
       />
     </aside>
   );
