@@ -37,16 +37,7 @@ export default function McpSidebar({ onCollapse }: { onCollapse: () => void }) {
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
 
-  const {
-    connections,
-    status,
-    isInitializing,
-    connect,
-    disconnect,
-    callTool,
-    finishAuth,
-    sseClient,
-  } = useMcp({
+  const mcpClient = useMcp({
     url: "/api/mcp",
     identity,
     authToken,
@@ -75,7 +66,17 @@ export default function McpSidebar({ onCollapse }: { onCollapse: () => void }) {
     },
   });
 
-  const { McpAppRenderer } = useMcpApps({ connections, sseClient });
+  const {
+    connections,
+    status,
+    isInitializing,
+    connect,
+    disconnect,
+    callTool,
+    finishAuth,
+  } = mcpClient;
+
+  const { McpAppRenderer } = useMcpApps(mcpClient);
 
   useOAuthPopup(connections as Connection[], finishAuth);
 

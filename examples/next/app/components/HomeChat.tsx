@@ -68,7 +68,7 @@ export default function HomeChat({ className }: { className?: string }) {
     <div
       className={cn("flex min-h-0 flex-1 flex-col bg-background", className)}
     >
-      <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col px-4 sm:px-6">
+      <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 sm:px-6">
       <Conversation className="min-h-0 flex-1">
         <ConversationContent>
           {messages.length === 0 ? (
@@ -105,7 +105,7 @@ export default function HomeChat({ className }: { className?: string }) {
 
                     if (toolPart.type === "dynamic-tool") {
                       return (
-                        <Tool key={index} defaultOpen>
+                        <Tool key={index}>
                           <ToolHeader
                             type="dynamic-tool"
                             state={toolPart.state}
@@ -126,7 +126,7 @@ export default function HomeChat({ className }: { className?: string }) {
                     }
 
                     return (
-                      <Tool key={index} defaultOpen>
+                      <Tool key={index}>
                         <ToolHeader
                           type={toolPart.type}
                           state={toolPart.state}

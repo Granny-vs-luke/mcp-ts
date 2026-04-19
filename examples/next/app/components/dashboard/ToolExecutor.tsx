@@ -144,7 +144,7 @@ export default function ToolExecutor({
                   <McpAppRenderer
                     name={selectedTool.toolName}
                     sandbox={{ 
-                      url: new URL("/sandbox_proxy.html", window.location.href) 
+                      url: "/sandbox_proxy.html",
                     }}
                     input={(() => {
                       try { return JSON.parse(toolArgs); } catch { return {}; }

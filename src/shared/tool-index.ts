@@ -109,9 +109,6 @@ export class ToolIndex {
   /** All indexed tools keyed by name (supports duplicates). */
   private tools = new Map<string, IndexedTool[]>();
 
-  /** Direct lookup from unique document key to indexed tool metadata. */
-  private toolDocuments = new Map<string, IndexedTool>();
-
   /** Precomputed lightweight summaries keyed by document. */
   private toolSummaries = new Map<string, ToolSummary>();
 
@@ -155,7 +152,6 @@ export class ToolIndex {
    */
   async buildIndex(tools: IndexedTool[]): Promise<void> {
     this.tools.clear();
-    this.toolDocuments.clear();
     this.toolSummaries.clear();
     this.searchTexts.clear();
     this.idf.clear();
@@ -176,7 +172,6 @@ export class ToolIndex {
         this.tools.set(tool.name, []);
       }
       this.tools.get(tool.name)!.push(tool);
-      this.toolDocuments.set(docKey, tool);
       const estimatedTokens = ToolIndex.estimateTokens(tool);
       this.toolSummaries.set(docKey, {
         name: tool.name,
@@ -314,7 +309,7 @@ export class ToolIndex {
     const kw = this.options.keywordWeight;
     const finalScores: Array<{ docKey: string; score: number }> = [];
 
-    for (const docKey of this.toolDocuments.keys()) {
+    for (const docKey of this.toolSummaries.keys()) {
       const kwScore = keywordScores.get(docKey) ?? 0;
       const embScore = embeddingScores?.get(docKey) ?? 0;
 
@@ -353,7 +348,7 @@ export class ToolIndex {
       const matches: Array<{ docKey: string; score: number }> = [];
 
       for (const [docKey, text] of this.searchTexts) {
-        const tool = this.toolDocuments.get(docKey);
+        const tool = this.toolSummaries.get(docKey);
         if (!tool) continue;
 
         if (regex.test(text) || regex.test(tool.name)) {
