@@ -15,7 +15,7 @@
   <a href="https://www.npmjs.com/package/@mcp-ts/sdk">
     <img src="https://img.shields.io/npm/v/@mcp-ts/sdk?style=flat-square&logo=npm&logoColor=white&label=%40mcp-ts%2Fsdk&color=dc2626" alt="npm version" />
   </a>
-  <a href="https://zonlabs.github.io/mcp-ts/">
+  <a href="https://docs.mcp-assistant.in/">
     <img src="https://img.shields.io/badge/docs-website-2563eb?style=flat-square&logo=readthedocs&logoColor=white" alt="Documentation" />
   </a>
   <a href="https://opensource.org/licenses/MIT">
@@ -279,16 +279,16 @@ export function ToolRenderer() {
 
 ## 📚 Documentation
 
-Full documentation is available at: **[Docs](https://zonlabs.github.io/mcp-ts/)**
+Full documentation is available at: **[Docs](https://docs.mcp-assistant.in/)**
 
 ### 🗂️ Topics Covered:
 
-- **[Getting Started](https://zonlabs.github.io/mcp-ts/docs/)** - Quick setup and overview
-- **[Installation](https://zonlabs.github.io/mcp-ts/docs/installation)** - Detailed installation guide
-- **[Storage Backends](https://zonlabs.github.io/mcp-ts/docs/storage-backends)** - Redis, File, Memory options
-- **[Next.js Integration](https://zonlabs.github.io/mcp-ts/docs/nextjs)** - Complete Next.js examples
-- **[React Hook Guide](https://zonlabs.github.io/mcp-ts/docs/react-hook)** - Using the useMcp hook
-- **[API Reference](https://zonlabs.github.io/mcp-ts/docs/api-reference)** - Complete API documentation
+- **[Getting Started](https://docs.mcp-assistant.in/get-started)** - Quick setup and overview
+- **[Installation](https://docs.mcp-assistant.in/install)** - Detailed installation guide
+- **[Storage Backends](https://docs.mcp-assistant.in/storage/overview)** - Redis, File, Memory options
+- **[Next.js Integration](https://docs.mcp-assistant.in/nextjs)** - Complete Next.js examples
+- **[React Hook Guide](https://docs.mcp-assistant.in/react)** - Using the useMcp hook
+- **[API Reference](https://docs.mcp-assistant.in/api-reference/server)** - Complete API documentation
 
 ## ⚙️ Environment Setup
 
@@ -370,10 +370,10 @@ graph LR
 
 For more details, refer to the documentation and follow the **installation guide for each adapter or storage backend**.
 
-- [AI SDK Installation Guide](https://zonlabs.github.io/mcp-ts/docs/adapters#installation)
-- [Mastra Installation Guide](https://zonlabs.github.io/mcp-ts/docs/adapters#installation)
-- [LangChain Installation Guide](https://zonlabs.github.io/mcp-ts/docs/adapters#installation)
-- [Redis Storage Installation Guide](https://zonlabs.github.io/mcp-ts/docs/storage-backends#-redis-production)
+- [AI SDK Installation Guide](https://docs.mcp-assistant.in/adapters/ai-sdk)
+- [Mastra Installation Guide](https://docs.mcp-assistant.in/adapters/mastra)
+- [LangChain Installation Guide](https://docs.mcp-assistant.in/adapters/langchain)
+- [Redis Storage Installation Guide](https://docs.mcp-assistant.in/storage/redis)
 
 
 ## 🤝 Contributing
