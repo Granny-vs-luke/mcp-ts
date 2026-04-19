@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import fs from "fs/promises";
+import fs from "fs";
+import { readFile } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import { glob } from "glob";
@@ -7,18 +8,30 @@ import matter from "gray-matter";
 import Fuse from "fuse.js";
 import { z } from "zod";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Path resolution for different environments (Local Source, Local Dist, Vercel)
 function resolveDocsDir(): string {
-  // 1. Check local dist folder (Bundled with package)
-  const distDocs = path.resolve(__dirname, "docs");
-  try {
-    // We use a simple synchronous check here as it's only called once during initialization
-    // and we need to resolve the path before any async file operations start.
-    return distDocs;
-  } catch {
-    // 2. Fallback to root docs folder (Local development)
-    return path.resolve(__dirname, "../../../docs");
+  const pathsToTry = [
+    // 1. Local dist folder (Bundled with package)
+    path.resolve(__dirname, "docs"),
+    // 2. Vercel deployment root
+    path.resolve(process.cwd(), "dist/docs"),
+    path.resolve(process.cwd(), "packages/mcp-server-docs/dist/docs"),
+    // 3. Fallback to root docs folder (Local development)
+    path.resolve(__dirname, "../../../docs"),
+  ];
+
+  for (const docsPath of pathsToTry) {
+    if (fs.existsSync(docsPath)) {
+      console.error(`[MCP Docs] Found docs at: ${docsPath}`);
+      return docsPath;
+    }
   }
+
+  console.error(`[MCP Docs] WARNING: Could not find docs folder in any of: ${pathsToTry.join(", ")}`);
+  return pathsToTry[pathsToTry.length - 1]; // Fallback to last search path
 }
 
 const DOCS_DIR = resolveDocsDir();
@@ -48,8 +61,9 @@ export function createServer(): McpServer {
  */
 export class McpDocsServer {
   public server: McpServer;
-  private fuse: Fuse<DocPage> | null = null;
-  private docsMap: Map<string, DocPage> = new Map();
+  private static fuse: Fuse<DocPage> | null = null;
+  private static docsMap: Map<string, DocPage> = new Map();
+  private static initialized = false;
 
   constructor() {
     this.server = new McpServer({
@@ -62,9 +76,11 @@ export class McpDocsServer {
   }
 
   /**
-   * Initialize doc loading and search indexing
+   * Initialize doc loading and search indexing (Singleton)
    */
   async initialize() {
+    if (McpDocsServer.initialized) return;
+
     console.error("Initializing documentation hub...");
     const files = await glob("**/*.md", { cwd: DOCS_DIR });
     const docs: DocPage[] = [];
@@ -73,18 +89,19 @@ export class McpDocsServer {
       const doc = await this.parseDocFile(file);
       if (doc) {
         docs.push(doc);
-        this.docsMap.set(doc.path, doc);
+        McpDocsServer.docsMap.set(doc.path, doc);
       }
     }
 
     this.initializeSearch(docs);
+    McpDocsServer.initialized = true;
     console.error(`Ready! Indexed ${docs.length} documentation pages.`);
   }
 
   private async parseDocFile(file: string): Promise<DocPage | null> {
     const fullPath = path.join(DOCS_DIR, file);
     try {
-      const rawContent = await fs.readFile(fullPath, "utf-8");
+      const rawContent = await readFile(fullPath, { encoding: "utf-8" });
       const { data, content: body } = matter(rawContent);
       const relativePath = file.replace(/\\/g, "/").replace(/\.md$/, "");
       
@@ -101,10 +118,15 @@ export class McpDocsServer {
   }
 
   private initializeSearch(docs: DocPage[]) {
-    this.fuse = new Fuse(docs, {
-      keys: ["title", "content", "description"],
-      threshold: 0.4,
+    McpDocsServer.fuse = new Fuse(docs, {
+      keys: [
+        { name: "title", weight: 0.7 },
+        { name: "description", weight: 0.5 },
+        { name: "content", weight: 0.3 },
+      ],
+      threshold: 0.6,
       includeMatches: true,
+      ignoreLocation: true, // Search everywhere in the document
     });
   }
 
@@ -152,11 +174,11 @@ export class McpDocsServer {
 
   private async handleGetDoc({ path: docPath }: { path: string }) {
     const normalized = docPath.replace(/^\//, "").replace(/\.md$/, "");
-    const doc = this.docsMap.get(normalized);
+    const doc = McpDocsServer.docsMap.get(normalized);
 
     if (!doc) {
       return this.error(
-        `Page not found: ${docPath}. Available paths: ${Array.from(this.docsMap.keys()).join(", ")}`
+        `Page not found: ${docPath}. Available paths: ${Array.from(McpDocsServer.docsMap.keys()).join(", ")}`
       );
     }
 
@@ -165,34 +187,74 @@ export class McpDocsServer {
   }
 
   private async handleSearchDocs({ query }: { query: string }) {
-    if (!this.fuse) return this.error("Search index not ready.");
+    if (!McpDocsServer.fuse) return this.error("Search index not ready.");
 
-    const results = this.fuse.search(query).slice(0, 10);
+    const results = McpDocsServer.fuse.search(query).slice(0, 15);
     if (results.length === 0) return this.success(`No results found for "${query}".`);
 
     const output = results.map(({ item }) => {
-      const snippet = this.getSnippet(item, query);
-      return `- **${item.title}** (${item.path})\n  *${snippet}*`;
-    }).join("\n\n");
+      const highlightedContent = this.getHighlightedSnippet(item, query);
+      const url = `https://mcp-ts.zonlabs.com/docs/${item.path}`;
+      
+      return [
+        `Title: ${item.title}`,
+        `Link: ${url}`,
+        `Page: ${item.path}`,
+        `Content: ${highlightedContent}`
+      ].join("\n");
+    }).join("\n\n---\n\n");
 
     return this.success(`Search results for "${query}":\n\n${output}`);
   }
 
-  private getSnippet(doc: DocPage, query: string): string {
-    if (doc.description) return doc.description;
+  /**
+   * Generates a snippet and highlights matching terms with <mark><b>
+   */
+  private getHighlightedSnippet(doc: DocPage, query: string): string {
+    const text = doc.content;
+    const q = query.toLowerCase();
+    const lowText = text.toLowerCase();
     
-    const idx = doc.content.toLowerCase().indexOf(query.toLowerCase());
-    if (idx === -1) return doc.content.substring(0, 100).trim() + "...";
+    let idx = lowText.indexOf(q);
+    let matchedTerm = query;
+
+    // If exact query not found, search for individual words
+    if (idx === -1) {
+      const words = q.split(/\s+/).filter(w => w.length > 3);
+      for (const word of words) {
+        idx = lowText.indexOf(word);
+        if (idx !== -1) {
+          matchedTerm = word;
+          break;
+        }
+      }
+    }
+
+    // Default to start of content if no match found
+    if (idx === -1) {
+      const base = doc.description || text;
+      return base.length > 150 ? base.substring(0, 150).trim() + "..." : base;
+    }
     
-    const start = Math.max(0, idx - 40);
-    const end = Math.min(doc.content.length, idx + 100);
-    return (start > 0 ? "..." : "") + doc.content.substring(start, end).trim() + "...";
+    const start = Math.max(0, idx - 60);
+    const end = Math.min(text.length, idx + 140);
+    let snippet = text.substring(start, end).replace(/\n/g, " ").trim();
+    
+    // Simple highlighting for the specific matched term
+    const regex = new RegExp(`(${this.escapeRegex(matchedTerm)})`, "gi");
+    snippet = snippet.replace(regex, "<mark><b>$1</b></mark>");
+    
+    return (start > 0 ? "..." : "") + snippet + (end < text.length ? "..." : "");
+  }
+
+  private escapeRegex(string: string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   // --- Helpers ---
 
   private async readJson(filename: string) {
-    const content = await fs.readFile(path.join(DOCS_DIR, filename), "utf-8");
+    const content = await readFile(path.join(DOCS_DIR, filename), { encoding: "utf-8" });
     return JSON.parse(content);
   }
 

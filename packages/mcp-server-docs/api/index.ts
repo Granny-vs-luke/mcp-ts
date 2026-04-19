@@ -1,9 +1,9 @@
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { createServer, McpDocsServer } from "../src/server.js";
+import { McpDocsServer } from "../dist/server.js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-// We use the wrapper instance for persistent state (doc index)
-const serverWrapper = new McpDocsServer();
+// We use a singleton just for initialization (shared statics in server.js)
+const initializer = new McpDocsServer();
 let initialized = false;
 
 /**
@@ -19,11 +19,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  // 2. Ensure server is initialized (only once per instance)
+  // 2. Ensure global index is initialized (only once per instance)
   if (!initialized) {
-    await serverWrapper.initialize();
+    await initializer.initialize();
     initialized = true;
   }
+
+  // 3. Create a fresh McpDocsServer instance for this specific connection
+  // This avoids the "Already connected to a transport" error in Vercel.
+  const instance = new McpDocsServer();
 
   try {
     const transport = new StreamableHTTPServerTransport({
@@ -37,18 +41,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     // Use the core McpServer instance from the wrapper
-    await serverWrapper.server.connect(transport);
+    await instance.server.connect(transport);
     
-    // 3. Handle the request
+    // 4. Handle the request
     await transport.handleRequest(req, res, req.body);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`[Vercel MCP Error] ${message}`);
+    const stack = error instanceof Error ? error.stack : "";
+    console.error(`[Vercel MCP Error] ${message}\n${stack}`);
 
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: "2.0",
-        error: { code: -32603, message: "Internal server error" },
+        error: { 
+          code: -32603, 
+          message: `Internal server error: ${message}`,
+          data: { stack } 
+        },
         id: null,
       });
     }
