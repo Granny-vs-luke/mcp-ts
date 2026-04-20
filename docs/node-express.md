@@ -105,4 +105,4 @@ REDIS_URL=redis://localhost:6379
 
 - [Next.js Integration](/nextjs)
 - [React Hook API](/react)
-- [Storage Overview](/storage/overview)
+- [Storage Overview](/storage-backends/overview)

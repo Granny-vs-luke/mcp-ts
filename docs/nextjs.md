@@ -164,7 +164,7 @@ export async function POST(req: Request) {
 }
 ```
 
-For more details, see the [AI SDK Adapter documentation](/adapters/ai-sdk).
+For more details, see the [AI SDK Adapter documentation](/ai-adapters/ai-sdk).
 
 ## Pages Router
 

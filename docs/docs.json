@@ -78,27 +78,27 @@
                 ]
               },
               {
-                "group": "Storage",
+                "group": "Storage Backends",
                 "icon": "database",
                 "expanded": false,
                 "pages": [
-                  "storage/overview",
-                  "storage/redis",
-                  "storage/supabase",
-                  "storage/file-system",
-                  "storage/in-memory"
+                  "storage-backends/overview",
+                  "storage-backends/redis",
+                  "storage-backends/supabase",
+                  "storage-backends/file-system",
+                  "storage-backends/in-memory"
                 ]
               },
               {
-                "group": "Adapters",
+                "group": "AI Adapters",
                 "icon": "plug",
                 "expanded": false,
                 "pages": [
-                  "adapters/overview",
-                  "adapters/ai-sdk",
-                  "adapters/langchain",
-                  "adapters/mastra",
-                  "adapters/agui"
+                  "ai-adapters/overview",
+                  "ai-adapters/ai-sdk",
+                  "ai-adapters/langchain",
+                  "ai-adapters/mastra",
+                  "ai-adapters/agui"
                 ]
               },
               "mcp-apps"

@@ -98,7 +98,7 @@ The library uses the following priority:
 5. **Auto-detect SQLite**: If `MCP_TS_STORAGE_SQLITE_PATH` is present, use SQLite
 6. **Default**: Fall back to In-Memory storage
 
-See [Storage Overview](/storage/overview) for more details.
+See [Storage Overview](/storage-backends/overview) for more details.
 
 ## Verify Installation
 
@@ -148,7 +148,7 @@ If using TypeScript, ensure your `tsconfig.json` includes:
 
 ## Next Steps
 
-- [Storage Overvew](/storage/overview) - Detailed backend comparison
+- [Storage Overvew](/storage-backends/overview) - Detailed backend comparison
 - [Next.js Integration](/nextjs) - Set up with Next.js
 - [React Hook](/react) - Use the React hook
 - [API Reference](/reference/server) - Explore the API
