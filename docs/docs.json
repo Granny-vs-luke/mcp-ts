@@ -171,5 +171,8 @@
   },
   "footerSocials": {
     "github": "https://github.com/zonlabs/mcp-ts"
+  },
+  "background": {
+    "decoration": "windows"
   }
 }
