@@ -2,7 +2,6 @@
 title: "File System"
 sidebarTitle: "File System"
 description: "Local persistence using the standard file system."
-icon: "file"
 ---
 
 **Perfect for local development with persistent sessions across restarts.**

@@ -140,5 +140,5 @@ const getWeather = async (sessionId: string) => {
 
 ## Next Steps
 
-- [API Reference](/api-reference/server) - Complete API reference
+- [API Reference](/reference/server) - Complete API reference
 - [Examples](https://github.com/zonlabs/mcp-ts/tree/main/examples) - More code examples

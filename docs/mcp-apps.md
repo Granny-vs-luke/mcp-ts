@@ -159,7 +159,7 @@ A resource URI may come from:
 
 When the client receives tool discovery events, `useMcp` calls `SSEClient.preloadToolUiResources(sessionId, tools)` so `ui://` / `mcp-app://` HTML is often already cached before the user opens a tool.
 
-For advanced use, `AppHost` also exposes `preload(tools)` (see [API reference](/api-reference/client#apphost-class)).
+For advanced use, `AppHost` also exposes `preload(tools)` (see [API reference](/reference/client#apphost-class)).
 
 ## API summary
 
@@ -202,5 +202,5 @@ Returns `{ toolName, resourceUri, sessionId }` when the tool has a UI URI. Use f
 ## Next steps
 
 - [React guide](/react) — Connection setup and `useMcp`.
-- [API reference](/api-reference/client) — Detailed technical documentation.
+- [API reference](/reference/client) — Detailed technical documentation.
 - [MCP App host comparison](/mcp-app-host-comparison) — `mcp-ts` vs `@mcp-ui/client`.

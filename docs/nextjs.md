@@ -359,5 +359,5 @@ export function McpClient({ identity }: { identity: string }) {
 ## Next Steps
 
 - [React Hook API](/react) - Detailed hook documentation
-- [API Reference](/api-reference/server) - Complete API reference
+- [API Reference](/reference/server) - Complete API reference
 - [Examples](https://github.com/zonlabs/mcp-ts/tree/main/examples) - More code examples

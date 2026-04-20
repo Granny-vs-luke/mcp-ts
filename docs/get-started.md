@@ -79,4 +79,4 @@ REDIS_URL=redis://localhost:6379
 
 - Integrate with [AI SDK](/adapters/ai-sdk)
 - Configure [Production Storage](/storage/redis)
-- Explore the [API Reference](/api-reference/server)
+- Explore the [API Reference](/reference/server)

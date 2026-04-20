@@ -334,5 +334,5 @@ import type {
 ## Next Steps
 
 - [MCP Apps](/mcp-apps) — Interactive tool UIs (`McpAppRenderer`, sandbox proxy, AppBridge)
-- [API Reference](/api-reference/server) - Complete API documentation
+- [API Reference](/reference/server) - Complete API documentation
 - [Examples](https://github.com/zonlabs/mcp-ts/tree/main/examples) - More practical examples

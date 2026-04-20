@@ -2,7 +2,6 @@
 title: "Storage Overview"
 sidebarTitle: "Overview"
 description: "Configure persistence for MCP sessions across multiple backends."
-icon: "database"
 ---
 
 The library supports multiple storage backends for session persistence, allowing you to choose the best option for your deployment environment.

@@ -2,7 +2,6 @@
 title: "Mastra"
 sidebarTitle: "Mastra"
 description: "High-performance MCP integration for the Mastra framework."
-icon: "bolt"
 ---
 
 The `MastraAdapter` converts MCP tools into the format expected by the [Mastra](https://mastra.ai) framework.
@@ -34,4 +33,4 @@ const agent = new Agent({
 
 ## API Reference
 
-See the [MastraAdapter API Reference](/api-reference/server#adapters) for more details.
+See the [MastraAdapter API Reference](/reference/server#adapters) for more details.

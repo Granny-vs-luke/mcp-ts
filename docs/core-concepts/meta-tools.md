@@ -2,7 +2,6 @@
 title: "Meta Tools"
 sidebarTitle: "Meta Tools"
 description: "Technical reference for the system tools that power on-demand tool discovery."
-icon: "wand-magic-sparkles"
 ---
 
 When the `ToolRouter` is set to the `search` strategy, it hides your real MCP tools and instead exposes a small set of **Meta-Tools**. 

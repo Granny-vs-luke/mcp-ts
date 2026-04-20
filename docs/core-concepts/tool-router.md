@@ -2,7 +2,6 @@
 title: "Tool Router"
 sidebarTitle: "Tool Router"
 description: "Intelligent middleware for managing large tool catalogs and context window optimization."
-icon: "route"
 ---
 
 The **Tool Router** is a powerful middleware layer in `mcp-ts` designed to solve the problem of "context window bloat." 

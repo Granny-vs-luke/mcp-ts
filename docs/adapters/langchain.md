@@ -2,7 +2,6 @@
 title: "LangChain"
 sidebarTitle: "LangChain"
 description: "Connect LangChain agents to any MCP server."
-icon: "link"
 ---
 
 The `LangChainAdapter` converts MCP tools into LangChain's `DynamicStructuredTool` format.
@@ -45,4 +44,4 @@ const adapter = new LangChainAdapter(client, {
 
 ## API Reference
 
-See the [LangChainAdapter API Reference](/api-reference/server#adapters) for more details.
+See the [LangChainAdapter API Reference](/reference/server#adapters) for more details.

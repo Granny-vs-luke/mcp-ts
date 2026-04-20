@@ -107,7 +107,7 @@
           {
             "group": "Resources",
             "pages": [
-              "mcp",
+              "modelcontextprotocol",
               "faq"
             ]
           }
@@ -134,21 +134,21 @@
           {
             "group": "Server-Side",
             "pages": [
-              "api-reference/server",
-              "api-reference/storage",
-              "api-reference/tool-router"
+              "reference/server",
+              "reference/storage",
+              "reference/tool-router"
             ]
           },
           {
             "group": "Client-Side",
             "pages": [
-              "api-reference/client"
+              "reference/client"
             ]
           },
           {
             "group": "Other",
             "pages": [
-              "api-reference/types"
+              "reference/types"
             ]
           }
         ]

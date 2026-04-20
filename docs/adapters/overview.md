@@ -2,7 +2,6 @@
 title: "Adapters Overview"
 sidebarTitle: "Overview"
 description: "Seamlessly integrate MCP into your favorite AI frameworks."
-icon: "plug"
 ---
 
 Adapters transforms MCP tools into framework-specific formats for seamless integration with AI frameworks.

@@ -151,4 +151,4 @@ If using TypeScript, ensure your `tsconfig.json` includes:
 - [Storage Overvew](/storage/overview) - Detailed backend comparison
 - [Next.js Integration](/nextjs) - Set up with Next.js
 - [React Hook](/react) - Use the React hook
-- [API Reference](/api-reference/server) - Explore the API
+- [API Reference](/reference/server) - Explore the API
