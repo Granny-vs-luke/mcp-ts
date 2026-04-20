@@ -61,8 +61,72 @@ If you prefer manual setup, copy the SQL from the [migration file](https://githu
 - **PostgreSQL persistence** with JSONB support
 - **Row Level Security (RLS)** for tenant isolation
 - **Automatic management** of `updated_at` and `expires_at`
+- **Automatic session cleanup** via `pg_cron` — expired sessions are swept every 5 minutes
 - **Cloud-native** and serverless friendly
 - **Application-level AES-256-GCM encryption** for `tokens` and `headers`
+
+## Session Cleanup
+
+When a client disconnects unexpectedly or a connection error occurs during setup, session data can become stale in the database. To prevent leftover data from accumulating, `mcp-ts` includes a migration that sets up automatic cleanup jobs using PostgreSQL's [`pg_cron`](https://supabase.com/docs/guides/database/extensions/pg_cron) extension.
+
+<Info>
+The `pg_cron` extension is available on all Supabase plans (including Free). The cleanup migrations are included automatically when you run `npx mcp-ts supabase-init`.
+</Info>
+
+### Session Lifecycle Management
+
+`mcp-ts` implements a multi-stage automated cleanup strategy to keep your database lean while preserving long-lived automation credentials:
+
+**Stage 1: Short-term Transient Purge** (Every 5 minutes)
+
+Cleans up "zombie" records that failed during initialization or auth. These are sessions where `active` is not `true` and the short 10-minute TTL has passed.
+
+```sql
+DELETE FROM mcp_sessions WHERE expires_at < now() AND active IS NOT TRUE;
+```
+
+**Stage 2: Long-term Dormancy Eviction** (Daily at midnight UTC)
+
+A safety net for successfully established sessions (`active = true`) that have been completely untouched for 30+ days. This ensures that even "active" sessions don't persist forever if they are genuinely abandoned.
+
+```sql
+DELETE FROM mcp_sessions WHERE active = true AND updated_at < now() - interval '30 days';
+```
+
+### How It Works
+
+1. **Transient State**: All new sessions start with `active: false` and a restricted 10-minute TTL.
+2. **Promotion**: Upon successful handshake or OAuth completion, the session is promoted to `active: true` with a 12-hour sliding-window `expires_at`.
+3. **Persistence**: Active sessions are **explicitly excluded** from the high-frequency 5-minute sweep. This makes them safe for persistent automation and scheduled workflows.
+4. **Eviction**: If an active session is not used or refreshed for 30 consecutive days, it is considered dormant and is evicted by the daily sweep.
+
+### Customizing the Lifecycle
+
+You can modify the cron schedules directly in your Supabase SQL editor:
+
+```sql
+-- Adjust the Stage 1 frequency (e.g., to 15 minutes)
+SELECT cron.alter_job(
+    (SELECT jobid FROM cron.job WHERE jobname = 'cleanup-transient-sessions'),
+    schedule := '*/15 * * * *'
+);
+
+-- Adjust the Stage 2 dormancy threshold (e.g., to 90 days)
+SELECT cron.alter_job(
+    (SELECT jobid FROM cron.job WHERE jobname = 'cleanup-dormant-sessions'),
+    schedule := '0 0 * * *',
+    command := $$DELETE FROM public.mcp_sessions WHERE active = true AND updated_at < now() - interval '90 days';$$
+);
+```
+
+### Disabling Management
+
+To disable the automated lifecycle management entirely:
+
+```sql
+SELECT cron.unschedule('cleanup-transient-sessions');
+SELECT cron.unschedule('cleanup-dormant-sessions');
+```
 
 ## Usage
 

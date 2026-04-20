@@ -537,11 +537,17 @@ export class MCPClient {
               : `OAuth authorization URL not available: ${detail}`;
           this.emitError(message, 'auth');
           this.emitStateChange('FAILED');
+          
+          // Proactive Cleanup: This session has reached a terminal failure state. 
+          // We remove it now to ensure the database remains lean, bypassing the 
+          // automated lifecycle sweep.
           try {
             await storage.removeSession(this.identity, this.sessionId);
           } catch {
-            // best-effort cleanup
+            // Non-blocking: Proactive cleanup failures are suppressed to prioritize 
+            // the original error context.
           }
+          
           throw new Error(message);
         }
 
@@ -571,6 +577,17 @@ export class MCPClient {
       const errorMessage = error instanceof Error ? error.message : 'Connection failed';
       this.emitError(errorMessage, 'connection');
       this.emitStateChange('FAILED');
+
+      // Terminal Handshake Failure: The connection could not be established.
+      // We proactively purge the transient session record here to keep the 
+      // storage clear of non-functional "zombie" entries.
+      try {
+        await storage.removeSession(this.identity, this.sessionId);
+      } catch {
+        // Non-blocking: Cleanup is performed on a best-effort basis and should 
+        // not interfere with the primary error propagation.
+      }
+
       throw error;
     }
   }
