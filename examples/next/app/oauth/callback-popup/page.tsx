@@ -6,33 +6,77 @@ import { useSearchParams } from "next/navigation";
 function PopupCallbackContent() {
   const searchParams = useSearchParams();
   const code = searchParams.get("code");
-  const [status, setStatus] = useState("Processing authentication...");
+  const state = searchParams.get("state");
+  const [status, setStatus] = useState("Authorization received. Finishing sign-in...");
+  const openerMissing =
+    typeof window !== "undefined" ? !window.opener : false;
+  const missingCode = !code;
+  const missingState = !state;
+  const blockingStatus = openerMissing
+    ? "Error: No opener window found. This window should be opened from the app."
+    : missingCode
+      ? "Error: No authorization code received."
+      : missingState
+        ? "Error: No OAuth state received."
+        : null;
 
   useEffect(() => {
-    if (code) {
-      if (window.opener) {
-        try {
-          window.opener.postMessage(
-            { type: "MCP_AUTH_CODE", code },
-            window.location.origin,
-          );
-          setStatus("Authentication successful! Closing window...");
-          setTimeout(() => {
-            window.close();
-          }, 1000);
-        } catch (err) {
-          console.error("Failed to communicate with opener:", err);
-          setStatus("Error: Could not communicate with main window.");
-        }
-      } else {
-        setStatus(
-          "Error: No opener window found. This window should be opened from the app.",
-        );
-      }
-    } else {
-      setStatus("Error: No authorization code received.");
+    if (blockingStatus) {
+      return;
     }
-  }, [code]);
+
+    let closed = false;
+
+    const handleResult = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      if (event.data?.type !== "MCP_AUTH_RESULT") {
+        return;
+      }
+
+      if (event.data.sessionId !== state) {
+        return;
+      }
+
+      if (event.data.success) {
+        setStatus("Authorization complete. Closing window...");
+        window.removeEventListener("message", handleResult);
+        closed = true;
+        setTimeout(() => {
+          window.close();
+        }, 700);
+        return;
+      }
+
+      const message =
+        typeof event.data.error === "string" && event.data.error.length > 0
+          ? event.data.error
+          : "Failed to complete authorization.";
+      setStatus(`Authorization failed: ${message}`);
+    };
+
+    window.addEventListener("message", handleResult);
+
+    try {
+      window.opener.postMessage(
+        { type: "MCP_AUTH_CODE", code, sessionId: state },
+        window.location.origin,
+      );
+    } catch (err) {
+      console.error("Failed to communicate with opener:", err);
+      window.setTimeout(() => {
+        setStatus("Error: Could not communicate with main window.");
+      }, 0);
+    }
+
+    return () => {
+      if (!closed) {
+        window.removeEventListener("message", handleResult);
+      }
+    };
+  }, [blockingStatus, code, state]);
 
   return (
     <div
@@ -58,7 +102,7 @@ function PopupCallbackContent() {
         }}
       >
         <h2>MCP Authentication</h2>
-        <p>{status}</p>
+        <p>{blockingStatus ?? status}</p>
       </div>
     </div>
   );

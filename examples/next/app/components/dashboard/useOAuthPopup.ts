@@ -1,10 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Connection } from './types';
 
 export function useOAuthPopup(
     connections: Connection[],
-    finishAuth: (sessionId: string, code: string) => Promise<any>
+    finishAuth: (sessionId: string, code: string) => Promise<unknown>
 ) {
+    const pendingPopupsRef = useRef<Map<string, WindowProxy>>(new Map());
+
     useEffect(() => {
         const handleMessage = async (event: MessageEvent) => {
             // Security check: ensure message is from same origin
@@ -16,29 +18,62 @@ export function useOAuthPopup(
             if (event.data?.type === 'MCP_AUTH_CODE' && event.data.code) {
                 console.log('Received auth code message', event.data);
 
-                // Find the authenticating session (should be the one in 'AUTHENTICATING' state)
-                // connections is typed from useMcp, needs to match or we cast
-                let authenticatingSession = connections.find(c => c.state === 'AUTHENTICATING');
+                const popupWindow = event.source && 'postMessage' in event.source
+                    ? event.source as WindowProxy
+                    : null;
+                const targetSessionId = typeof event.data.sessionId === 'string' ? event.data.sessionId : '';
 
-                if (!authenticatingSession) {
-                    console.warn('No session found in AUTHENTICATING state. Checking FAILED state...');
-                    // Fallback: Check for sessions that failed with OAuth error
-                    // Sometimes the error event might arrive after auth_required and overwrite the state
-                    authenticatingSession = connections.find(c => c.state === 'FAILED' && (c.error?.toLowerCase().includes('oauth') || c.error?.toLowerCase().includes('auth')));
+                if (!targetSessionId) {
+                    console.error('OAuth callback message missing sessionId/state', event.data);
+                    popupWindow?.postMessage(
+                        {
+                            type: 'MCP_AUTH_RESULT',
+                            success: false,
+                            error: 'Missing OAuth session identifier',
+                        },
+                        window.location.origin,
+                    );
+                    return;
                 }
 
-                if (authenticatingSession) {
-                    console.log('Found authenticating session:', authenticatingSession.sessionId);
-                    try {
-                        await finishAuth(authenticatingSession.sessionId, event.data.code);
-                        console.log('Finished auth successfully');
-                    } catch (err) {
-                        console.error('Failed to finish auth:', err);
-                        // We might want to show this error somewhere global or in the specific connection item
-                        // For now connection error state handles it if useMcp updates it
-                    }
-                } else {
-                    console.error('Could not find any session to apply auth code to. Available connections:', connections);
+                // Bind the code to the exact OAuth state/session returned by the provider,
+                // rather than guessing based on whichever connection is currently authenticating.
+                const targetSession = connections.find((connection) => connection.sessionId === targetSessionId);
+
+                if (!targetSession) {
+                    console.error('Could not find session for OAuth callback state:', targetSessionId, connections);
+                    popupWindow?.postMessage(
+                        {
+                            type: 'MCP_AUTH_RESULT',
+                            sessionId: targetSessionId,
+                            success: false,
+                            error: 'OAuth session not found in the current client state',
+                        },
+                        window.location.origin,
+                    );
+                    return;
+                }
+
+                console.log('Finishing auth for session:', targetSession.sessionId);
+                if (popupWindow) {
+                    pendingPopupsRef.current.set(targetSession.sessionId, popupWindow);
+                }
+
+                try {
+                    await finishAuth(targetSession.sessionId, event.data.code);
+                } catch (err) {
+                    pendingPopupsRef.current.delete(targetSession.sessionId);
+                    const message = err instanceof Error ? err.message : 'Failed to finish auth';
+                    console.error('Failed to finish auth:', err);
+                    popupWindow?.postMessage(
+                        {
+                            type: 'MCP_AUTH_RESULT',
+                            sessionId: targetSession.sessionId,
+                            success: false,
+                            error: message,
+                        },
+                        window.location.origin,
+                    );
                 }
             }
         };
@@ -46,4 +81,39 @@ export function useOAuthPopup(
         window.addEventListener('message', handleMessage);
         return () => window.removeEventListener('message', handleMessage);
     }, [connections, finishAuth]);
+
+    useEffect(() => {
+        for (const connection of connections) {
+            const popupWindow = pendingPopupsRef.current.get(connection.sessionId);
+            if (!popupWindow) {
+                continue;
+            }
+
+            if (connection.state === 'AUTHENTICATED') {
+                popupWindow.postMessage(
+                    {
+                        type: 'MCP_AUTH_RESULT',
+                        sessionId: connection.sessionId,
+                        success: true,
+                    },
+                    window.location.origin,
+                );
+                pendingPopupsRef.current.delete(connection.sessionId);
+                continue;
+            }
+
+            if (connection.state === 'FAILED') {
+                popupWindow.postMessage(
+                    {
+                        type: 'MCP_AUTH_RESULT',
+                        sessionId: connection.sessionId,
+                        success: false,
+                        error: connection.error || 'Failed to complete authorization',
+                    },
+                    window.location.origin,
+                );
+                pendingPopupsRef.current.delete(connection.sessionId);
+            }
+        }
+    }, [connections]);
 }
