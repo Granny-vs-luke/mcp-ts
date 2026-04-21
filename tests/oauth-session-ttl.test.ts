@@ -38,7 +38,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
     _setStorageInstanceForTesting(null);
   });
 
-  test('non-oauth server: initial short TTL is promoted to 12h only once', async () => {
+  test('non-oauth server: each successful connect refreshes the active session TTL', async () => {
     const mockStorage = new TrackingMemoryStorage();
     _setStorageInstanceForTesting(mockStorage);
 
@@ -85,7 +85,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
     const longUpdates = mockStorage.updateCalls.filter(c => c.ttl === SESSION_TTL_SECONDS);
 
     expect(shortCreates).toHaveLength(1);
-    expect(longUpdates).toHaveLength(1);
+    expect(longUpdates).toHaveLength(2);
 
     const session = await storage.getSession('user-1', 's-1');
     expect(session?.active).toBe(true);

@@ -500,16 +500,10 @@ export class MCPClient {
       this.emitStateChange('CONNECTED');
       this.emitProgress('Connected successfully');
 
-      // Promote short-lived OAuth-pending session TTL to long-lived active TTL once.
-      // Also persist when transport negotiation changed the effective transport.
-      const existingSession = await storage.getSession(this.identity, this.sessionId);
-      const needsTransportUpdate = !existingSession || existingSession.transportType !== this.transportType;
-      const needsTtlPromotion = !existingSession || existingSession.active !== true;
-
-      if (needsTransportUpdate || needsTtlPromotion) {
-        console.log(`[MCPClient] Saving session ${this.sessionId} with 12hr TTL (connect success)`);
-        await this.saveSession(SESSION_TTL_SECONDS, true);
-      }
+      // Refresh session metadata on every successful connect so active sessions
+      // record ongoing usage and don't look dormant to storage cleanup jobs.
+      console.log(`[MCPClient] Saving session ${this.sessionId} with 12hr TTL (connect success)`);
+      await this.saveSession(SESSION_TTL_SECONDS, true);
     } catch (error) {
       /** Handle Authentication Errors */
       if (
@@ -578,13 +572,15 @@ export class MCPClient {
       this.emitError(errorMessage, 'connection');
       this.emitStateChange('FAILED');
 
-      // Terminal Handshake Failure: The connection could not be established.
-      // We proactively purge the transient session record here to keep the 
-      // storage clear of non-functional "zombie" entries.
+      // Terminal Handshake Failure: only purge transient sessions. Active
+      // sessions may still hold valid credentials for a later reconnect.
       try {
-        await storage.removeSession(this.identity, this.sessionId);
+        const existingSession = await storage.getSession(this.identity, this.sessionId);
+        if (!existingSession || existingSession.active !== true) {
+          await storage.removeSession(this.identity, this.sessionId);
+        }
       } catch {
-        // Non-blocking: Cleanup is performed on a best-effort basis and should 
+        // Non-blocking: Cleanup is performed on a best-effort basis and should
         // not interfere with the primary error propagation.
       }
 

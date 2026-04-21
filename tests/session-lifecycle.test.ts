@@ -65,13 +65,24 @@ test.describe('Session Lifecycle Management', () => {
         expect(session?.active).toBe(true);
     });
 
-    test('Scenario 2: Proactive Cleanup on Generic Error', async () => {
+    test('Scenario 2: Proactive Cleanup on Generic Error for transient session', async () => {
         const client = new MCPClient({
             identity,
             sessionId,
             serverId,
             serverUrl,
             callbackUrl,
+        });
+
+        await mockStorage.createSession({
+            sessionId,
+            identity,
+            serverId,
+            serverUrl,
+            callbackUrl,
+            transportType: 'streamable_http',
+            createdAt: Date.now(),
+            active: false,
         });
 
         // Mock to throw generic error
@@ -94,6 +105,47 @@ test.describe('Session Lifecycle Management', () => {
 
         await expect(client.connect()).rejects.toThrow('ECONNREFUSED');
         expect(removeSessionCalled).toBe(true);
+    });
+
+    test('Scenario 2b: Generic reconnect error preserves active session credentials', async () => {
+        const client = new MCPClient({
+            identity,
+            sessionId,
+            serverId,
+            serverUrl,
+            callbackUrl,
+        });
+
+        await mockStorage.createSession({
+            sessionId,
+            identity,
+            serverId,
+            serverUrl,
+            callbackUrl,
+            transportType: 'streamable_http',
+            createdAt: Date.now(),
+            active: true,
+        });
+
+        (client as any).initialize = async function() {
+            this.oauthProvider = {
+                tokens: async () => ({ access_token: 'valid' }),
+                isTokenExpired: () => false
+            };
+            this.client = { connect: async () => {} };
+        };
+        (client as any).getValidTokens = async () => true;
+        (client as any).tryConnect = async () => {
+            throw new Error('ECONNREFUSED');
+        };
+
+        let removeSessionCalled = false;
+        mockStorage.removeSession = async () => {
+            removeSessionCalled = true;
+        };
+
+        await expect(client.connect()).rejects.toThrow('ECONNREFUSED');
+        expect(removeSessionCalled).toBe(false);
     });
 
     test('Scenario 3: Proactive Cleanup on Terminal Auth Failure (no URL)', async () => {
