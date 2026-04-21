@@ -619,6 +619,7 @@ export class MCPClient {
 
     let lastError: unknown;
     let tokensExchanged = false;
+    let authenticatedStateEmitted = false;
 
     for (const currentType of transportsToTry) {
       const isLastAttempt = currentType === transportsToTry[transportsToTry.length - 1];
@@ -636,10 +637,13 @@ export class MCPClient {
           this.emitProgress(`Tokens already exchanged, skipping auth step for ${currentType}...`);
         }
 
+        if (!authenticatedStateEmitted) {
+          this.emitStateChange('AUTHENTICATED');
+          authenticatedStateEmitted = true;
+        }
+
         /** Success! Update transport type */
         this.transportType = currentType;
-
-        this.emitStateChange('AUTHENTICATED');
         this.emitProgress('Creating authenticated client...');
 
         this.client = new Client(

@@ -194,4 +194,75 @@ test.describe('MCPClient session TTL lifecycle', () => {
     const session = await storage.getSession('user-3', 's-3');
     expect(session?.active).toBe(true);
   });
+
+  test('oauth finishAuth emits AUTHENTICATED only once across transport fallback', async () => {
+    const mockStorage = new TrackingMemoryStorage();
+    _setStorageInstanceForTesting(mockStorage);
+
+    (MCPClient.prototype as any).initialize = async function () {
+      (this as any).oauthProvider = { authUrl: 'https://auth.example.com' };
+
+      const identity = (this as any).identity;
+      const sessionId = (this as any).sessionId;
+      const existing = await storage.getSession(identity, sessionId);
+
+      if (!existing) {
+        await storage.createSession({
+          sessionId,
+          identity,
+          serverId: (this as any).serverId,
+          serverName: (this as any).serverName,
+          serverUrl: (this as any).serverUrl,
+          callbackUrl: (this as any).callbackUrl,
+          transportType: (this as any).transportType || 'streamable_http',
+          createdAt: Date.now(),
+          active: false,
+        }, Math.floor(STATE_EXPIRATION_MS / 1000));
+      }
+    };
+
+    const connectAttempts: string[] = [];
+    const finishAuthAttempts: string[] = [];
+
+    (MCPClient.prototype as any).getTransport = function (type: string) {
+      return {
+        finishAuth: async () => {
+          finishAuthAttempts.push(type);
+        },
+      };
+    };
+
+    (Client.prototype as any).connect = async function (transport: any) {
+      const attemptType = connectAttempts.length === 0 ? 'streamable_http' : 'sse';
+      connectAttempts.push(attemptType);
+
+      if (attemptType === 'streamable_http') {
+        throw new Error('Method Not Allowed');
+      }
+
+      return transport;
+    };
+
+    const client = new MCPClient({
+      identity: 'user-4',
+      sessionId: 's-4',
+      serverId: 'srv-4',
+      serverName: 'Server Four',
+      serverUrl: 'https://example.com/mcp',
+      callbackUrl: 'https://app.example.com/callback',
+    });
+
+    const states: string[] = [];
+    client.onConnectionEvent((event) => {
+      if (event.type === 'state_changed') {
+        states.push(event.state);
+      }
+    });
+
+    await client.finishAuth('auth-code');
+
+    expect(finishAuthAttempts).toEqual(['streamable_http']);
+    expect(connectAttempts).toEqual(['streamable_http', 'sse']);
+    expect(states.filter((state) => state === 'AUTHENTICATED')).toHaveLength(1);
+  });
 });
