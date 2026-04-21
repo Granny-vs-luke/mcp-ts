@@ -642,8 +642,6 @@ export class MCPClient {
           authenticatedStateEmitted = true;
         }
 
-        /** Success! Update transport type */
-        this.transportType = currentType;
         this.emitProgress('Creating authenticated client...');
 
         this.client = new Client(
@@ -666,6 +664,9 @@ export class MCPClient {
 
         /** We explicitly try to connect with the transport we just auth'd with first */
         await this.client.connect(this.transport);
+
+        /** Connection succeeded — lock in the transport type */
+        this.transportType = currentType;
 
         this.emitStateChange('CONNECTED');
         // Update session with 12hr TTL after successful OAuth
