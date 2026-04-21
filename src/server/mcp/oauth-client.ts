@@ -500,16 +500,10 @@ export class MCPClient {
       this.emitStateChange('CONNECTED');
       this.emitProgress('Connected successfully');
 
-      // Promote short-lived OAuth-pending session TTL to long-lived active TTL once.
-      // Also persist when transport negotiation changed the effective transport.
-      const existingSession = await storage.getSession(this.identity, this.sessionId);
-      const needsTransportUpdate = !existingSession || existingSession.transportType !== this.transportType;
-      const needsTtlPromotion = !existingSession || existingSession.active !== true;
-
-      if (needsTransportUpdate || needsTtlPromotion) {
-        console.log(`[MCPClient] Saving session ${this.sessionId} with 12hr TTL (connect success)`);
-        await this.saveSession(SESSION_TTL_SECONDS, true);
-      }
+      // Refresh session metadata on every successful connect so active sessions
+      // record ongoing usage and don't look dormant to storage cleanup jobs.
+      console.log(`[MCPClient] Saving session ${this.sessionId} with 12hr TTL (connect success)`);
+      await this.saveSession(SESSION_TTL_SECONDS, true);
     } catch (error) {
       /** Handle Authentication Errors */
       if (
@@ -537,11 +531,17 @@ export class MCPClient {
               : `OAuth authorization URL not available: ${detail}`;
           this.emitError(message, 'auth');
           this.emitStateChange('FAILED');
+          
+          // Proactive Cleanup: This session has reached a terminal failure state. 
+          // We remove it now to ensure the database remains lean, bypassing the 
+          // automated lifecycle sweep.
           try {
             await storage.removeSession(this.identity, this.sessionId);
           } catch {
-            // best-effort cleanup
+            // Non-blocking: Proactive cleanup failures are suppressed to prioritize 
+            // the original error context.
           }
+          
           throw new Error(message);
         }
 
@@ -571,6 +571,19 @@ export class MCPClient {
       const errorMessage = error instanceof Error ? error.message : 'Connection failed';
       this.emitError(errorMessage, 'connection');
       this.emitStateChange('FAILED');
+
+      // Terminal Handshake Failure: only purge transient sessions. Active
+      // sessions may still hold valid credentials for a later reconnect.
+      try {
+        const existingSession = await storage.getSession(this.identity, this.sessionId);
+        if (!existingSession || existingSession.active !== true) {
+          await storage.removeSession(this.identity, this.sessionId);
+        }
+      } catch {
+        // Non-blocking: Cleanup is performed on a best-effort basis and should
+        // not interfere with the primary error propagation.
+      }
+
       throw error;
     }
   }
@@ -606,6 +619,7 @@ export class MCPClient {
 
     let lastError: unknown;
     let tokensExchanged = false;
+    let authenticatedStateEmitted = false;
 
     for (const currentType of transportsToTry) {
       const isLastAttempt = currentType === transportsToTry[transportsToTry.length - 1];
@@ -623,10 +637,11 @@ export class MCPClient {
           this.emitProgress(`Tokens already exchanged, skipping auth step for ${currentType}...`);
         }
 
-        /** Success! Update transport type */
-        this.transportType = currentType;
+        if (!authenticatedStateEmitted) {
+          this.emitStateChange('AUTHENTICATED');
+          authenticatedStateEmitted = true;
+        }
 
-        this.emitStateChange('AUTHENTICATED');
         this.emitProgress('Creating authenticated client...');
 
         this.client = new Client(
@@ -649,6 +664,9 @@ export class MCPClient {
 
         /** We explicitly try to connect with the transport we just auth'd with first */
         await this.client.connect(this.transport);
+
+        /** Connection succeeded — lock in the transport type */
+        this.transportType = currentType;
 
         this.emitStateChange('CONNECTED');
         // Update session with 12hr TTL after successful OAuth

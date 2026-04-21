@@ -363,9 +363,24 @@ export class SSEConnectionManager {
       return existing;
     }
 
+    const session = await storage.getSession(this.identity, sessionId);
+    if (!session) {
+      throw new Error('Session not found');
+    }
+
     const client = new MCPClient({
       identity: this.identity,
       sessionId,
+      // These fields are optional in MCPClient, but when rehydrating a known
+      // stored session on the server we pass them explicitly to preserve the
+      // original transport/connection metadata instead of relying on lazy
+      // reloading during initialize().
+      serverId: session.serverId,
+      serverName: session.serverName,
+      serverUrl: session.serverUrl,
+      callbackUrl: session.callbackUrl,
+      transportType: session.transportType,
+      headers: session.headers,
     });
 
     // Subscribe to events before connecting
@@ -437,6 +452,16 @@ export class SSEConnectionManager {
       const client = new MCPClient({
         identity: this.identity,
         sessionId,
+        // These fields are optional in MCPClient, but when rehydrating a known
+        // stored session on the server we pass them explicitly to preserve the
+        // original transport/connection metadata instead of relying on lazy
+        // reloading during initialize().
+        serverId: session.serverId,
+        serverName: session.serverName,
+        serverUrl: session.serverUrl,
+        callbackUrl: session.callbackUrl,
+        transportType: session.transportType,
+        headers: session.headers,
         ...clientMetadata,
       });
 
@@ -478,6 +503,20 @@ export class SSEConnectionManager {
       const client = new MCPClient({
         identity: this.identity,
         sessionId,
+        // These fields are optional in MCPClient, but when rehydrating a known
+        // stored session on the server we pass them explicitly to preserve the
+        // original connection metadata instead of relying on lazy
+        // reloading during initialize().
+        serverId: session.serverId,
+        serverName: session.serverName,
+        serverUrl: session.serverUrl,
+        callbackUrl: session.callbackUrl,
+        // NOTE: transportType is intentionally omitted here.
+        // The session's stored transportType is a placeholder ('streamable_http')
+        // set before transport negotiation. Omitting it lets MCPClient auto-negotiate
+        // (try streamable_http → SSE fallback), which is critical for servers like
+        // Neon that only support SSE transport.
+        headers: session.headers,
       });
 
       client.onConnectionEvent((event) => this.emitConnectionEvent(event));

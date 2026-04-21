@@ -319,6 +319,116 @@ function McpWithAuth() {
 }
 ```
 
+## OAuth UI Patterns
+
+OAuth handling in the React client is built around two core primitives:
+
+- `useMcp({ onRedirect })` decides how auth navigation happens
+- `finishAuth(sessionId, code)` completes the authorization code exchange
+
+The popup helpers are optional convenience utilities on top of that. You can:
+
+- use the shared popup helpers as-is
+- bring your own popup UI
+- skip popups entirely and use a normal callback page
+
+### Turnkey popup flow
+
+```tsx
+'use client';
+
+import { Suspense, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
+import {
+  createOAuthPopupRedirectHandler,
+  McpOAuthCallbackContent,
+  McpOAuthCallbackFallback,
+  useMcp,
+  useMcpOAuthPopup,
+} from '@mcp-ts/sdk/client/react';
+
+function App() {
+  const handleOAuthRedirect = useMemo(
+    () => createOAuthPopupRedirectHandler(),
+    [],
+  );
+
+  const mcpClient = useMcp({
+    url: '/api/mcp',
+    identity: 'user-123',
+    onRedirect: handleOAuthRedirect,
+  });
+
+  useMcpOAuthPopup(mcpClient.connections, mcpClient.finishAuth);
+
+  return <div>Your app</div>;
+}
+
+export function OAuthPopupCallbackPage() {
+  const searchParams = useSearchParams();
+
+  return (
+    <Suspense fallback={<McpOAuthCallbackFallback />}>
+      <McpOAuthCallbackContent
+        code={searchParams.get('code')}
+        sessionId={searchParams.get('state')}
+      />
+    </Suspense>
+  );
+}
+```
+
+### Custom popup UI with shared callback logic
+
+```tsx
+<McpOAuthCallbackContent
+  code={searchParams.get('code')}
+  sessionId={searchParams.get('state')}
+  title={<span>Connecting your MCP workspace</span>}
+  rootStyle={{ backgroundColor: '#0b1020', color: '#f8fafc' }}
+  cardStyle={{
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    border: '1px solid rgba(148, 163, 184, 0.18)',
+    borderRadius: '20px',
+    boxShadow: '0 20px 60px rgba(15, 23, 42, 0.35)',
+  }}
+  messageStyle={{ color: '#cbd5e1' }}
+/>
+```
+
+Use this when you want branded popup visuals without rebuilding the
+`postMessage` / `finishAuth` coordination yourself.
+
+### Full-page redirect flow
+
+```tsx
+'use client';
+
+import { useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useMcp } from '@mcp-ts/sdk/client/react';
+
+export default function OAuthCallbackPage() {
+  const searchParams = useSearchParams();
+  const { finishAuth } = useMcp({
+    url: '/api/mcp',
+    identity: 'user-123',
+  });
+
+  useEffect(() => {
+    const code = searchParams.get('code');
+    const sessionId = searchParams.get('state');
+    if (!code || !sessionId) return;
+
+    void finishAuth(sessionId, code);
+  }, [searchParams, finishAuth]);
+
+  return <p>Completing sign-in...</p>;
+}
+```
+
+Use this when you do not want popups at all and prefer a normal callback route.
+
 ## TypeScript Types
 
 Import types for better type safety:

@@ -3,13 +3,12 @@
 import { nanoid } from "nanoid";
 import { PanelLeftClose } from "lucide-react";
 import { useState } from "react";
-import type { McpClient } from "@mcp-ts/sdk/client/react";
+import { useMcpOAuthPopup, type McpClient } from "@mcp-ts/sdk/client/react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import ConnectForm from "./dashboard/ConnectForm";
 import ConnectionList from "./dashboard/ConnectionList";
 import ToolExecutor from "./dashboard/ToolExecutor";
-import { useOAuthPopup } from "./dashboard/useOAuthPopup";
 import type { Connection, ConnectConfig } from "./dashboard/types";
 
 function statusDotClass(status: string) {
@@ -50,7 +49,7 @@ export default function McpSidebar({ mcpClient, onCollapse }: McpSidebarProps) {
     finishAuth,
   } = mcpClient;
 
-  useOAuthPopup(connections as Connection[], finishAuth);
+  useMcpOAuthPopup(connections as Connection[], finishAuth);
 
   const handleConnect = async (config: ConnectConfig) => {
     setConnecting(true);

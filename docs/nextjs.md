@@ -240,7 +240,7 @@ export default function OAuthCallback() {
     const state = searchParams.get('state');
 
     if (code && state) {
-      finishAuth(code, state)
+      finishAuth(state, code)
         .then(() => {
           router.push('/'); // Redirect back to main page
         })
@@ -253,6 +253,62 @@ export default function OAuthCallback() {
   return <div>Completing authentication...</div>;
 }
 ```
+
+### Popup helpers
+
+If you want a turnkey popup flow in Next.js, the React client also exports:
+
+- `createOAuthPopupRedirectHandler()` for `useMcp({ onRedirect })`
+- `useMcpOAuthPopup(...)` for opener-side popup coordination
+- `McpOAuthCallbackContent` for the callback popup page UI/logic
+
+```tsx
+'use client';
+
+import { Suspense, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
+import {
+  createOAuthPopupRedirectHandler,
+  McpOAuthCallbackContent,
+  McpOAuthCallbackFallback,
+  useMcp,
+  useMcpOAuthPopup,
+} from '@mcp-ts/sdk/client/react';
+
+function McpPopupBridge() {
+  const mcpClient = useMcp({
+    url: '/api/mcp',
+    identity: 'user-123',
+    onRedirect: useMemo(() => createOAuthPopupRedirectHandler(), []),
+  });
+
+  useMcpOAuthPopup(mcpClient.connections, mcpClient.finishAuth);
+  return null;
+}
+
+function OAuthPopupPageInner() {
+  const searchParams = useSearchParams();
+
+  return (
+    <McpOAuthCallbackContent
+      code={searchParams.get('code')}
+      sessionId={searchParams.get('state')}
+    />
+  );
+}
+
+export function OAuthPopupPage() {
+  return (
+    <Suspense fallback={<McpOAuthCallbackFallback />}>
+      <OAuthPopupPageInner />
+    </Suspense>
+  );
+}
+```
+
+These helpers are optional. If you prefer a branded popup page, pass custom
+styles/props to `McpOAuthCallbackContent`, or skip popups entirely and use a
+normal redirect callback page with `finishAuth(sessionId, code)`.
 
 ## Environment Variables
 

@@ -1,40 +1,42 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import {
+  McpOAuthCallbackContent,
+  McpOAuthCallbackFallback,
+} from '@mcp-ts/sdk/client/react';
 
 function OAuthCallbackContent() {
   const searchParams = useSearchParams();
-  const [status, setStatus] = useState('Processing...');
-
-  useEffect(() => {
-    const code = searchParams.get('code');
-
-    if (code && window.opener) {
-      window.opener.postMessage(
-        { type: 'MCP_AUTH_CODE', code },
-        window.location.origin
-      );
-      setStatus('Authentication successful! Closing...');
-      setTimeout(() => window.close(), 1000);
-    } else if (!window.opener) {
-      setStatus('Error: No opener window found');
-    } else {
-      setStatus('Error: No authorization code received');
-    }
-  }, [searchParams]);
 
   return (
-    <div className="text-center text-zinc-100">
-      <p className="text-lg">{status}</p>
-    </div>
+    <McpOAuthCallbackContent
+      code={searchParams.get('code')}
+      sessionId={searchParams.get('state')}
+    />
   );
 }
 
 export default function OAuthCallbackPopup() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-900">
-      <Suspense fallback={<div className="text-zinc-100">Loading...</div>}>
+    <div
+      style={{
+        minHeight: '100vh',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#fafafa',
+      }}
+    >
+      <Suspense
+        fallback={
+          <McpOAuthCallbackFallback>
+            <div style={{ color: '#71717a' }}>Loading authentication...</div>
+          </McpOAuthCallbackFallback>
+        }
+      >
         <OAuthCallbackContent />
       </Suspense>
     </div>
