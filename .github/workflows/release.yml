@@ -72,4 +72,5 @@ jobs:
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: "Release ${{ steps.meta.outputs.version }}"
-          body: "Automated npm publish of @mcp-ts/sdk ${{ steps.meta.outputs.version }}."
+          generate_release_notes: true
+          body: "🚀 Release @mcp-ts/sdk v${{ steps.meta.outputs.version }}"
