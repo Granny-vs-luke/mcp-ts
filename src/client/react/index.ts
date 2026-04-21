@@ -6,6 +6,20 @@
 // Core MCP Hook
 export { useMcp, type UseMcpOptions, type McpClient, type McpConnection } from './use-mcp.js';
 
+// Optional OAuth popup conveniences. These are not required for auth:
+// consumers can still provide their own onRedirect handler, callback page UI,
+// or complete `finishAuth(sessionId, code)` from a normal redirect flow.
+export {
+  useMcpOAuthPopup,
+  openCenteredPopup,
+  createOAuthPopupRedirectHandler,
+  McpOAuthCallbackContent,
+  McpOAuthCallbackFallback,
+  type OAuthPopupConnectionLike,
+  type OAuthPopupRedirectOptions,
+  type McpOAuthCallbackContentProps,
+} from './oauth-popup.js';
+
 // App Host (internal use)
 export { useAppHost } from './use-app-host.js';
 

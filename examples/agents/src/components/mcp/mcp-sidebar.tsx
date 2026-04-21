@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
+import { useMcpOAuthPopup } from '@mcp-ts/sdk/client/react';
 import { useMcpContext } from './mcp-provider';
 import { ConnectForm } from './connect-form';
 import { ConnectionList } from './connection-list';
-import { useOAuthPopup } from './use-oauth-popup';
 import { Connection, ConnectConfig } from './types';
 import { Wifi, WifiOff } from 'lucide-react';
 
@@ -16,7 +16,6 @@ interface McpSidebarProps {
 export function McpSidebar(_props: McpSidebarProps = {}) {
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
-  const popupRef = useRef<Window | null>(null);
 
   // Use shared MCP context instead of creating a new useMcp instance
   const { mcpClient } = useMcpContext();
@@ -29,7 +28,7 @@ export function McpSidebar(_props: McpSidebarProps = {}) {
     finishAuth,
   } = mcpClient;
 
-  useOAuthPopup(connections as Connection[], finishAuth);
+  useMcpOAuthPopup(connections as Connection[], finishAuth);
 
   const handleConnect = async (config: ConnectConfig) => {
     setConnecting(true);

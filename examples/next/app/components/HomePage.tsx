@@ -1,16 +1,20 @@
 "use client";
 
 import { PanelLeft } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useMcp } from "@mcp-ts/sdk/client/react";
+import { createOAuthPopupRedirectHandler, useMcp } from "@mcp-ts/sdk/client/react";
 import HomeChat from "./HomeChat";
 import McpSidebar from "./McpSidebar";
 
 export default function HomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const handleOAuthRedirect = useMemo(
+    () => createOAuthPopupRedirectHandler(),
+    [],
+  );
 
   // ── Single source of truth for the MCP client ──────────────────────────
   const mcpClient = useMcp({
@@ -21,20 +25,7 @@ export default function HomePage() {
     onLog: (level: string, message: string, metadata: any) => {
       console.log(`[${level}] ${message}`, metadata);
     },
-    onRedirect: (url) => {
-      const width = 600;
-      const height = 700;
-      const left = window.screen.width / 2 - width / 2;
-      const top = window.screen.height / 2 - height / 2;
-      const popup = window.open(
-        url,
-        "mcp-auth-popup",
-        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`,
-      );
-      if (!popup) {
-        alert("Popup blocked! Allow popups for this site to complete authentication.");
-      }
-    },
+    onRedirect: handleOAuthRedirect,
   });
 
   return (

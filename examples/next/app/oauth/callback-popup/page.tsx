@@ -1,73 +1,73 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { Loader2, CheckCircle2, XCircle } from "lucide-react";
+
+const AUTH_CODE_MESSAGE = "MCP_AUTH_CODE";
+const AUTH_RESULT_MESSAGE = "MCP_AUTH_RESULT";
 
 function PopupCallbackContent() {
   const searchParams = useSearchParams();
   const code = searchParams.get("code");
-  const state = searchParams.get("state");
-  const [status, setStatus] = useState("Authorization received. Finishing sign-in...");
-  const openerMissing =
-    typeof window !== "undefined" ? !window.opener : false;
+  const sessionId = searchParams.get("state");
+
+  const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const openerMissing = typeof window !== "undefined" ? !window.opener : false;
   const missingCode = !code;
-  const missingState = !state;
-  const blockingStatus = openerMissing
-    ? "Error: No opener window found. This window should be opened from the app."
+  const missingSessionId = !sessionId;
+  const blockingError = openerMissing
+    ? "No opener window found. This window should be opened from the app."
     : missingCode
-      ? "Error: No authorization code received."
-      : missingState
-        ? "Error: No OAuth state received."
-        : null;
+    ? "No authorization code received."
+    : missingSessionId
+    ? "No OAuth state received."
+    : null;
 
   useEffect(() => {
-    if (blockingStatus) {
+    if (blockingError) {
+      setStatus("error");
+      setErrorMessage(blockingError);
       return;
     }
 
     let closed = false;
 
     const handleResult = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) {
-        return;
-      }
-
-      if (event.data?.type !== "MCP_AUTH_RESULT") {
-        return;
-      }
-
-      if (event.data.sessionId !== state) {
-        return;
-      }
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== AUTH_RESULT_MESSAGE) return;
+      if (event.data.sessionId !== sessionId) return;
 
       if (event.data.success) {
-        setStatus("Authorization complete. Closing window...");
+        setStatus("success");
         window.removeEventListener("message", handleResult);
         closed = true;
-        setTimeout(() => {
-          window.close();
-        }, 700);
+        window.setTimeout(() => window.close(), 1200);
         return;
       }
 
-      const message =
+      setStatus("error");
+      setErrorMessage(
         typeof event.data.error === "string" && event.data.error.length > 0
           ? event.data.error
-          : "Failed to complete authorization.";
-      setStatus(`Authorization failed: ${message}`);
+          : "Failed to complete authorization."
+      );
     };
 
     window.addEventListener("message", handleResult);
 
     try {
       window.opener.postMessage(
-        { type: "MCP_AUTH_CODE", code, sessionId: state },
-        window.location.origin,
+        { type: AUTH_CODE_MESSAGE, code, sessionId },
+        window.location.origin
       );
-    } catch (err) {
-      console.error("Failed to communicate with opener:", err);
+    } catch (error) {
+      console.error("Failed to communicate with opener:", error);
       window.setTimeout(() => {
-        setStatus("Error: Could not communicate with main window.");
+        setStatus("error");
+        setErrorMessage("Could not communicate with main window. Please close this window and try again.");
       }, 0);
     }
 
@@ -76,33 +76,43 @@ function PopupCallbackContent() {
         window.removeEventListener("message", handleResult);
       }
     };
-  }, [blockingStatus, code, state]);
+  }, [blockingError, code, sessionId]);
 
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        height: "100vh",
-        fontFamily: "system-ui, sans-serif",
-        flexDirection: "column",
-        gap: "1rem",
-        backgroundColor: "#f5f5f5",
-        color: "#333",
-      }}
-    >
-      <div
-        style={{
-          padding: "2rem",
-          borderRadius: "8px",
-          backgroundColor: "white",
-          boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
-          textAlign: "center",
-        }}
-      >
-        <h2>MCP Authentication</h2>
-        <p>{blockingStatus ?? status}</p>
+    <div className="flex items-center justify-center min-h-screen bg-gray-50/50 text-gray-900 font-sans p-4">
+      <div className="p-8 bg-white shadow-xl shadow-black/5 rounded-2xl flex flex-col items-center justify-center max-w-sm w-full border border-gray-100 text-center transition-all duration-300">
+        <div className="mb-6 flex items-center justify-center h-16">
+          {status === "loading" && (
+            <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+          )}
+          {status === "success" && (
+            <CheckCircle2 className="w-14 h-14 text-emerald-500" />
+          )}
+          {status === "error" && (
+            <XCircle className="w-14 h-14 text-red-500" />
+          )}
+        </div>
+        
+        <h2 className="text-xl font-semibold text-gray-800 mb-2">
+          {status === "loading" && "Authenticating..."}
+          {status === "success" && "Successfully Connected!"}
+          {status === "error" && "Authentication Failed"}
+        </h2>
+        
+        <p className="text-sm text-gray-500 max-w-[260px] leading-relaxed">
+          {status === "loading" && "Please wait while we securely connect your workspace."}
+          {status === "success" && "Your workspace is now connected in the main window. This window will close automatically."}
+          {status === "error" && errorMessage}
+        </p>
+
+        {status === "error" && (
+          <button 
+            onClick={() => window.close()}
+            className="mt-8 px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl text-sm font-medium transition-colors"
+          >
+            Close Window
+          </button>
+        )}
       </div>
     </div>
   );
@@ -110,7 +120,13 @@ function PopupCallbackContent() {
 
 export default function PopupCallbackPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen bg-gray-50/50">
+          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+        </div>
+      }
+    >
       <PopupCallbackContent />
     </Suspense>
   );
