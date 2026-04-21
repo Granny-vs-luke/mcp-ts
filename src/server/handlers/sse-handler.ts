@@ -371,7 +371,10 @@ export class SSEConnectionManager {
     const client = new MCPClient({
       identity: this.identity,
       sessionId,
-      // (Optional) MCPClient handles even if the below metadata is not provided
+      // These fields are optional in MCPClient, but when rehydrating a known
+      // stored session on the server we pass them explicitly to preserve the
+      // original transport/connection metadata instead of relying on lazy
+      // reloading during initialize().
       serverId: session.serverId,
       serverName: session.serverName,
       serverUrl: session.serverUrl,
@@ -449,7 +452,10 @@ export class SSEConnectionManager {
       const client = new MCPClient({
         identity: this.identity,
         sessionId,
-        // (Optional) MCPClient handles even if the below metadata is not provided
+        // These fields are optional in MCPClient, but when rehydrating a known
+        // stored session on the server we pass them explicitly to preserve the
+        // original transport/connection metadata instead of relying on lazy
+        // reloading during initialize().
         serverId: session.serverId,
         serverName: session.serverName,
         serverUrl: session.serverUrl,
@@ -497,7 +503,10 @@ export class SSEConnectionManager {
       const client = new MCPClient({
         identity: this.identity,
         sessionId,
-        // (Optional) MCPClient handles even if the below metadata is not provided
+        // These fields are optional in MCPClient, but when rehydrating a known
+        // stored session on the server we pass them explicitly to preserve the
+        // original transport/connection metadata instead of relying on lazy
+        // reloading during initialize().
         serverId: session.serverId,
         serverName: session.serverName,
         serverUrl: session.serverUrl,
