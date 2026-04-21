@@ -363,9 +363,21 @@ export class SSEConnectionManager {
       return existing;
     }
 
+    const session = await storage.getSession(this.identity, sessionId);
+    if (!session) {
+      throw new Error('Session not found');
+    }
+
     const client = new MCPClient({
       identity: this.identity,
       sessionId,
+      // (Optional) MCPClient handles even if the below metadata is not provided
+      serverId: session.serverId,
+      serverName: session.serverName,
+      serverUrl: session.serverUrl,
+      callbackUrl: session.callbackUrl,
+      transportType: session.transportType,
+      headers: session.headers,
     });
 
     // Subscribe to events before connecting
@@ -437,6 +449,13 @@ export class SSEConnectionManager {
       const client = new MCPClient({
         identity: this.identity,
         sessionId,
+        // (Optional) MCPClient handles even if the below metadata is not provided
+        serverId: session.serverId,
+        serverName: session.serverName,
+        serverUrl: session.serverUrl,
+        callbackUrl: session.callbackUrl,
+        transportType: session.transportType,
+        headers: session.headers,
         ...clientMetadata,
       });
 
@@ -478,6 +497,13 @@ export class SSEConnectionManager {
       const client = new MCPClient({
         identity: this.identity,
         sessionId,
+        // (Optional) MCPClient handles even if the below metadata is not provided
+        serverId: session.serverId,
+        serverName: session.serverName,
+        serverUrl: session.serverUrl,
+        callbackUrl: session.callbackUrl,
+        transportType: session.transportType,
+        headers: session.headers,
       });
 
       client.onConnectionEvent((event) => this.emitConnectionEvent(event));
