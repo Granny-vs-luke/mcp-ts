@@ -119,6 +119,17 @@ export interface McpClient {
   disconnect: (sessionId: string) => Promise<void>;
 
   /**
+   * Reconnect to an MCP server (disconnects existing session first)
+   */
+  reconnect: (params: {
+    serverId: string;
+    serverName: string;
+    serverUrl: string;
+    callbackUrl: string;
+    transportType?: 'sse' | 'streamable_http';
+  }) => Promise<string>;
+
+  /**
    * Get connection by session ID
    */
   getConnection: (sessionId: string) => McpConnection | undefined;
@@ -500,6 +511,41 @@ export function useMcp(options: UseMcpOptions): McpClient {
   );
 
   /**
+   * Reconnect to an MCP server (tears down existing session, then connects fresh)
+   */
+  const reconnect = useCallback(
+    async (params: {
+      serverId: string;
+      serverName: string;
+      serverUrl: string;
+      callbackUrl: string;
+      transportType?: 'sse' | 'streamable_http';
+    }): Promise<string> => {
+      if (!clientRef.current) {
+        throw new Error('SSE client not initialized');
+      }
+
+      // Find and disconnect existing session for the same server
+      const existing = connections.find(
+        (c: McpConnection) => c.serverId === params.serverId || c.serverUrl === params.serverUrl
+      );
+      if (existing) {
+        await clientRef.current.disconnectFromServer(existing.sessionId);
+        if (isMountedRef.current) {
+          setConnections((prev: McpConnection[]) =>
+            prev.filter((c: McpConnection) => c.sessionId !== existing.sessionId)
+          );
+        }
+      }
+
+      // Connect fresh
+      const result = await clientRef.current.connectToServer(params);
+      return result.sessionId;
+    },
+    [connections]
+  );
+
+  /**
    * Disconnect from an MCP server
    */
   const disconnect = useCallback(async (sessionId: string): Promise<void> => {
@@ -668,6 +714,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
       status,
       isInitializing,
       connect,
+      reconnect,
       disconnect,
       getConnection,
       getConnectionByServerId,
@@ -691,6 +738,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
       status,
       isInitializing,
       connect,
+      reconnect,
       disconnect,
       getConnection,
       getConnectionByServerId,

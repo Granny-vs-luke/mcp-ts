@@ -118,6 +118,17 @@ export interface McpClient {
     disconnect: (sessionId: string) => Promise<void>;
 
     /**
+     * Reconnect to an MCP server (disconnects existing session first)
+     */
+    reconnect: (params: {
+        serverId: string;
+        serverName: string;
+        serverUrl: string;
+        callbackUrl: string;
+        transportType?: 'sse' | 'streamable_http';
+    }) => Promise<string>;
+
+    /**
      * Get connection by session ID
      */
     getConnection: (sessionId: string) => McpConnection | undefined;
@@ -493,6 +504,36 @@ export function useMcp(options: UseMcpOptions): McpClient {
     };
 
     /**
+     * Reconnect to an MCP server (tears down existing session, then connects fresh)
+     */
+    const reconnect = async (params: {
+        serverId: string;
+        serverName: string;
+        serverUrl: string;
+        callbackUrl: string;
+        transportType?: 'sse' | 'streamable_http';
+    }): Promise<string> => {
+        if (!clientRef.value) {
+            throw new Error('SSE client not initialized');
+        }
+
+        // Find and disconnect existing session for the same server
+        const existing = connections.value.find(
+            (c) => c.serverId === params.serverId || c.serverUrl === params.serverUrl
+        );
+        if (existing) {
+            await clientRef.value.disconnectFromServer(existing.sessionId);
+            if (isMountedRef.value) {
+                connections.value = connections.value.filter((c) => c.sessionId !== existing.sessionId);
+            }
+        }
+
+        // Connect fresh
+        const result = await clientRef.value.connectToServer(params);
+        return result.sessionId;
+    };
+
+    /**
      * Disconnect from an MCP server
      */
     const disconnect = async (sessionId: string): Promise<void> => {
@@ -642,6 +683,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
         status: status as unknown as { value: 'connecting' | 'connected' | 'disconnected' | 'error' },
         isInitializing: isInitializing as unknown as { value: boolean },
         connect,
+        reconnect,
         disconnect,
         getConnection,
         getConnectionByServerId,
