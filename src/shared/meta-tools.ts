@@ -217,20 +217,34 @@ export async function executeMetaTool(
           .filter(Boolean);
 
         const found: any[] = [];
-        for (const toolName of requested) {
-          const { tool } = resolveToolSchema(toolName);
-          if (tool) found.push(tool);
+        const errors: string[] = [];
+        
+        for (const requestedToolName of requested) {
+          const { tool, error } = resolveToolSchema(requestedToolName);
+          if (error) {
+            errors.push(`- **${requestedToolName}**: ${error}`);
+          } else if (tool) {
+            found.push(tool);
+          }
         }
 
-        const text = found.length === 0
-          ? `No tools found matching select query: ${requested.join(', ')}`
-          : found
-              .map(
-                (t, i) =>
-                  `${i + 1}. **${t.name}** (server: ${t.serverName || t.serverId})\n` +
-                  `   ${t.description}`
-              )
-              .join('\n');
+        const lines: string[] = [];
+
+        if (found.length > 0) {
+          lines.push(...found.map((t, i) =>
+            `${i + 1}. **${t.name}** (server: ${t.serverName || t.serverId})\n   ${t.description}`
+          ));
+        }
+        
+        if (errors.length > 0) {
+          if (lines.length > 0) lines.push(""); // Add empty line spacing
+          lines.push("Errors resolving some tools:");
+          lines.push(...errors);
+        }
+
+        const text = lines.length > 0 
+          ? lines.join('\n') 
+          : `No tools found matching select query: ${requested.join(', ')}`;
 
         return {
           content: [{ type: 'text', text }],

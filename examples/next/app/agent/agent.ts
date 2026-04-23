@@ -18,12 +18,15 @@ export async function createMcpAgent(identity: string = process.env.NEXT_PUBLIC_
     client = new MultiSessionClient(identity);
     try {
       await client.connect();
-    } catch {}
-    
-    if (!globalForMcp.mcpClientMap) {
-      globalForMcp.mcpClientMap = new Map();
+      
+      if (!globalForMcp.mcpClientMap) {
+        globalForMcp.mcpClientMap = new Map();
+      }
+      globalForMcp.mcpClientMap.set(identity, client);
+    } catch (error) {
+      console.error("[McpAgent] Failed to connect MCP client:", error);
+      // We do not cache the client if connection fails, ensuring it is retried next time
     }
-    globalForMcp.mcpClientMap.set(identity, client);
   }
 
   const router = new ToolRouter(client, { strategy: "search", maxTools: 5 });
