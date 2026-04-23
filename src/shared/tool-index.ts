@@ -262,8 +262,38 @@ export class ToolIndex {
   async search(query: string, topK = 5): Promise<ToolSummary[]> {
     if (this.tools.size === 0) return [];
 
-    const queryLower = query.toLowerCase();
-    const queryTokens = this.tokenize(queryLower);
+    const queryLower = query.toLowerCase().trim();
+
+    // Fast path: Exact tool name match
+    for (const [docKey, summary] of this.toolSummaries) {
+      if (summary.name.toLowerCase() === queryLower) {
+        return [summary];
+      }
+    }
+
+    // Fast path: MCP prefix match (e.g. "mcp__github")
+    if (queryLower.startsWith('mcp__') && queryLower.length > 5) {
+      const prefixMatches = [...this.toolSummaries.values()]
+        .filter((t) => t.name.toLowerCase().startsWith(queryLower))
+        .slice(0, topK);
+      if (prefixMatches.length > 0) return prefixMatches;
+    }
+
+    const queryTermsRaw = queryLower.split(/\s+/).filter((t) => t.length > 0);
+    const requiredTerms: string[] = [];
+    const optionalTerms: string[] = [];
+
+    for (const term of queryTermsRaw) {
+      if (term.startsWith('+') && term.length > 1) {
+        requiredTerms.push(term.slice(1));
+      } else {
+        optionalTerms.push(term);
+      }
+    }
+
+    const allScoringTerms =
+      requiredTerms.length > 0 ? [...requiredTerms, ...optionalTerms] : queryTermsRaw;
+    const queryTokens = this.tokenize(allScoringTerms.join(' '));
 
     // 1. Keyword scores (BM25)
     const keywordScores = new Map<string, number>();
@@ -272,6 +302,19 @@ export class ToolIndex {
     const b = 0.75;
 
     for (const [docKey, docTf] of this.tfVectors) {
+      const summary = this.toolSummaries.get(docKey);
+      if (!summary) continue;
+
+      // Pre-filter: must contain all required terms in search text or tool name
+      if (requiredTerms.length > 0) {
+        const text = this.searchTexts.get(docKey) || '';
+        const nameLower = summary.name.toLowerCase();
+        const matchesAll = requiredTerms.every(
+          (term) => text.includes(term) || nameLower.includes(term)
+        );
+        if (!matchesAll) continue;
+      }
+
       let score = 0;
       const docLen = this.docLengths.get(docKey) ?? 0;
 
@@ -285,8 +328,20 @@ export class ToolIndex {
         // score = idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (docLen / avgDocLength)))
         const numerator = tfVal * (k1 + 1);
         const denominator = tfVal + k1 * (1 - b + b * (docLen / this.avgDocLength));
-        
+
         score += idf * (numerator / denominator);
+      }
+
+      // Enhanced Heuristics Scoring
+      for (const term of allScoringTerms) {
+        const nameLower = summary.name.toLowerCase();
+        const serverLower = summary.serverName.toLowerCase();
+
+        if (nameLower === term || serverLower === term) {
+          score += 10;
+        } else if (nameLower.includes(term) || serverLower.includes(term)) {
+          score += 5;
+        }
       }
 
       keywordScores.set(docKey, score);

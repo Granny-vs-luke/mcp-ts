@@ -2,6 +2,7 @@ import { ToolLoopAgent, InferAgentUIMessage, stepCountIs } from "ai";
 import { MultiSessionClient } from "@mcp-ts/sdk/server";
 import { AIAdapter } from "@mcp-ts/sdk/adapters/ai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
+import { MCP_DEMO_IDENTITY } from "@/app/lib/mcp-identity";
 
 const { ToolRouter } = await import("@mcp-ts/sdk/shared");
 
@@ -9,19 +10,26 @@ const INSTRUCTIONS = `
 You are an expert assistant, an AI assistant that helps users with their tasks using the available MCP tools
 `;
 
-export async function createMcpAgent(identity: string = "demo-user-123") {
-  const client = new MultiSessionClient(identity);
+const globalForMcp = globalThis as unknown as { mcpClientMap?: Map<string, MultiSessionClient> };
 
-  try {
-    await client.connect();
-  } catch (error) {
-    console.error("[MCP] Connection failed:", error);
+export async function createMcpAgent(identity: string = MCP_DEMO_IDENTITY) {
+  let client = globalForMcp.mcpClientMap?.get(identity);
+
+  if (!client) {
+    client = new MultiSessionClient(identity);
+    try {
+      await client.connect();
+    } catch {}
+    
+    if (!globalForMcp.mcpClientMap) {
+      globalForMcp.mcpClientMap = new Map();
+    }
+    globalForMcp.mcpClientMap.set(identity, client);
   }
 
-  const router = new ToolRouter(client, { strategy: "search" });
+  const router = new ToolRouter(client, { strategy: "search", maxTools: 5 });
   const adapter = new AIAdapter(client, { toolRouter: router });
   const tools = await adapter.getTools();
-  console.log(`[MCP] Loaded ${Object.keys(tools).length} tools for agent.`);
 
   return new ToolLoopAgent({
     model: createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY })(

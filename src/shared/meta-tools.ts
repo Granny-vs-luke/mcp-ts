@@ -33,16 +33,18 @@ export function createSearchToolDefinition(): Tool {
   return {
     name: 'mcp_search_tool_bm25',
     description:
-      'Search the catalog of available tools using BM25 natural language ranking. ' +
-      'Returns tool names, descriptions, and server info. ' +
-      'Use this FIRST to find relevant tools before calling them. ' +
-      'Example queries: "database query", "send email", "github pull request".',
+      'Search the catalog of available tools. Returns tool names, descriptions, and server info. ' +
+      'Use this FIRST to find relevant tools before calling them.\n\n' +
+      'Query forms:\n' +
+      '- "select:Read,Edit,Grep" — fetch these exact tools by name\n' +
+      '- "notebook jupyter" — keyword search, up to limit best matches\n' +
+      '- "+slack send" — require "slack" in the name, rank by remaining terms',
     inputSchema: {
       type: 'object' as const,
       properties: {
         query: {
           type: 'string',
-          description: 'Natural language description of the capability you need.',
+          description: 'Query to find tools. Use "select:<tool_name>" for direct selection, or keywords to search. Prefix keywords with + to require them.',
         },
         limit: {
           type: 'number',
@@ -205,6 +207,36 @@ export async function executeMetaTool(
     case 'mcp_search_tool_bm25': {
       const query = String(args.query ?? '');
       const limit = Math.min(Number(args.limit) || 5, 20);
+
+      // Fast path: Check for select: prefix
+      const selectMatch = query.match(/^select:(.+)$/i);
+      if (selectMatch) {
+        const requested = selectMatch[1]!
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        const found: any[] = [];
+        for (const toolName of requested) {
+          const { tool } = resolveToolSchema(toolName);
+          if (tool) found.push(tool);
+        }
+
+        const text = found.length === 0
+          ? `No tools found matching select query: ${requested.join(', ')}`
+          : found
+              .map(
+                (t, i) =>
+                  `${i + 1}. **${t.name}** (server: ${t.serverName || t.serverId})\n` +
+                  `   ${t.description}`
+              )
+              .join('\n');
+
+        return {
+          content: [{ type: 'text', text }],
+          isError: false,
+        };
+      }
 
       const results = await router.searchTools(query, limit);
 
