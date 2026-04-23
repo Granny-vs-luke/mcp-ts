@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, Suspense, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useMcp } from "@mcp-ts/sdk/client/react";
 
@@ -11,16 +11,14 @@ function OAuthCallbackContent() {
     "processing",
   );
   const [error, setError] = useState<string | null>(null);
+  const processedRef = useRef(false);
 
   const { finishAuth } = useMcp({
     url: "/api/mcp",
-    identity: "demo-user-123",
+    identity: process.env.NEXT_PUBLIC_MCP_IDENTITY!,
     authToken: "demo-auth-token",
     autoConnect: true,
     autoInitialize: false,
-  });
-
-  useEffect(() => {
     const code = searchParams.get("code");
     const state = searchParams.get("state");
     const errorParam = searchParams.get("error");

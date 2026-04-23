@@ -137,11 +137,11 @@ export class AIAdapter {
         // @ts-ignore: ToolSet type inference can be tricky with dynamic imports
         return Object.fromEntries(
             filteredTools.map((tool) => {
-                const routedTool = tool as typeof tool & { sessionId?: string; serverName?: string };
-                const namespace = routedTool.serverName ?? routedTool.sessionId;
+                const routedTool = tool as typeof tool & { sessionId?: string; serverId?: string; serverName?: string };
+                const namespace = routedTool.serverId ?? routedTool.sessionId;
                 const toolKey = isMetaTool(tool.name)
                     ? tool.name
-                    : this.getRouterToolKey(tool.name, routedTool.sessionId, routedTool.serverName);
+                    : this.getRouterToolKey(tool.name, routedTool.sessionId, routedTool.serverId);
 
                 return [
                     toolKey,
@@ -172,8 +172,8 @@ export class AIAdapter {
         );
     }
 
-    private getRouterToolKey(toolName: string, sessionId?: string, serverName?: string): string {
-        const namespace = sessionId ?? serverName ?? 'mcp';
+    private getRouterToolKey(toolName: string, sessionId?: string, serverId?: string): string {
+        const namespace = sessionId ?? serverId ?? 'mcp';
         const normalized = namespace
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '_')

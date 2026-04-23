@@ -9,19 +9,29 @@ const INSTRUCTIONS = `
 You are an expert assistant, an AI assistant that helps users with their tasks using the available MCP tools
 `;
 
-export async function createMcpAgent(identity: string = "demo-user-123") {
-  const client = new MultiSessionClient(identity);
+const globalForMcp = globalThis as unknown as { mcpClientMap?: Map<string, MultiSessionClient> };
 
-  try {
-    await client.connect();
-  } catch (error) {
-    console.error("[MCP] Connection failed:", error);
+export async function createMcpAgent(identity: string = process.env.NEXT_PUBLIC_MCP_IDENTITY!) {
+  let client = globalForMcp.mcpClientMap?.get(identity);
+
+  if (!client) {
+    client = new MultiSessionClient(identity);
+    try {
+      await client.connect();
+      
+      if (!globalForMcp.mcpClientMap) {
+        globalForMcp.mcpClientMap = new Map();
+      }
+      globalForMcp.mcpClientMap.set(identity, client);
+    } catch (error) {
+      console.error("[McpAgent] Failed to connect MCP client:", error);
+      // We do not cache the client if connection fails, ensuring it is retried next time
+    }
   }
 
-  const router = new ToolRouter(client, { strategy: "search" });
+  const router = new ToolRouter(client, { strategy: "search", maxTools: 5 });
   const adapter = new AIAdapter(client, { toolRouter: router });
   const tools = await adapter.getTools();
-  console.log(`[MCP] Loaded ${Object.keys(tools).length} tools for agent.`);
 
   return new ToolLoopAgent({
     model: createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY })(

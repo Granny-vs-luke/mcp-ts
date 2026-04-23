@@ -1,10 +1,12 @@
 import { UIMessage, createAgentUIStreamResponse } from "ai";
-import { createMcpAgent } from "@/app/agent/agent";
+import { createMcpAgent } from "../agent/agent";
 
-export async function POST(req: Request) {
-  const { messages }: { messages: UIMessage[] } = await req.json();
+export const maxDuration = 60; // Max serverless function duration
 
-  const agent = await createMcpAgent("demo-user-123");
+export async function POST(request: Request) {
+  const { messages }: { messages: UIMessage[] } = await request.json();
+
+  const agent = await createMcpAgent(process.env.NEXT_PUBLIC_MCP_IDENTITY!);
 
   return createAgentUIStreamResponse({
     agent,

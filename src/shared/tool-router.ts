@@ -219,10 +219,10 @@ export class ToolRouter {
     if (matches.length === 0) return undefined;
 
     if (matches.length > 1) {
-      const servers = matches.map((m) => m.serverName).join(', ');
+      const servers = matches.map((m) => m.serverId).join(', ');
       throw new Error(
         `Tool "${toolName}" is provided by multiple servers: [${servers}]. ` +
-          `Please specify the desired "serverName" as a namespace.`
+          `Please specify the desired "serverId" as a namespace.`
       );
     }
 
@@ -372,6 +372,7 @@ export class ToolRouter {
         for (const tool of tools) {
           result.push({
             ...tool,
+            serverId,
             serverName: serverName,
             sessionId,
           });
@@ -409,20 +410,20 @@ export class ToolRouter {
         });
       }
     } else {
-      // Auto-group by server name
+      // Auto-group by server ID
       const serverTools = new Map<string, string[]>();
       for (const tool of this.allTools) {
-        const group = tool.serverName;
+        const group = tool.serverId;
         if (!serverTools.has(group)) {
           serverTools.set(group, []);
         }
         serverTools.get(group)!.push(tool.name);
       }
 
-      for (const [serverName, tools] of serverTools) {
-        this.groupsMap.set(serverName, {
+      for (const [serverId, tools] of serverTools) {
+        this.groupsMap.set(serverId, {
           tools,
-          active: this.activeGroups.size === 0 || this.activeGroups.has(serverName),
+          active: this.activeGroups.size === 0 || this.activeGroups.has(serverId),
         });
       }
     }

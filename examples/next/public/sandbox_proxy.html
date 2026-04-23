@@ -47,9 +47,7 @@
                 })
                 .join('; ');
             }
-          } catch (e) {
-            console.error('Failed to parse CSP query parameter:', e);
-          }
+          } catch (e) {}
         }
 
         function isDirectiveMap(obj) {
@@ -95,7 +93,6 @@
             doc.close();
             return true;
           } catch (err) {
-            console.error('Failed to write HTML into guest iframe:', err);
             return false;
           }
         }

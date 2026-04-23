@@ -33,16 +33,18 @@ export function createSearchToolDefinition(): Tool {
   return {
     name: 'mcp_search_tool_bm25',
     description:
-      'Search the catalog of available tools using BM25 natural language ranking. ' +
-      'Returns tool names, descriptions, and server info. ' +
-      'Use this FIRST to find relevant tools before calling them. ' +
-      'Example queries: "database query", "send email", "github pull request".',
+      'Search the catalog of available tools. Returns tool names, descriptions, and server info. ' +
+      'Use this FIRST to find relevant tools before calling them.\n\n' +
+      'Query forms:\n' +
+      '- "select:Read,Edit,Grep" — fetch these exact tools by name\n' +
+      '- "notebook jupyter" — keyword search, up to limit best matches\n' +
+      '- "+slack send" — require "slack" in the name, rank by remaining terms',
     inputSchema: {
       type: 'object' as const,
       properties: {
         query: {
           type: 'string',
-          description: 'Natural language description of the capability you need.',
+          description: 'Query to find tools. Use "select:<tool_name>" for direct selection, or keywords to search. Prefix keywords with + to require them.',
         },
         limit: {
           type: 'number',
@@ -105,10 +107,10 @@ export function createGetSchemaToolDefinition(): Tool {
           type: 'string',
           description: 'The exact tool name returned by mcp_search_tool_bm25.',
         },
-        serverName: {
+        serverId: {
           type: 'string',
           description:
-            'Optional: The server name provided in mcp_search_tool_bm25. Required if multiple tools have the same name.',
+            'Optional: The server ID provided in mcp_search_tool_bm25. Required if multiple tools have the same name.',
         },
       },
       required: ['toolName'],
@@ -141,10 +143,10 @@ export function createExecuteToolDefinition(): Tool {
           type: 'string',
           description: 'The exact tool name from mcp_search_tool_bm25 results.',
         },
-        serverName: {
+        serverId: {
           type: 'string',
           description:
-            'Optional: The server name provided in mcp_search_tool_bm25. Required if multiple tools have the same name.',
+            'Optional: The server ID provided in mcp_search_tool_bm25. Required if multiple tools have the same name.',
         },
         args: {
           type: 'object',
@@ -206,6 +208,53 @@ export async function executeMetaTool(
       const query = String(args.query ?? '');
       const limit = Math.min(Number(args.limit) || 5, 20);
 
+      // Fast path: Check for select: prefix
+      const selectMatch = query.match(/^select:(.+)$/i);
+      if (selectMatch) {
+        const requested = selectMatch[1]!
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        const found: any[] = [];
+        const errors: string[] = [];
+        
+        for (const requestedToolName of requested) {
+          const { tool, error } = resolveToolSchema(requestedToolName);
+          if (error) {
+            const errorMsg = error.content[0]?.type === 'text' ? error.content[0].text : 'Unknown error';
+            errors.push(`- **${requestedToolName}**: ${errorMsg}`);
+          } else if (tool) {
+            found.push(tool);
+          } else {
+            errors.push(`- **${requestedToolName}**: Tool not found. Try searching with mcp_search_tool_bm25.`);
+          }
+        }
+
+        const lines: string[] = [];
+
+        if (found.length > 0) {
+          lines.push(...found.map((t, i) =>
+            `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n   ${t.description}`
+          ));
+        }
+        
+        if (errors.length > 0) {
+          if (lines.length > 0) lines.push(""); // Add empty line spacing
+          lines.push("Errors resolving some tools:");
+          lines.push(...errors);
+        }
+
+        const text = lines.length > 0 
+          ? lines.join('\n') 
+          : `No tools found matching select query: ${requested.join(', ')}`;
+
+        return {
+          content: [{ type: 'text', text }],
+          isError: false,
+        };
+      }
+
       const results = await router.searchTools(query, limit);
 
       const text = results.length === 0
@@ -213,7 +262,7 @@ export async function executeMetaTool(
         : results
             .map(
               (t, i) =>
-                `${i + 1}. **${t.name}** (server: ${t.serverName})\n` +
+                `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n` +
                 `   ${t.description}\n` +
                 `   Estimated tokens: ${t.estimatedTokens}`
             )
@@ -236,7 +285,7 @@ export async function executeMetaTool(
         : results
             .map(
               (t, i) =>
-                `${i + 1}. **${t.name}** (server: ${t.serverName})\n` +
+                `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n` +
                 `   ${t.description}\n` +
                 `   Estimated tokens: ${t.estimatedTokens}`
             )
@@ -250,7 +299,7 @@ export async function executeMetaTool(
 
     case 'mcp_get_tool_schema': {
       const name = String(args.toolName ?? '');
-      const namespace = String(args.serverName ?? '') || undefined;
+      const namespace = String(args.serverId ?? '') || undefined;
       const { tool, error } = resolveToolSchema(name, namespace);
 
       if (error) {
@@ -283,7 +332,7 @@ export async function executeMetaTool(
 
     case 'mcp_execute_tool': {
       const targetToolName = String(args.toolName ?? '');
-      const namespace = String(args.serverName ?? '') || undefined;
+      const namespace = String(args.serverId ?? '') || undefined;
       const toolArgs = (args.args as Record<string, unknown>) ?? {};
 
       if (!targetToolName) {

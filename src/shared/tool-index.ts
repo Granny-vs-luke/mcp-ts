@@ -24,6 +24,8 @@ export interface ToolSummary {
   description: string;
   /** Server that owns this tool */
   serverName: string;
+  /** Unique ID of the server */
+  serverId: string;
   /** Session the tool belongs to */
   sessionId: string;
   /** Estimated token cost of the full inputSchema */
@@ -33,6 +35,7 @@ export interface ToolSummary {
 /** A tool with routing metadata attached during indexing. */
 export interface IndexedTool extends Tool {
   sessionId: string;
+  serverId: string;
   serverName: string;
 }
 
@@ -177,6 +180,7 @@ export class ToolIndex {
         name: tool.name,
         description: tool.description ?? '',
         serverName: tool.serverName,
+        serverId: tool.serverId,
         sessionId: tool.sessionId,
         estimatedTokens,
       });
@@ -258,8 +262,55 @@ export class ToolIndex {
   async search(query: string, topK = 5): Promise<ToolSummary[]> {
     if (this.tools.size === 0) return [];
 
-    const queryLower = query.toLowerCase();
-    const queryTokens = this.tokenize(queryLower);
+    const queryLower = query.toLowerCase().trim();
+
+    // Fast path: Exact tool name match (supports duplicate names across servers)
+    const exactMatches = [...this.toolSummaries.values()].filter(
+      (summary) => summary.name.toLowerCase() === queryLower
+    );
+    if (exactMatches.length > 0) {
+      return exactMatches.slice(0, topK);
+    }
+
+    // Fast path: MCP prefix match (e.g. "mcp__github")
+    if (queryLower.startsWith('mcp__') && queryLower.length > 5) {
+      const prefixMatches = [...this.toolSummaries.values()]
+        .filter((t) => t.name.toLowerCase().startsWith(queryLower))
+        .slice(0, topK);
+      if (prefixMatches.length > 0) return prefixMatches;
+    }
+
+    const queryTermsRaw = queryLower.split(/\s+/).filter((t) => t.length > 0);
+    const requiredTerms: string[] = [];
+    const optionalTerms: string[] = [];
+
+    for (const term of queryTermsRaw) {
+      if (term.startsWith('+') && term.length > 1) {
+        requiredTerms.push(term.slice(1));
+      } else {
+        optionalTerms.push(term);
+      }
+    }
+
+    const allScoringTerms =
+      requiredTerms.length > 0 ? [...requiredTerms, ...optionalTerms] : queryTermsRaw;
+    const normalizedQueryText = allScoringTerms.join(' ').trim();
+    const queryTokens = this.tokenize(allScoringTerms.join(' '));
+
+    // Pre-filter: only keep documents that contain ALL required terms
+    const candidateKeys = new Set<string>();
+    for (const docKey of this.toolSummaries.keys()) {
+      if (requiredTerms.length > 0) {
+        const text = this.searchTexts.get(docKey) || '';
+        const summary = this.toolSummaries.get(docKey)!;
+        const nameLower = summary.name.toLowerCase();
+        const matchesAll = requiredTerms.every(
+          (term) => text.includes(term) || nameLower.includes(term)
+        );
+        if (!matchesAll) continue;
+      }
+      candidateKeys.add(docKey);
+    }
 
     // 1. Keyword scores (BM25)
     const keywordScores = new Map<string, number>();
@@ -267,7 +318,12 @@ export class ToolIndex {
     const k1 = 1.2;
     const b = 0.75;
 
-    for (const [docKey, docTf] of this.tfVectors) {
+    for (const docKey of candidateKeys) {
+      const docTf = this.tfVectors.get(docKey);
+      if (!docTf) continue;
+      
+      const summary = this.toolSummaries.get(docKey)!;
+
       let score = 0;
       const docLen = this.docLengths.get(docKey) ?? 0;
 
@@ -276,16 +332,30 @@ export class ToolIndex {
         if (tfVal === 0) continue;
 
         const idf = this.idf.get(tok) ?? 0;
-
         // BM25 formula:
         // score = idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (docLen / avgDocLength)))
         const numerator = tfVal * (k1 + 1);
         const denominator = tfVal + k1 * (1 - b + b * (docLen / this.avgDocLength));
-        
+
         score += idf * (numerator / denominator);
       }
 
-      keywordScores.set(docKey, score);
+      // Name heuristics: give massive boosts for exact server/tool name matches
+      const serverLower = (summary.serverName || summary.serverId || '').toLowerCase();
+      const toolLower = summary.name.toLowerCase();
+
+      for (const term of allScoringTerms) {
+        if (serverLower.includes(term)) {
+          score += 10;
+        }
+        if (toolLower.includes(term)) {
+          score += 5;
+        }
+      }
+
+      if (score > 0) {
+        keywordScores.set(docKey, score);
+      }
     }
 
     // 2. Embedding scores (optional)
@@ -293,11 +363,14 @@ export class ToolIndex {
 
     if (this.options.embedFn && this.embeddings.size > 0) {
       try {
-        const [queryEmbedding] = await this.options.embedFn([queryLower]);
+        const [queryEmbedding] = await this.options.embedFn([normalizedQueryText]);
         if (queryEmbedding) {
           embeddingScores = new Map();
-          for (const [docKey, vec] of this.embeddings) {
-            embeddingScores.set(docKey, this.cosineSimilarity(queryEmbedding, vec));
+          for (const docKey of candidateKeys) {
+            const vec = this.embeddings.get(docKey);
+            if (vec) {
+              embeddingScores.set(docKey, this.cosineSimilarity(queryEmbedding, vec));
+            }
           }
         }
       } catch {
@@ -309,7 +382,7 @@ export class ToolIndex {
     const kw = this.options.keywordWeight;
     const finalScores: Array<{ docKey: string; score: number }> = [];
 
-    for (const docKey of this.toolSummaries.keys()) {
+    for (const docKey of candidateKeys) {
       const kwScore = keywordScores.get(docKey) ?? 0;
       const embScore = embeddingScores?.get(docKey) ?? 0;
 
@@ -389,7 +462,7 @@ export class ToolIndex {
     const list = this.tools.get(name) ?? [];
     if (!namespace) return list;
 
-    return list.filter((t) => t.sessionId === namespace || t.serverName === namespace);
+    return list.filter((t) => t.sessionId === namespace || t.serverId === namespace);
   }
 
   /** All indexed tool names. */
@@ -463,7 +536,7 @@ export class ToolIndex {
   }
 
   private getDocumentKey(tool: IndexedTool): string {
-    return `${tool.sessionId}::${tool.serverName}::${tool.name}`;
+    return `${tool.sessionId}::${tool.serverId}::${tool.name}`;
   }
 
   /** Simple whitespace + camelCase + snake_case tokenizer. */
