@@ -40,6 +40,7 @@ test.describe('ToolIndex', () => {
                 inputSchema: { type: 'object', properties: {} },
                 serverName: 'GitHub',
                 sessionId: 'github-session',
+                serverId: 'github-server',
             },
             {
                 name: 'search',
@@ -47,6 +48,7 @@ test.describe('ToolIndex', () => {
                 inputSchema: { type: 'object', properties: {} },
                 serverName: 'Slack',
                 sessionId: 'slack-session',
+                serverId: 'slack-server',
             },
         ];
 
@@ -56,7 +58,9 @@ test.describe('ToolIndex', () => {
         const slackResults = await index.search('slack channels', 2);
 
         expect(githubResults[0].serverName).toBe('GitHub');
+        expect(githubResults[0].serverId).toBe('github-server');
         expect(slackResults[0].serverName).toBe('Slack');
+        expect(slackResults[0].serverId).toBe('slack-server');
         expect(index.getTool('search')).toHaveLength(2);
         expect(githubResults[0].estimatedTokens).toBeGreaterThan(0);
         expect(index.getTotalTokenCost()).toBe(
@@ -81,6 +85,7 @@ test.describe('ToolIndex', () => {
                 inputSchema: { type: 'object', properties: {} },
                 serverName: 'Slack',
                 sessionId: 'slack-session',
+                serverId: 'slack-server',
             },
             {
                 name: 'create_pr',
@@ -88,12 +93,14 @@ test.describe('ToolIndex', () => {
                 inputSchema: { type: 'object', properties: {} },
                 serverName: 'GitHub',
                 sessionId: 'github-session',
+                serverId: 'github-server',
             },
         ];
 
         await index.buildIndex(tools);
-        await index.search('+slack send', 5);
+        const results = await index.search('+slack send', 5);
 
         expect(embeddingQueryText).toBe('slack send');
+        expect(results[0].serverId).toBe('slack-server');
     });
 });
