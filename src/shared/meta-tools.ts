@@ -226,6 +226,8 @@ export async function executeMetaTool(
             errors.push(`- **${requestedToolName}**: ${errorMsg}`);
           } else if (tool) {
             found.push(tool);
+          } else {
+            errors.push(`- **${requestedToolName}**: Tool not found. Try searching with mcp_search_tool_bm25.`);
           }
         }
 
