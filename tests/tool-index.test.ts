@@ -34,4 +34,37 @@ test.describe('ToolIndex', () => {
             githubResults[0].estimatedTokens + slackResults[0].estimatedTokens
         );
     });
+
+    test('should strip required-term prefixes before embedding query text', async () => {
+        let embeddingQueryText: string | null = null;
+        const embedFn = async (texts: string[]): Promise<number[][]> => {
+            if (texts.length === 1) {
+                embeddingQueryText = texts[0];
+            }
+            return texts.map((text) => [text.length, 1]);
+        };
+
+        const index = new ToolIndex({ embedFn });
+        const tools: IndexedTool[] = [
+            {
+                name: 'send_message',
+                description: 'Send Slack messages',
+                inputSchema: { type: 'object', properties: {} },
+                serverName: 'Slack',
+                sessionId: 'slack-session',
+            },
+            {
+                name: 'create_pr',
+                description: 'Create GitHub pull requests',
+                inputSchema: { type: 'object', properties: {} },
+                serverName: 'GitHub',
+                sessionId: 'github-session',
+            },
+        ];
+
+        await index.buildIndex(tools);
+        await index.search('+slack send', 5);
+
+        expect(embeddingQueryText).toBe('slack send');
+    });
 });
