@@ -222,7 +222,8 @@ export async function executeMetaTool(
         for (const requestedToolName of requested) {
           const { tool, error } = resolveToolSchema(requestedToolName);
           if (error) {
-            errors.push(`- **${requestedToolName}**: ${error}`);
+            const errorMsg = error.content[0]?.type === 'text' ? error.content[0].text : 'Unknown error';
+            errors.push(`- **${requestedToolName}**: ${errorMsg}`);
           } else if (tool) {
             found.push(tool);
           }
@@ -232,7 +233,7 @@ export async function executeMetaTool(
 
         if (found.length > 0) {
           lines.push(...found.map((t, i) =>
-            `${i + 1}. **${t.name}** (server: ${t.serverName || t.serverId})\n   ${t.description}`
+            `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n   ${t.description}`
           ));
         }
         
