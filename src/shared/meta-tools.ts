@@ -251,7 +251,7 @@ export async function executeMetaTool(
 
         return {
           content: [{ type: 'text', text }],
-          isError: false,
+          isError: found.length === 0,
         };
       }
 
