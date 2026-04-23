@@ -105,10 +105,10 @@ export function createGetSchemaToolDefinition(): Tool {
           type: 'string',
           description: 'The exact tool name returned by mcp_search_tool_bm25.',
         },
-        serverName: {
+        serverId: {
           type: 'string',
           description:
-            'Optional: The server name provided in mcp_search_tool_bm25. Required if multiple tools have the same name.',
+            'Optional: The server ID provided in mcp_search_tool_bm25. Required if multiple tools have the same name.',
         },
       },
       required: ['toolName'],
@@ -141,10 +141,10 @@ export function createExecuteToolDefinition(): Tool {
           type: 'string',
           description: 'The exact tool name from mcp_search_tool_bm25 results.',
         },
-        serverName: {
+        serverId: {
           type: 'string',
           description:
-            'Optional: The server name provided in mcp_search_tool_bm25. Required if multiple tools have the same name.',
+            'Optional: The server ID provided in mcp_search_tool_bm25. Required if multiple tools have the same name.',
         },
         args: {
           type: 'object',
@@ -213,7 +213,7 @@ export async function executeMetaTool(
         : results
             .map(
               (t, i) =>
-                `${i + 1}. **${t.name}** (server: ${t.serverName})\n` +
+                `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n` +
                 `   ${t.description}\n` +
                 `   Estimated tokens: ${t.estimatedTokens}`
             )
@@ -236,7 +236,7 @@ export async function executeMetaTool(
         : results
             .map(
               (t, i) =>
-                `${i + 1}. **${t.name}** (server: ${t.serverName})\n` +
+                `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n` +
                 `   ${t.description}\n` +
                 `   Estimated tokens: ${t.estimatedTokens}`
             )
@@ -250,7 +250,7 @@ export async function executeMetaTool(
 
     case 'mcp_get_tool_schema': {
       const name = String(args.toolName ?? '');
-      const namespace = String(args.serverName ?? '') || undefined;
+      const namespace = String(args.serverId ?? '') || undefined;
       const { tool, error } = resolveToolSchema(name, namespace);
 
       if (error) {
@@ -283,7 +283,7 @@ export async function executeMetaTool(
 
     case 'mcp_execute_tool': {
       const targetToolName = String(args.toolName ?? '');
-      const namespace = String(args.serverName ?? '') || undefined;
+      const namespace = String(args.serverId ?? '') || undefined;
       const toolArgs = (args.args as Record<string, unknown>) ?? {};
 
       if (!targetToolName) {

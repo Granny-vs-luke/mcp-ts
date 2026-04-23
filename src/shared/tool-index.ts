@@ -24,6 +24,8 @@ export interface ToolSummary {
   description: string;
   /** Server that owns this tool */
   serverName: string;
+  /** Unique ID of the server */
+  serverId: string;
   /** Session the tool belongs to */
   sessionId: string;
   /** Estimated token cost of the full inputSchema */
@@ -33,6 +35,7 @@ export interface ToolSummary {
 /** A tool with routing metadata attached during indexing. */
 export interface IndexedTool extends Tool {
   sessionId: string;
+  serverId: string;
   serverName: string;
 }
 
@@ -177,6 +180,7 @@ export class ToolIndex {
         name: tool.name,
         description: tool.description ?? '',
         serverName: tool.serverName,
+        serverId: tool.serverId,
         sessionId: tool.sessionId,
         estimatedTokens,
       });
@@ -389,7 +393,7 @@ export class ToolIndex {
     const list = this.tools.get(name) ?? [];
     if (!namespace) return list;
 
-    return list.filter((t) => t.sessionId === namespace || t.serverName === namespace);
+    return list.filter((t) => t.sessionId === namespace || t.serverId === namespace);
   }
 
   /** All indexed tool names. */
@@ -463,7 +467,7 @@ export class ToolIndex {
   }
 
   private getDocumentKey(tool: IndexedTool): string {
-    return `${tool.sessionId}::${tool.serverName}::${tool.name}`;
+    return `${tool.sessionId}::${tool.serverId}::${tool.name}`;
   }
 
   /** Simple whitespace + camelCase + snake_case tokenizer. */

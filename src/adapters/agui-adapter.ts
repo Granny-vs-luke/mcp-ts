@@ -246,12 +246,12 @@ export class AguiAdapter {
         const filteredTools = await router.getFilteredTools();
 
         return filteredTools.map(tool => {
-            const routedTool = tool as typeof tool & { sessionId?: string; serverName?: string };
-            const namespace = routedTool.serverName ?? routedTool.sessionId;
+            const routedTool = tool as typeof tool & { sessionId?: string; serverId?: string; serverName?: string };
+            const namespace = routedTool.serverId ?? routedTool.sessionId;
             return {
                 name: isMetaTool(tool.name)
                     ? tool.name
-                    : this.getRouterToolKey(tool.name, routedTool.sessionId, routedTool.serverName),
+                    : this.getRouterToolKey(tool.name, routedTool.sessionId, routedTool.serverId),
                 description: tool.description || `Execute ${tool.name}`,
                 parameters: cleanSchema(tool.inputSchema),
                 handler: async (args: any) => {
@@ -279,19 +279,19 @@ export class AguiAdapter {
     private async getToolDefinitionsViaRouter(router: ToolRouter): Promise<AguiToolDefinition[]> {
         const filteredTools = await router.getFilteredTools();
         return filteredTools.map(tool => {
-            const routedTool = tool as typeof tool & { sessionId?: string; serverName?: string };
+            const routedTool = tool as typeof tool & { sessionId?: string; serverId?: string; serverName?: string };
             return {
                 name: isMetaTool(tool.name)
                     ? tool.name
-                    : this.getRouterToolKey(tool.name, routedTool.sessionId, routedTool.serverName),
+                    : this.getRouterToolKey(tool.name, routedTool.sessionId, routedTool.serverId),
                 description: tool.description || `Execute ${tool.name}`,
                 parameters: cleanSchema(tool.inputSchema)
             };
         });
     }
 
-    private getRouterToolKey(toolName: string, sessionId?: string, serverName?: string): string {
-        const namespace = sessionId ?? serverName ?? 'mcp';
+    private getRouterToolKey(toolName: string, sessionId?: string, serverId?: string): string {
+        const namespace = sessionId ?? serverId ?? 'mcp';
         const normalized = namespace
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '_')
