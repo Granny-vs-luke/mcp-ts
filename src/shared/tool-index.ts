@@ -293,6 +293,7 @@ export class ToolIndex {
 
     const allScoringTerms =
       requiredTerms.length > 0 ? [...requiredTerms, ...optionalTerms] : queryTermsRaw;
+    const normalizedQueryText = allScoringTerms.join(' ').trim();
     const queryTokens = this.tokenize(allScoringTerms.join(' '));
 
     // Pre-filter: only keep documents that contain ALL required terms
@@ -361,7 +362,7 @@ export class ToolIndex {
 
     if (this.options.embedFn && this.embeddings.size > 0) {
       try {
-        const [queryEmbedding] = await this.options.embedFn([queryLower]);
+        const [queryEmbedding] = await this.options.embedFn([normalizedQueryText]);
         if (queryEmbedding) {
           embeddingScores = new Map();
           for (const docKey of candidateKeys) {
