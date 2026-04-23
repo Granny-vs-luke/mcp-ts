@@ -63,8 +63,7 @@ function PopupCallbackContent() {
         { type: AUTH_CODE_MESSAGE, code, sessionId },
         window.location.origin
       );
-    } catch (error) {
-      console.error("Failed to communicate with opener:", error);
+    } catch {
       window.setTimeout(() => {
         setStatus("error");
         setErrorMessage("Could not communicate with main window. Please close this window and try again.");

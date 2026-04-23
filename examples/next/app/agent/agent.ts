@@ -2,7 +2,6 @@ import { ToolLoopAgent, InferAgentUIMessage, stepCountIs } from "ai";
 import { MultiSessionClient } from "@mcp-ts/sdk/server";
 import { AIAdapter } from "@mcp-ts/sdk/adapters/ai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import { MCP_DEMO_IDENTITY } from "@/app/lib/mcp-identity";
 
 const { ToolRouter } = await import("@mcp-ts/sdk/shared");
 
@@ -12,7 +11,7 @@ You are an expert assistant, an AI assistant that helps users with their tasks u
 
 const globalForMcp = globalThis as unknown as { mcpClientMap?: Map<string, MultiSessionClient> };
 
-export async function createMcpAgent(identity: string = MCP_DEMO_IDENTITY) {
+export async function createMcpAgent(identity: string = process.env.NEXT_PUBLIC_MCP_IDENTITY!) {
   let client = globalForMcp.mcpClientMap?.get(identity);
 
   if (!client) {

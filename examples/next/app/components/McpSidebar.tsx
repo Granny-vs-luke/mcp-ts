@@ -76,9 +76,7 @@ export default function McpSidebar({ mcpClient, onCollapse }: McpSidebarProps) {
   const handleDisconnect = async (sessionId: string) => {
     try {
       await disconnect(sessionId);
-    } catch (err) {
-      console.error("Failed to disconnect:", err);
-    }
+    } catch {}
   };
 
   const handleSelectTool = (sessionId: string, toolName: string) => {
@@ -92,7 +90,8 @@ export default function McpSidebar({ mcpClient, onCollapse }: McpSidebarProps) {
   ) => {
     try {
       const args = JSON.parse(toolArgs);
-      return await callTool(sessionId, toolName, args);
+      const result = await callTool(sessionId, toolName, args);
+      return result;
     } catch (err) {
       return {
         error: err instanceof Error ? err.message : "Tool execution failed",
