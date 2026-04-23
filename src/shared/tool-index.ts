@@ -295,25 +295,32 @@ export class ToolIndex {
       requiredTerms.length > 0 ? [...requiredTerms, ...optionalTerms] : queryTermsRaw;
     const queryTokens = this.tokenize(allScoringTerms.join(' '));
 
-    // 1. Keyword scores (BM25)
-    const keywordScores = new Map<string, number>();
-
-    const k1 = 1.2;
-    const b = 0.75;
-
-    for (const [docKey, docTf] of this.tfVectors) {
-      const summary = this.toolSummaries.get(docKey);
-      if (!summary) continue;
-
-      // Pre-filter: must contain all required terms in search text or tool name
+    // Pre-filter: only keep documents that contain ALL required terms
+    const candidateKeys = new Set<string>();
+    for (const docKey of this.toolSummaries.keys()) {
       if (requiredTerms.length > 0) {
         const text = this.searchTexts.get(docKey) || '';
+        const summary = this.toolSummaries.get(docKey)!;
         const nameLower = summary.name.toLowerCase();
         const matchesAll = requiredTerms.every(
           (term) => text.includes(term) || nameLower.includes(term)
         );
         if (!matchesAll) continue;
       }
+      candidateKeys.add(docKey);
+    }
+
+    // 1. Keyword scores (BM25)
+    const keywordScores = new Map<string, number>();
+
+    const k1 = 1.2;
+    const b = 0.75;
+
+    for (const docKey of candidateKeys) {
+      const docTf = this.tfVectors.get(docKey);
+      if (!docTf) continue;
+      
+      const summary = this.toolSummaries.get(docKey)!;
 
       let score = 0;
       const docLen = this.docLengths.get(docKey) ?? 0;
@@ -323,7 +330,6 @@ export class ToolIndex {
         if (tfVal === 0) continue;
 
         const idf = this.idf.get(tok) ?? 0;
-
         // BM25 formula:
         // score = idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (docLen / avgDocLength)))
         const numerator = tfVal * (k1 + 1);
@@ -332,19 +338,22 @@ export class ToolIndex {
         score += idf * (numerator / denominator);
       }
 
-      // Enhanced Heuristics Scoring
-      for (const term of allScoringTerms) {
-        const nameLower = summary.name.toLowerCase();
-        const serverLower = summary.serverName.toLowerCase();
+      // Name heuristics: give massive boosts for exact server/tool name matches
+      const serverLower = (summary.serverName || summary.serverId || '').toLowerCase();
+      const toolLower = summary.name.toLowerCase();
 
-        if (nameLower === term || serverLower === term) {
+      for (const term of allScoringTerms) {
+        if (serverLower.includes(term)) {
           score += 10;
-        } else if (nameLower.includes(term) || serverLower.includes(term)) {
+        }
+        if (toolLower.includes(term)) {
           score += 5;
         }
       }
 
-      keywordScores.set(docKey, score);
+      if (score > 0) {
+        keywordScores.set(docKey, score);
+      }
     }
 
     // 2. Embedding scores (optional)
@@ -355,8 +364,11 @@ export class ToolIndex {
         const [queryEmbedding] = await this.options.embedFn([queryLower]);
         if (queryEmbedding) {
           embeddingScores = new Map();
-          for (const [docKey, vec] of this.embeddings) {
-            embeddingScores.set(docKey, this.cosineSimilarity(queryEmbedding, vec));
+          for (const docKey of candidateKeys) {
+            const vec = this.embeddings.get(docKey);
+            if (vec) {
+              embeddingScores.set(docKey, this.cosineSimilarity(queryEmbedding, vec));
+            }
           }
         }
       } catch {
@@ -368,7 +380,7 @@ export class ToolIndex {
     const kw = this.options.keywordWeight;
     const finalScores: Array<{ docKey: string; score: number }> = [];
 
-    for (const docKey of this.toolSummaries.keys()) {
+    for (const docKey of candidateKeys) {
       const kwScore = keywordScores.get(docKey) ?? 0;
       const embScore = embeddingScores?.get(docKey) ?? 0;
 
