@@ -2,6 +2,35 @@ import { test, expect } from '@playwright/test';
 import { ToolIndex, type IndexedTool } from '../src/shared/tool-index';
 
 test.describe('ToolIndex', () => {
+    test('should return all exact name matches up to topK across servers', async () => {
+        const index = new ToolIndex();
+        const tools: IndexedTool[] = [
+            {
+                name: 'search',
+                description: 'Search GitHub pull requests and repositories',
+                inputSchema: { type: 'object', properties: {} },
+                serverName: 'GitHub',
+                sessionId: 'github-session',
+                serverId: 'github-server',
+            },
+            {
+                name: 'search',
+                description: 'Search Slack messages and channels',
+                inputSchema: { type: 'object', properties: {} },
+                serverName: 'Slack',
+                sessionId: 'slack-session',
+                serverId: 'slack-server',
+            },
+        ];
+
+        await index.buildIndex(tools);
+
+        const exactResults = await index.search('search', 2);
+
+        expect(exactResults).toHaveLength(2);
+        expect(exactResults.map((r) => r.serverName).sort()).toEqual(['GitHub', 'Slack']);
+    });
+
     test('should keep duplicate tool names searchable per indexed instance', async () => {
         const index = new ToolIndex();
         const tools: IndexedTool[] = [

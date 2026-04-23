@@ -264,11 +264,12 @@ export class ToolIndex {
 
     const queryLower = query.toLowerCase().trim();
 
-    // Fast path: Exact tool name match
-    for (const [docKey, summary] of this.toolSummaries) {
-      if (summary.name.toLowerCase() === queryLower) {
-        return [summary];
-      }
+    // Fast path: Exact tool name match (supports duplicate names across servers)
+    const exactMatches = [...this.toolSummaries.values()].filter(
+      (summary) => summary.name.toLowerCase() === queryLower
+    );
+    if (exactMatches.length > 0) {
+      return exactMatches.slice(0, topK);
     }
 
     // Fast path: MCP prefix match (e.g. "mcp__github")
