@@ -452,6 +452,10 @@ export function useMcp(options: UseMcpOptions): McpClient {
       }
     });
 
+    if (event.type === 'disconnected') {
+      setElicitationRequests((prev) => prev.filter((r) => r.sessionId !== event.sessionId));
+    }
+
     // Handle elicitation events separately (they don't affect connection state)
     if (event.type === 'elicitation') {
       const elicitEvent = event as McpElicitationEvent;
@@ -590,6 +594,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
     // Remove from local state
     if (isMountedRef.current) {
       setConnections((prev: McpConnection[]) => prev.filter((c: McpConnection) => c.sessionId !== sessionId));
+      setElicitationRequests((prev) => prev.filter((r) => r.sessionId !== sessionId));
     }
   }, []);
 
@@ -723,7 +728,10 @@ export function useMcp(options: UseMcpOptions): McpClient {
         throw new Error('SSE client not initialized');
       }
 
-      await clientRef.current.respondToElicitation(elicitationId, data);
+      const result = await clientRef.current.respondToElicitation(elicitationId, data);
+      if (!result.success) {
+        throw new Error(`Elicitation "${elicitationId}" is no longer pending`);
+      }
 
       // Remove from pending list on success
       if (isMountedRef.current) {

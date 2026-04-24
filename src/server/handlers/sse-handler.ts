@@ -90,14 +90,18 @@ export class SSEConnectionManager {
   private heartbeatTimer?: NodeJS.Timeout;
   private isActive = true;
 
-  /** Manages pending elicitations for this connection */
-  readonly elicitationManager = new ElicitationManager();
+  /** Manages pending elicitations for this identity */
+  readonly elicitationManager: ElicitationManager;
+  private readonly ownsElicitationManager: boolean;
 
   constructor(
     private readonly options: SSEHandlerOptions,
-    private readonly sendEvent: (event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse) => void
+    private readonly sendEvent: (event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse) => void,
+    elicitationManager?: ElicitationManager
   ) {
     this.identity = options.identity;
+    this.elicitationManager = elicitationManager ?? new ElicitationManager();
+    this.ownsElicitationManager = !elicitationManager;
     this.startHeartbeat();
   }
 
@@ -649,8 +653,10 @@ export class SSEConnectionManager {
       clearInterval(this.heartbeatTimer);
     }
 
-    // Reject all pending elicitations so meta-tool awaits don't hang forever
-    this.elicitationManager.rejectAll('SSE connection closed');
+    if (this.ownsElicitationManager) {
+      // Reject all pending elicitations so meta-tool awaits don't hang forever
+      this.elicitationManager.rejectAll('SSE connection closed');
+    }
 
     for (const client of this.clients.values()) {
       client.disconnect();
@@ -669,6 +675,8 @@ export class SSEConnectionManager {
  * Handles both SSE streaming (GET) and RPC requests (POST).
  */
 export function createSSEHandler(options: SSEHandlerOptions) {
+  const sharedElicitationManager = new ElicitationManager();
+
   return async (req: { method?: string; on: Function }, res: { writeHead: Function; write: Function }) => {
     // Set SSE headers
     res.writeHead(200, {
@@ -682,15 +690,19 @@ export function createSSEHandler(options: SSEHandlerOptions) {
     writeSSEEvent(res, 'connected', { timestamp: Date.now() });
 
     // Create connection manager with event routing
-    const manager = new SSEConnectionManager(options, (event) => {
-      if (isRpcResponseEvent(event)) {
-        writeSSEEvent(res, 'rpc-response', event);
-      } else if (isConnectionEvent(event)) {
-        writeSSEEvent(res, 'connection', event);
-      } else {
-        writeSSEEvent(res, 'observability', event);
-      }
-    });
+    const manager = new SSEConnectionManager(
+      options,
+      (event) => {
+        if (isRpcResponseEvent(event)) {
+          writeSSEEvent(res, 'rpc-response', event);
+        } else if (isConnectionEvent(event)) {
+          writeSSEEvent(res, 'connection', event);
+        } else {
+          writeSSEEvent(res, 'observability', event);
+        }
+      },
+      sharedElicitationManager
+    );
 
     // Cleanup on client disconnect
     req.on('close', () => manager.dispose());

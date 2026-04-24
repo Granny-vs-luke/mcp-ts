@@ -46,14 +46,23 @@ export class ElicitationManager {
     }
 
     return new Promise<Record<string, unknown>>((resolve, reject) => {
+      let entry: {
+        resolve: (data: Record<string, unknown>) => void;
+        reject: (err: Error) => void;
+        timer: ReturnType<typeof setTimeout>;
+      };
+
       const timer = setTimeout(() => {
-        if (this.pending.has(elicitationId)) {
+        // Guard against stale timer callbacks: only reject/delete if this callback
+        // still corresponds to the currently registered entry for the same ID.
+        if (this.pending.get(elicitationId) === entry) {
           this.pending.delete(elicitationId);
           reject(new Error(`Elicitation "${elicitationId}" timed out after ${timeoutMs}ms`));
         }
       }, timeoutMs);
 
-      this.pending.set(elicitationId, { resolve, reject, timer });
+      entry = { resolve, reject, timer };
+      this.pending.set(elicitationId, entry);
     });
   }
 

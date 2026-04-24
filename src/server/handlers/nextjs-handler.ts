@@ -9,6 +9,7 @@ import { SSEConnectionManager, type ClientMetadata } from './sse-handler.js';
 import type { McpConnectionEvent, McpObservabilityEvent } from '../../shared/events.js';
 import { isConnectionEvent, isRpcResponseEvent } from '../../shared/event-routing.js';
 import type { McpRpcResponse } from '../../shared/types.js';
+import { ElicitationManager } from '../mcp/elicitation-manager.js';
 
 export interface NextMcpHandlerOptions {
   /**
@@ -62,6 +63,18 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
     clientDefaults: resolvedClientMetadata,
   });
 
+  const elicitationManagers = new Map<string, ElicitationManager>();
+
+  const getElicitationManager = (identity: string): ElicitationManager => {
+    const existing = elicitationManagers.get(identity);
+    if (existing) {
+      return existing;
+    }
+    const manager = new ElicitationManager();
+    elicitationManagers.set(identity, manager);
+    return manager;
+  };
+
   async function resolveClientMetadata(request: Request): Promise<ClientMetadata | undefined> {
     return getClientMetadata ? await getClientMetadata(request) : clientDefaults;
   }
@@ -112,9 +125,11 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
       const resolvedClientMetadata = await resolveClientMetadata(request);
 
       if (!acceptsEventStream) {
+        const elicitationManager = getElicitationManager(identity);
         const manager = new SSEConnectionManager(
           toManagerOptions(identity, resolvedClientMetadata),
-          () => { }
+          () => { },
+          elicitationManager
         );
         try {
           const response = await manager.handleRequest(body as any);
@@ -147,7 +162,8 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
           } else {
             sendSSE('observability', event);
           }
-        }
+        },
+        getElicitationManager(identity)
       );
 
       sendSSE('connected', { timestamp: Date.now() });
