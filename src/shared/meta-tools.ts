@@ -31,8 +31,10 @@ export type EmitElicitationFn = (
   elicitationId: string,
   sessionId: string,
   serverId: string,
-  prompt: string,
-  schema: Record<string, unknown>
+  mode: 'form' | 'url',
+  message: string,
+  schema?: Record<string, unknown>,
+  url?: string
 ) => void;
 
 /**
@@ -41,7 +43,7 @@ export type EmitElicitationFn = (
  */
 export type WaitForElicitationFn = (
   elicitationId: string
-) => Promise<Record<string, unknown>>;
+) => Promise<{ action: 'accept' | 'decline' | 'cancel'; data?: Record<string, unknown> }>;
 
 // ---------------------------------------------------------------------------
 // Tool Definitions
@@ -197,20 +199,28 @@ export function createElicitInputToolDefinition(): Tool {
     name: 'mcp_elicit_input',
     description:
       'Request additional structured input from the user during tool execution. ' +
-      'Pauses the current tool and displays a form to the user. ' +
-      'Returns the submitted form data once the user responds. ' +
+      'Supports two modes: "form" (default) for structured JSON data, and "url" to direct the user to an external URL. ' +
       'Only call this when a required parameter cannot be inferred.',
     inputSchema: {
       type: 'object' as const,
       properties: {
+        mode: {
+          type: 'string',
+          enum: ['form', 'url'],
+          description: 'The elicitation mode: "form" to collect data, "url" to redirect the user.',
+        },
         prompt: {
           type: 'string',
-          description: 'Human-readable question or instruction shown above the form.',
+          description: 'Human-readable question or instruction shown above the form or URL. Also supports "message".',
+        },
+        url: {
+          type: 'string',
+          description: 'The URL to navigate the user to (required if mode is "url").',
         },
         schema: {
           type: 'object',
           description:
-            'JSON Schema (draft-07) describing the fields to collect. ' +
+            'JSON Schema (draft-07) describing the fields to collect for "form" mode. ' +
             'Example: { "type": "object", "properties": { "confirm": { "type": "boolean" } }, "required": ["confirm"] }',
           additionalProperties: true,
         },
@@ -223,7 +233,7 @@ export function createElicitInputToolDefinition(): Tool {
           description: 'The server ID for the session.',
         },
       },
-      required: ['prompt', 'schema'],
+      required: ['prompt'],
     },
   };
 }
@@ -459,14 +469,23 @@ export async function executeMetaTool(
     }
 
     case 'mcp_elicit_input': {
-      const prompt = String(args.prompt ?? '');
+      const mode = (args.mode as 'form' | 'url') || 'form';
+      const message = String(args.prompt ?? args.message ?? '');
       const schema = (args.schema as Record<string, unknown>) ?? {};
+      const url = args.url ? String(args.url) : undefined;
       const sessionId = String(args.sessionId ?? '');
       const serverId = String(args.serverId ?? '');
 
-      if (!prompt) {
+      if (!message) {
         return {
-          content: [{ type: 'text', text: 'Missing required parameter "prompt" for mcp_elicit_input.' }],
+          content: [{ type: 'text', text: 'Missing required parameter "prompt" or "message" for mcp_elicit_input.' }],
+          isError: true,
+        };
+      }
+      
+      if (mode === 'url' && !url) {
+        return {
+          content: [{ type: 'text', text: 'Missing required parameter "url" for URL mode elicitation.' }],
           isError: true,
         };
       }
@@ -478,24 +497,30 @@ export async function executeMetaTool(
         };
       }
 
-      // Generate a unique ID for this elicitation round-trip
       const elicitationId = `elicit_${nanoid(12)}`;
 
-      // Fire the SSE event — client will render the form
-      emitElicitationFn(elicitationId, sessionId, serverId, prompt, schema);
+      // Fire the SSE event — client will render the form or URL
+      emitElicitationFn(elicitationId, sessionId, serverId, mode, message, schema, url);
 
       try {
         // Suspend until the user submits the form (or timeout)
-        const userData = await waitForElicitationFn(elicitationId);
+        const response = await waitForElicitationFn(elicitationId);
+
+        if (response.action === 'decline') {
+          return { content: [{ type: 'text', text: 'User declined the elicitation request.' }], isError: false };
+        }
+        if (response.action === 'cancel') {
+          return { content: [{ type: 'text', text: 'User cancelled the elicitation request.' }], isError: false };
+        }
 
         return {
-          content: [{ type: 'text', text: JSON.stringify(userData, null, 2) }],
+          content: [{ type: 'text', text: JSON.stringify(response.data ?? {}, null, 2) }],
           isError: false,
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const msg = err instanceof Error ? err.message : String(err);
         return {
-          content: [{ type: 'text', text: `Elicitation failed or was cancelled: ${message}` }],
+          content: [{ type: 'text', text: `Elicitation failed or was cancelled: ${msg}` }],
           isError: true,
         };
       }

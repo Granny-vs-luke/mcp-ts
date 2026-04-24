@@ -141,18 +141,21 @@ export class SSEClient {
   /**
    * Submit the user's response to a pending elicitation request.
    *
-   * Call this after the user fills out the form described in the
-   * `McpElicitationEvent`. The server will resolve the paused tool
-   * execution with the provided data.
+   * The `action` matches the MCP spec's three-action model:
+   * - `'accept'`  — user submitted the form (`data` is provided)
+   * - `'decline'` — user explicitly declined (no `data`)
+   * - `'cancel'`  — user dismissed without choosing (no `data`)
    *
    * @param elicitationId  ID from the `McpElicitationEvent.elicitationId` field.
-   * @param data           Form data submitted by the user.
+   * @param action         User action.
+   * @param data           Form data — required when action is 'accept'.
    */
   async respondToElicitation(
     elicitationId: string,
-    data: Record<string, unknown>
+    action: 'accept' | 'decline' | 'cancel',
+    data?: Record<string, unknown>
   ): Promise<ElicitRespondResult> {
-    return this.sendRequest<ElicitRespondResult>('elicitationRespond', { elicitationId, data });
+    return this.sendRequest<ElicitRespondResult>('elicitationRespond', { elicitationId, action, data });
   }
 
   preloadToolUiResources(sessionId: string, tools: Array<{ name: string; _meta?: unknown }>): void {

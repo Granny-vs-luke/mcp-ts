@@ -142,16 +142,23 @@ export type McpConnectionEvent =
  */
 export interface McpElicitationEvent {
   type: 'elicitation';
-  /** Unique identifier for this elicitation request */
+  /** Unique identifier for this elicitation round-trip */
   elicitationId: string;
   /** MCP session that owns this elicitation */
   sessionId: string;
   /** Server that owns this session */
   serverId: string;
-  /** Human-readable prompt to display above the form */
-  prompt: string;
-  /** JSON Schema (draft-07) describing the expected user input */
-  schema: Record<string, unknown>;
+  /**
+   * Human-readable message/prompt shown above the form.
+   * Named `message` to match the MCP spec's `elicitation/create` `message` field.
+   */
+  message: string;
+  /** The elicitation mode per MCP spec: 'form' or 'url' */
+  mode: 'form' | 'url';
+  /** JSON Schema for 'form' mode describing the expected user input */
+  schema?: Record<string, unknown>;
+  /** The URL to navigate to for 'url' mode */
+  url?: string;
   /** ISO timestamp */
   timestamp: number;
 }

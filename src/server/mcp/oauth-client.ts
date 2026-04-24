@@ -27,6 +27,7 @@ import {
   ReadResourceRequest,
   ReadResourceResult,
   ReadResourceResultSchema,
+  ElicitRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { OAuthTokens, OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { StorageOAuthClientProvider, type AgentsOAuthProvider } from './storage-oauth-provider.js';
@@ -77,6 +78,19 @@ export interface MCPOAuthClientOptions {
   clientUri?: string;
   logoUri?: string;
   policyUri?: string;
+  /**
+   * Called when the remote MCP server sends an `elicitation/create` request
+   * (MCP spec 2025-11-25). Receives the message and JSON Schema, should show
+   * a form to the user, and return the three-action response.
+   *
+   * If not provided, elicitation requests from the server will be auto-declined.
+   */
+  onElicitationRequest?: (params: {
+    mode: 'form' | 'url';
+    message: string;
+    requestedSchema?: Record<string, unknown>;
+    url?: string;
+  }) => Promise<{ action: 'accept' | 'decline' | 'cancel'; data?: Record<string, unknown> }>;
 }
 
 /**
@@ -105,6 +119,9 @@ export class MCPClient {
   private logoUri?: string;
   private policyUri?: string;
   private createdAt?: number;
+
+  /** Callback for handling protocol-level elicitation/create requests from the server */
+  private onElicitationRequest?: MCPOAuthClientOptions['onElicitationRequest'];
 
 
   /** Event emitters for connection lifecycle */
@@ -137,6 +154,7 @@ export class MCPClient {
     this.clientUri = options.clientUri;
     this.logoUri = options.logoUri;
     this.policyUri = options.policyUri;
+    this.onElicitationRequest = options.onElicitationRequest;
   }
 
   /**
@@ -334,6 +352,12 @@ export class MCPClient {
         },
         {
           capabilities: {
+            // Declare elicitation support per MCP spec 2025-11-25
+            // Without this, compliant servers will NOT send elicitation/create requests.
+            elicitation: {
+              form: {},
+              url: {}
+            },
             extensions: {
               'io.modelcontextprotocol/ui': {
                 mimeTypes: ['text/html+mcp'],
@@ -342,6 +366,29 @@ export class MCPClient {
           } as McpAppClientCapabilities
         }
       );
+
+      this.client.setRequestHandler(ElicitRequestSchema, async (request) => {
+        const params = request.params as any;
+        const mode = params.mode || 'form';
+        const message = params.message ?? '';
+        const requestedSchema = params.requestedSchema;
+        const url = params.url;
+
+        if (!this.onElicitationRequest) {
+          // Spec says clients SHOULD allow declining — auto-decline if no handler configured
+          return { action: 'decline' as const };
+        }
+
+        try {
+          const response = await this.onElicitationRequest({ mode, message, requestedSchema, url });
+          return {
+            action: response.action,
+            ...(response.action === 'accept' && response.data && mode === 'form' ? { content: response.data } : {}),
+          };
+        } catch {
+          return { action: 'cancel' as const };
+        }
+      });
     }
 
     // Create session in storage if it doesn't exist yet

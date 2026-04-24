@@ -220,12 +220,19 @@ export interface McpClient {
    * Submit user input for a pending elicitation request.
    * Clears the request from `elicitationRequests` on success.
    *
+   * Action follows the MCP spec's three-action model:
+   * - `'accept'`  — user submitted form data
+   * - `'decline'` — user explicitly declined
+   * - `'cancel'`  — user dismissed without choosing
+   *
    * @param elicitationId  The ID from the `McpElicitationEvent`.
-   * @param data           Form data matching the elicitation schema.
+   * @param action         User action.
+   * @param data           Form data — required when action is 'accept'.
    */
   respondToElicitation: (
     elicitationId: string,
-    data: Record<string, unknown>
+    action: 'accept' | 'decline' | 'cancel',
+    data?: Record<string, unknown>
   ) => Promise<void>;
 
   /**
@@ -718,12 +725,16 @@ export function useMcp(options: UseMcpOptions): McpClient {
    * Automatically removes the resolved request from `elicitationRequests`.
    */
   const respondToElicitation = useCallback(
-    async (elicitationId: string, data: Record<string, unknown>): Promise<void> => {
+    async (
+      elicitationId: string,
+      action: 'accept' | 'decline' | 'cancel',
+      data?: Record<string, unknown>
+    ): Promise<void> => {
       if (!clientRef.current) {
         throw new Error('SSE client not initialized');
       }
 
-      await clientRef.current.respondToElicitation(elicitationId, data);
+      await clientRef.current.respondToElicitation(elicitationId, action, data);
 
       // Remove from pending list on success
       if (isMountedRef.current) {

@@ -39,6 +39,7 @@ import { isConnectionEvent, isRpcResponseEvent } from '../../shared/event-routin
 import { MCPClient } from '../mcp/oauth-client.js';
 import { storage } from '../storage/index.js';
 import { ElicitationManager } from '../mcp/elicitation-manager.js';
+import type { ElicitationResponse } from '../mcp/elicitation-manager.js';
 import type { McpElicitationEvent } from '../../shared/events.js';
 import type { ElicitRespondParams, ElicitRespondResult } from '../../shared/types.js';
 
@@ -291,6 +292,8 @@ export class SSEConnectionManager {
         callbackUrl,
         transportType,
         ...clientMetadata, // Spread client metadata (clientName, clientUri, logoUri, policyUri)
+        // Wire protocol-level elicitation/create requests to SSE channel
+        onElicitationRequest: this.buildElicitationCallback(sessionId, serverId),
       });
 
       // Note: Session will be created by MCPClient after successful connection
@@ -391,6 +394,8 @@ export class SSEConnectionManager {
       callbackUrl: session.callbackUrl,
       transportType: session.transportType,
       headers: session.headers,
+      // Wire protocol-level elicitation/create requests to SSE channel
+      onElicitationRequest: this.buildElicitationCallback(sessionId, session.serverId || ''),
     });
 
     // Subscribe to events before connecting
@@ -591,12 +596,34 @@ export class SSEConnectionManager {
 
   /**
    * Handle an elicitation response from the client.
-   * Resolves the pending Promise that the mcp_elicit_input meta-tool is awaiting.
+   * Resolves the pending Promise that the mcp_elicit_input meta-tool or
+   * the MCPClient elicitation/create handler is awaiting.
    */
   private async elicitRespond(params: ElicitRespondParams): Promise<ElicitRespondResult> {
-    const { elicitationId, data } = params;
-    const success = this.elicitationManager.respond(elicitationId, data);
+    const { elicitationId, action, data } = params;
+    const response: ElicitationResponse = { action, data };
+    const success = this.elicitationManager.respond(elicitationId, response);
     return { success };
+  }
+
+  /**
+   * Builds the onElicitationRequest callback for a specific session.
+   * This bridges the SDK's elicitation/create protocol message to our SSE channel.
+   */
+  private buildElicitationCallback(
+    sessionId: string,
+    serverId: string
+  ): (params: { mode: 'form' | 'url'; message: string; requestedSchema?: Record<string, unknown>; url?: string }) => Promise<ElicitationResponse> {
+    return async ({ mode, message, requestedSchema, url }) => {
+      const { nanoid } = await import('nanoid');
+      const elicitationId = `elicit_${nanoid(12)}`;
+
+      // Emit the SSE event so the browser renders the form or URL
+      this.getEmitElicitationFn()(elicitationId, sessionId, serverId, mode, message, requestedSchema, url);
+
+      // Suspend until the user submits, declines, or cancels
+      return this.elicitationManager.elicit(elicitationId);
+    };
   }
 
   /**
@@ -608,16 +635,20 @@ export class SSEConnectionManager {
       elicitationId: string,
       sessionId: string,
       serverId: string,
-      prompt: string,
-      schema: Record<string, unknown>
+      mode: 'form' | 'url',
+      message: string,
+      schema?: Record<string, unknown>,
+      url?: string
     ) => {
       const event: McpElicitationEvent = {
         type: 'elicitation',
         elicitationId,
         sessionId,
         serverId,
-        prompt,
+        mode,
+        message,
         schema,
+        url,
         timestamp: Date.now(),
       };
       this.sendEvent(event);

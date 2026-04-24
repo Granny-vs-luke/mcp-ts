@@ -240,8 +240,15 @@ export interface FinishAuthParams {
 export interface ElicitRespondParams {
   /** Matches the elicitationId emitted in the McpElicitationEvent */
   elicitationId: string;
-  /** User-provided form data matching the elicitation schema */
-  data: Record<string, unknown>;
+  /**
+   * User's action — matches the MCP spec's three-action response model:
+   * - 'accept': user submitted the form (content is provided)
+   * - 'decline': user explicitly declined
+   * - 'cancel': user dismissed without choosing
+   */
+  action: 'accept' | 'decline' | 'cancel';
+  /** User-provided form data — present only when action === 'accept' */
+  data?: Record<string, unknown>;
 }
 
 export type McpRpcParams =
