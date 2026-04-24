@@ -38,6 +38,9 @@ import { UnauthorizedError } from '../../shared/errors.js';
 import { isConnectionEvent, isRpcResponseEvent } from '../../shared/event-routing.js';
 import { MCPClient } from '../mcp/oauth-client.js';
 import { storage } from '../storage/index.js';
+import { ElicitationManager } from '../mcp/elicitation-manager.js';
+import type { McpElicitationEvent } from '../../shared/events.js';
+import type { ElicitRespondParams, ElicitRespondResult } from '../../shared/types.js';
 
 // ============================================
 // Types & Interfaces
@@ -86,6 +89,9 @@ export class SSEConnectionManager {
   private readonly clients = new Map<string, MCPClient>();
   private heartbeatTimer?: NodeJS.Timeout;
   private isActive = true;
+
+  /** Manages pending elicitations for this connection */
+  readonly elicitationManager = new ElicitationManager();
 
   constructor(
     private readonly options: SSEHandlerOptions,
@@ -183,6 +189,10 @@ export class SSEConnectionManager {
 
         case 'readResource':
           result = await this.readResource(request.params as ReadResourceParams);
+          break;
+
+        case 'elicitationRespond':
+          result = await this.elicitRespond(request.params as ElicitRespondParams);
           break;
 
         default:
@@ -580,6 +590,49 @@ export class SSEConnectionManager {
   }
 
   /**
+   * Handle an elicitation response from the client.
+   * Resolves the pending Promise that the mcp_elicit_input meta-tool is awaiting.
+   */
+  private async elicitRespond(params: ElicitRespondParams): Promise<ElicitRespondResult> {
+    const { elicitationId, data } = params;
+    const success = this.elicitationManager.respond(elicitationId, data);
+    return { success };
+  }
+
+  /**
+   * Returns the emit callback needed by the `mcp_elicit_input` meta-tool.
+   * Fires an SSE `elicitation` event to the connected browser client.
+   */
+  getEmitElicitationFn() {
+    return (
+      elicitationId: string,
+      sessionId: string,
+      serverId: string,
+      prompt: string,
+      schema: Record<string, unknown>
+    ) => {
+      const event: McpElicitationEvent = {
+        type: 'elicitation',
+        elicitationId,
+        sessionId,
+        serverId,
+        prompt,
+        schema,
+        timestamp: Date.now(),
+      };
+      this.sendEvent(event);
+    };
+  }
+
+  /**
+   * Returns the wait callback needed by the `mcp_elicit_input` meta-tool.
+   * Suspends until the client POSTs elicitationRespond (or the request times out).
+   */
+  getWaitForElicitationFn() {
+    return (elicitationId: string) => this.elicitationManager.elicit(elicitationId);
+  }
+
+  /**
    * Emit connection event
    */
   private emitConnectionEvent(event: McpConnectionEvent): void {
@@ -595,6 +648,9 @@ export class SSEConnectionManager {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
     }
+
+    // Reject all pending elicitations so meta-tool awaits don't hang forever
+    this.elicitationManager.rejectAll('SSE connection closed');
 
     for (const client of this.clients.values()) {
       client.disconnect();

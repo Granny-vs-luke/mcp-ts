@@ -130,7 +130,31 @@ export type McpConnectionEvent =
     serverId: string;
     message: string;
     timestamp: number;
-  };
+  }
+  | McpElicitationEvent;
+
+/**
+ * Elicitation event — emitted by the server when a tool mid-execution needs
+ * additional structured input from the user before it can continue.
+ *
+ * The client should render a form described by `schema` (JSON Schema draft-07),
+ * collect user input, then call `elicitationRespond` to resume execution.
+ */
+export interface McpElicitationEvent {
+  type: 'elicitation';
+  /** Unique identifier for this elicitation request */
+  elicitationId: string;
+  /** MCP session that owns this elicitation */
+  sessionId: string;
+  /** Server that owns this session */
+  serverId: string;
+  /** Human-readable prompt to display above the form */
+  prompt: string;
+  /** JSON Schema (draft-07) describing the expected user input */
+  schema: Record<string, unknown>;
+  /** ISO timestamp */
+  timestamp: number;
+}
 
 /**
  * Event fired when a tool execution returns a UI resource URI

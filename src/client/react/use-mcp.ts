@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { SSEClient, type SSEClientOptions } from '../core/sse-client';
-import type { McpConnectionEvent, McpConnectionState } from '../../shared/events';
+import type { McpConnectionEvent, McpConnectionState, McpElicitationEvent } from '../../shared/events';
 import type {
   ToolInfo,
   FinishAuthResult,
@@ -209,6 +209,26 @@ export interface McpClient {
   readResource: (sessionId: string, uri: string) => Promise<unknown>;
 
   /**
+   * Pending elicitation requests from the server.
+   * Each entry describes a structured form the user should fill out.
+   * Render a form from `request.schema` (JSON Schema) and call
+   * `respondToElicitation` when the user submits.
+   */
+  elicitationRequests: McpElicitationEvent[];
+
+  /**
+   * Submit user input for a pending elicitation request.
+   * Clears the request from `elicitationRequests` on success.
+   *
+   * @param elicitationId  The ID from the `McpElicitationEvent`.
+   * @param data           Form data matching the elicitation schema.
+   */
+  respondToElicitation: (
+    elicitationId: string,
+    data: Record<string, unknown>
+  ) => Promise<void>;
+
+  /**
    * Access the underlying SSEClient instance (for advanced usage like AppHost)
    */
   sseClient: SSEClient | null;
@@ -238,6 +258,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
     'disconnected'
   );
   const [isInitializing, setIsInitializing] = useState(false);
+  const [elicitationRequests, setElicitationRequests] = useState<McpElicitationEvent[]>([]);
   /** Mirrored from `clientRef` so the public `McpClient` object can be memoized when the instance is ready. */
   const [sseClient, setSseClient] = useState<SSEClient | null>(null);
 
@@ -430,6 +451,17 @@ export function useMcp(options: UseMcpOptions): McpClient {
           return prev;
       }
     });
+
+    // Handle elicitation events separately (they don't affect connection state)
+    if (event.type === 'elicitation') {
+      const elicitEvent = event as McpElicitationEvent;
+      setElicitationRequests((prev) => {
+        // Deduplicate by elicitationId (shouldn't happen, but be safe)
+        const alreadyExists = prev.some((r) => r.elicitationId === elicitEvent.elicitationId);
+        if (alreadyExists) return prev;
+        return [...prev, elicitEvent];
+      });
+    }
   }, [onLog, onRedirect]);
 
   /**
@@ -681,6 +713,28 @@ export function useMcp(options: UseMcpOptions): McpClient {
     return await clientRef.current.readResource(sessionId, uri);
   }, []);
 
+  /**
+   * Submit user input to resolve a pending elicitation request.
+   * Automatically removes the resolved request from `elicitationRequests`.
+   */
+  const respondToElicitation = useCallback(
+    async (elicitationId: string, data: Record<string, unknown>): Promise<void> => {
+      if (!clientRef.current) {
+        throw new Error('SSE client not initialized');
+      }
+
+      await clientRef.current.respondToElicitation(elicitationId, data);
+
+      // Remove from pending list on success
+      if (isMountedRef.current) {
+        setElicitationRequests((prev) =>
+          prev.filter((r) => r.elicitationId !== elicitationId)
+        );
+      }
+    },
+    []
+  );
+
   // Utility functions
   const getConnection = useCallback(
     (sessionId: string) => connections.find((c: McpConnection) => c.sessionId === sessionId),
@@ -731,6 +785,8 @@ export function useMcp(options: UseMcpOptions): McpClient {
       getPrompt,
       listResources,
       readResource,
+      elicitationRequests,
+      respondToElicitation,
       sseClient,
     }),
     [
@@ -755,6 +811,8 @@ export function useMcp(options: UseMcpOptions): McpClient {
       getPrompt,
       listResources,
       readResource,
+      elicitationRequests,
+      respondToElicitation,
       sseClient,
     ]
   );

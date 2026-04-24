@@ -25,6 +25,7 @@ import type {
   ListToolsRpcResult,
   ListPromptsResult,
   ListResourcesResult,
+  ElicitRespondResult,
 } from '../../shared/types.js';
 
 export interface SSEClientOptions {
@@ -135,6 +136,23 @@ export class SSEClient {
 
   async readResource(sessionId: string, uri: string): Promise<unknown> {
     return this.sendRequest('readResource', { sessionId, uri });
+  }
+
+  /**
+   * Submit the user's response to a pending elicitation request.
+   *
+   * Call this after the user fills out the form described in the
+   * `McpElicitationEvent`. The server will resolve the paused tool
+   * execution with the provided data.
+   *
+   * @param elicitationId  ID from the `McpElicitationEvent.elicitationId` field.
+   * @param data           Form data submitted by the user.
+   */
+  async respondToElicitation(
+    elicitationId: string,
+    data: Record<string, unknown>
+  ): Promise<ElicitRespondResult> {
+    return this.sendRequest<ElicitRespondResult>('elicitationRespond', { elicitationId, data });
   }
 
   preloadToolUiResources(sessionId: string, tools: Array<{ name: string; _meta?: unknown }>): void {

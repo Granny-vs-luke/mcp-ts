@@ -17,6 +17,31 @@
 
 import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolRouter } from './tool-router.js';
+import { nanoid } from 'nanoid';
+
+// ---------------------------------------------------------------------------
+// Elicitation Callback Types
+// ---------------------------------------------------------------------------
+
+/**
+ * Called by `mcp_elicit_input` to emit the SSE elicitation event to the client.
+ * Implemented by the SSEConnectionManager which owns the send channel.
+ */
+export type EmitElicitationFn = (
+  elicitationId: string,
+  sessionId: string,
+  serverId: string,
+  prompt: string,
+  schema: Record<string, unknown>
+) => void;
+
+/**
+ * Called by `mcp_elicit_input` to await the user's response.
+ * Returns the form data submitted by the user (or throws on timeout/cancel).
+ */
+export type WaitForElicitationFn = (
+  elicitationId: string
+) => Promise<Record<string, unknown>>;
 
 // ---------------------------------------------------------------------------
 // Tool Definitions
@@ -160,9 +185,48 @@ export function createExecuteToolDefinition(): Tool {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Meta-tool Executors
-// ---------------------------------------------------------------------------
+/**
+ * Creates the `mcp_elicit_input` tool definition.
+ *
+ * When an LLM (or a tool handler) needs additional user input mid-execution,
+ * it calls this tool with a prompt and a JSON Schema describing the expected
+ * form fields. The tool pauses execution until the user submits the form.
+ */
+export function createElicitInputToolDefinition(): Tool {
+  return {
+    name: 'mcp_elicit_input',
+    description:
+      'Request additional structured input from the user during tool execution. ' +
+      'Pauses the current tool and displays a form to the user. ' +
+      'Returns the submitted form data once the user responds. ' +
+      'Only call this when a required parameter cannot be inferred.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        prompt: {
+          type: 'string',
+          description: 'Human-readable question or instruction shown above the form.',
+        },
+        schema: {
+          type: 'object',
+          description:
+            'JSON Schema (draft-07) describing the fields to collect. ' +
+            'Example: { "type": "object", "properties": { "confirm": { "type": "boolean" } }, "required": ["confirm"] }',
+          additionalProperties: true,
+        },
+        sessionId: {
+          type: 'string',
+          description: 'The MCP session ID that owns this execution context.',
+        },
+        serverId: {
+          type: 'string',
+          description: 'The server ID for the session.',
+        },
+      },
+      required: ['prompt', 'schema'],
+    },
+  };
+}
 
 /**
  * Callback for executing a real MCP tool via the correct client.
@@ -177,17 +241,21 @@ export type CallToolFn = (
 /**
  * Execute a meta-tool call and return the result in MCP CallToolResult format.
  *
- * @param toolName - One of the meta-tool names (mcp_search_tool_bm25, mcp_search_tool_regex, etc.)
+ * @param toolName - One of the meta-tool names
  * @param args - The arguments from the LLM's tool call
  * @param router - The ToolRouter to query
  * @param callToolFn - Optional callback for executing real tools (required for mcp_execute_tool)
+ * @param emitElicitationFn - Optional callback to emit SSE elicitation events (required for mcp_elicit_input)
+ * @param waitForElicitationFn - Optional callback to await user responses (required for mcp_elicit_input)
  * @returns MCP-compatible CallToolResult, or null if this isn't a meta-tool
  */
 export async function executeMetaTool(
   toolName: string,
   args: Record<string, unknown>,
   router: ToolRouter,
-  callToolFn?: CallToolFn
+  callToolFn?: CallToolFn,
+  emitElicitationFn?: EmitElicitationFn,
+  waitForElicitationFn?: WaitForElicitationFn
 ): Promise<CallToolResult | null> {
   const resolveToolSchema = (name: string, namespace?: string): { tool?: Tool; error?: CallToolResult } => {
     try {
@@ -390,6 +458,49 @@ export async function executeMetaTool(
       }
     }
 
+    case 'mcp_elicit_input': {
+      const prompt = String(args.prompt ?? '');
+      const schema = (args.schema as Record<string, unknown>) ?? {};
+      const sessionId = String(args.sessionId ?? '');
+      const serverId = String(args.serverId ?? '');
+
+      if (!prompt) {
+        return {
+          content: [{ type: 'text', text: 'Missing required parameter "prompt" for mcp_elicit_input.' }],
+          isError: true,
+        };
+      }
+
+      if (!emitElicitationFn || !waitForElicitationFn) {
+        return {
+          content: [{ type: 'text', text: 'Elicitation is not supported in this execution context (no emit/wait callbacks configured).' }],
+          isError: true,
+        };
+      }
+
+      // Generate a unique ID for this elicitation round-trip
+      const elicitationId = `elicit_${nanoid(12)}`;
+
+      // Fire the SSE event — client will render the form
+      emitElicitationFn(elicitationId, sessionId, serverId, prompt, schema);
+
+      try {
+        // Suspend until the user submits the form (or timeout)
+        const userData = await waitForElicitationFn(elicitationId);
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify(userData, null, 2) }],
+          isError: false,
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: 'text', text: `Elicitation failed or was cancelled: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+
     default:
       return null;
   }
@@ -401,7 +512,8 @@ export function isMetaTool(toolName: string): boolean {
     toolName === 'mcp_search_tool_bm25' ||
     toolName === 'mcp_search_tool_regex' ||
     toolName === 'mcp_get_tool_schema' ||
-    toolName === 'mcp_execute_tool'
+    toolName === 'mcp_execute_tool' ||
+    toolName === 'mcp_elicit_input'
   );
 }
 

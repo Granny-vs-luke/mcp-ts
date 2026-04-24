@@ -21,6 +21,7 @@ export function isConnectionEvent(
     case 'error':
     case 'disconnected':
     case 'progress':
+    case 'elicitation':
       return true;
     default:
       return false;

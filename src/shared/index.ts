@@ -11,6 +11,7 @@ export {
   type Event,
   type McpConnectionState,
   type McpConnectionEvent,
+  type McpElicitationEvent,
   type McpObservabilityEvent,
 } from './events';
 
@@ -47,6 +48,7 @@ export type {
   GetPromptParams,
   ReadResourceParams,
   FinishAuthParams,
+  ElicitRespondParams,
   // RPC result types
   SessionInfo,
   SessionListResult,
@@ -54,6 +56,7 @@ export type {
   DisconnectResult,
   RestoreSessionResult,
   FinishAuthResult,
+  ElicitRespondResult,
   ListToolsRpcResult,
   ListPromptsResult,
   ListResourcesResult,
@@ -103,9 +106,12 @@ export {
   createRegexSearchToolDefinition,
   createGetSchemaToolDefinition,
   createExecuteToolDefinition,
+  createElicitInputToolDefinition,
   executeMetaTool,
   isMetaTool,
   resolveMetaToolProxy,
   type CallToolFn,
+  type EmitElicitationFn,
+  type WaitForElicitationFn,
 } from './meta-tools.js';
 

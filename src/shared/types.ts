@@ -180,7 +180,8 @@ export type McpRpcMethod =
   | 'listPrompts'
   | 'getPrompt'
   | 'listResources'
-  | 'readResource';
+  | 'readResource'
+  | 'elicitationRespond';
 
 export interface McpRpcRequest {
   id: string;
@@ -236,6 +237,13 @@ export interface FinishAuthParams {
   code: string;
 }
 
+export interface ElicitRespondParams {
+  /** Matches the elicitationId emitted in the McpElicitationEvent */
+  elicitationId: string;
+  /** User-provided form data matching the elicitation schema */
+  data: Record<string, unknown>;
+}
+
 export type McpRpcParams =
   | ConnectParams
   | DisconnectParams
@@ -244,6 +252,7 @@ export type McpRpcParams =
   | GetPromptParams
   | ReadResourceParams
   | FinishAuthParams
+  | ElicitRespondParams
   | undefined;
 
 // RPC Result Types
@@ -282,6 +291,11 @@ export interface RestoreSessionResult {
 export interface FinishAuthResult {
   success: boolean;
   toolCount: number;
+}
+
+export interface ElicitRespondResult {
+  /** true if the elicitation was found and resolved, false if it had already timed out */
+  success: boolean;
 }
 
 export interface ListToolsRpcResult {
