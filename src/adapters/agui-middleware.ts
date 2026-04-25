@@ -317,7 +317,6 @@ export class McpMiddleware extends Middleware {
                 state.toolCallNames.clear();
                 state.textContent = ''; // Clear text content for next turn
 
-                anyInput.runId = this.generateId('mcp_run');
                 console.log(`[McpMiddleware] === CONTINUATION RUN === messages: ${input.messages.length}`);
 
                 subscribeToRun(true);
