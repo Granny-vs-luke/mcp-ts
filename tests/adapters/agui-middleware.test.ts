@@ -1,0 +1,221 @@
+import { expect, test } from '@playwright/test';
+import { Observable, type Subscriber } from 'rxjs';
+import { EventType, type AbstractAgent, type BaseEvent, type RunAgentInput } from '@ag-ui/client';
+import { createMcpMiddleware } from '../../src/adapters/agui-middleware';
+import { type AguiTool } from '../../src/adapters/agui-adapter';
+
+type RunHandler = (input: RunAgentInput, subscriber: Subscriber<BaseEvent>) => void | (() => void);
+
+function createAgent(handlers: RunHandler[]): AbstractAgent {
+  let callIndex = 0;
+
+  return {
+    run(input: RunAgentInput) {
+      const handler = handlers[callIndex++];
+      if (!handler) {
+        throw new Error(`Unexpected agent run ${callIndex}`);
+      }
+
+      return new Observable<BaseEvent>((subscriber) => handler(input, subscriber));
+    },
+  } as AbstractAgent;
+}
+
+function collectEvents(events$: Observable<BaseEvent>): Promise<BaseEvent[]> {
+  return new Promise((resolve, reject) => {
+    const events: BaseEvent[] = [];
+
+    events$.subscribe({
+      next: (event) => events.push(event),
+      error: reject,
+      complete: () => resolve(events),
+    });
+  });
+}
+
+function createInput(content: string): RunAgentInput {
+  return {
+    threadId: 'thread-1',
+    runId: 'run-1',
+    messages: [{ id: 'user-1', role: 'user', content }],
+    tools: [],
+    context: [],
+    state: {},
+  };
+}
+
+function startToolRun(subscriber: Subscriber<BaseEvent>, toolCallId: string, toolName: string, query: string) {
+  subscriber.next({
+    type: EventType.TEXT_MESSAGE_CONTENT,
+    messageId: 'assistant-1',
+    delta: 'Let me search for tools.',
+  } as BaseEvent);
+  subscriber.next({
+    type: EventType.TOOL_CALL_START,
+    toolCallId,
+    toolCallName: toolName,
+  } as BaseEvent);
+  subscriber.next({
+    type: EventType.TOOL_CALL_ARGS,
+    toolCallId,
+    delta: JSON.stringify({ query }),
+  } as BaseEvent);
+  subscriber.next({
+    type: EventType.TOOL_CALL_END,
+    toolCallId,
+  } as BaseEvent);
+  subscriber.next({
+    type: EventType.RUN_FINISHED,
+    threadId: 'thread-1',
+    runId: 'run-1',
+  } as BaseEvent);
+}
+
+test.describe('McpMiddleware', () => {
+  test('waits for continuation terminal event after a fast MCP tool result', async () => {
+    const tools: AguiTool[] = [
+      {
+        name: 'mcp_search_tool_bm25',
+        description: 'Search available tools',
+        parameters: { type: 'object', properties: { query: { type: 'string' } } },
+        handler: () => 'No tools found matching your query. Try different keywords.',
+      },
+    ];
+    const input = createInput('which ipl match will be help today ?');
+    const completionTimes: number[] = [];
+    const finalRunFinishedAt = { value: 0 };
+    const next = createAgent([
+      (_input, subscriber) => {
+        startToolRun(subscriber, 'call-1', 'mcp_search_tool_bm25', 'IPL match today cricket');
+        setTimeout(() => subscriber.complete(), 10);
+      },
+      (_input, subscriber) => {
+        setTimeout(() => {
+          subscriber.next({
+            type: EventType.TEXT_MESSAGE_CONTENT,
+            messageId: 'assistant-2',
+            delta: 'I could not find a matching tool.',
+          } as BaseEvent);
+          finalRunFinishedAt.value = Date.now();
+          subscriber.next({
+            type: EventType.RUN_FINISHED,
+            threadId: 'thread-1',
+            runId: 'run-2',
+          } as BaseEvent);
+          subscriber.complete();
+        }, 40);
+      },
+    ]);
+
+    const events$ = createMcpMiddleware({ tools })(input, next);
+    const events = await new Promise<BaseEvent[]>((resolve, reject) => {
+      const seen: BaseEvent[] = [];
+      events$.subscribe({
+        next: (event) => seen.push(event),
+        error: reject,
+        complete: () => {
+          completionTimes.push(Date.now());
+          resolve(seen);
+        },
+      });
+    });
+
+    expect(events.map((event) => event.type)).toContain(EventType.TOOL_CALL_RESULT);
+    expect(events.at(-1)?.type).toBe(EventType.RUN_FINISHED);
+    expect(completionTimes[0]).toBeGreaterThanOrEqual(finalRunFinishedAt.value);
+  });
+
+  test('continues through multiple MCP tool rounds before completing', async () => {
+    const toolResults: string[] = [];
+    const tools: AguiTool[] = [
+      {
+        name: 'mcp_search_tool_bm25',
+        description: 'Search available tools',
+        parameters: { type: 'object', properties: { query: { type: 'string' } } },
+        handler: ({ query }) => {
+          const result = `result for ${query}`;
+          toolResults.push(result);
+          return result;
+        },
+      },
+    ];
+    const input = createInput('find tools');
+    const next = createAgent([
+      (_input, subscriber) => {
+        startToolRun(subscriber, 'call-1', 'mcp_search_tool_bm25', 'first search');
+        setTimeout(() => subscriber.complete(), 10);
+      },
+      (_input, subscriber) => {
+        startToolRun(subscriber, 'call-2', 'mcp_search_tool_bm25', 'second search');
+        setTimeout(() => subscriber.complete(), 10);
+      },
+      (_input, subscriber) => {
+        subscriber.next({
+          type: EventType.TEXT_MESSAGE_CONTENT,
+          messageId: 'assistant-3',
+          delta: 'Done searching.',
+        } as BaseEvent);
+        subscriber.next({
+          type: EventType.RUN_FINISHED,
+          threadId: 'thread-1',
+          runId: 'run-3',
+        } as BaseEvent);
+        subscriber.complete();
+      },
+    ]);
+
+    const events = await collectEvents(createMcpMiddleware({ tools })(input, next));
+
+    expect(toolResults).toEqual(['result for first search', 'result for second search']);
+    expect(events.filter((event) => event.type === EventType.TOOL_CALL_RESULT)).toHaveLength(2);
+    expect(events.at(-1)?.type).toBe(EventType.RUN_FINISHED);
+  });
+
+  test('preserves normalized text content in assistant history for continuation', async () => {
+    const tools: AguiTool[] = [
+      {
+        name: 'mcp_search_tool_bm25',
+        description: 'Search available tools',
+        parameters: { type: 'object', properties: { query: { type: 'string' } } },
+        handler: () => 'No tools found matching your query. Try different keywords.',
+      },
+    ];
+    const input = createInput('find tools');
+    let continuationInput: RunAgentInput | undefined;
+    const next = createAgent([
+      (_input, subscriber) => {
+        startToolRun(subscriber, 'call-1', 'mcp_search_tool_bm25', 'IPL match today cricket');
+        setTimeout(() => subscriber.complete(), 10);
+      },
+      (nextInput, subscriber) => {
+        continuationInput = nextInput;
+        subscriber.next({
+          type: EventType.RUN_FINISHED,
+          threadId: 'thread-1',
+          runId: 'run-2',
+        } as BaseEvent);
+        subscriber.complete();
+      },
+    ]);
+
+    await collectEvents(createMcpMiddleware({ tools })(input, next));
+
+    const assistantMessage = continuationInput?.messages.at(-2) as any;
+    const toolMessage = continuationInput?.messages.at(-1) as any;
+    expect(assistantMessage).toMatchObject({
+      role: 'assistant',
+      content: 'Let me search for tools.',
+      toolCalls: [
+        expect.objectContaining({
+          id: 'call-1',
+          function: expect.objectContaining({ name: 'mcp_search_tool_bm25' }),
+        }),
+      ],
+    });
+    expect(toolMessage).toMatchObject({
+      role: 'tool',
+      toolCallId: 'call-1',
+      content: 'No tools found matching your query. Try different keywords.',
+    });
+  });
+});

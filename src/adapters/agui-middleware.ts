@@ -8,7 +8,7 @@
  * @requires rxjs - Uses RxJS Observables for event streaming
  */
 
-import { Observable, Subscriber } from 'rxjs';
+import { Observable, Subscriber, Subscription } from 'rxjs';
 import {
     Middleware,
     EventType,
@@ -121,7 +121,7 @@ export class McpMiddleware extends Middleware {
         const { toolCallArgsBuffer, toolCallNames, pendingMcpCalls } = state;
 
         // Accumulate text content for reconstruction
-        if (event.type === EventType.TEXT_MESSAGE_CHUNK) {
+        if (event.type === EventType.TEXT_MESSAGE_CHUNK || event.type === EventType.TEXT_MESSAGE_CONTENT) {
             const e = event as any;
             if (e.delta) {
                 state.textContent = (state.textContent || '') + e.delta;
@@ -229,6 +229,8 @@ export class McpMiddleware extends Middleware {
 
     run(input: RunAgentInput, next: AbstractAgent): Observable<BaseEvent> {
         return new Observable<BaseEvent>((observer: Subscriber<BaseEvent>) => {
+            const subscriptions = new Set<Subscription>();
+            let continuationInProgress = false;
             const state: RunState = {
                 toolCallArgsBuffer: new Map(),
                 toolCallNames: new Map(),
@@ -265,6 +267,7 @@ export class McpMiddleware extends Middleware {
                 }
 
                 console.log(`[McpMiddleware] RUN_FINISHED with ${state.pendingMcpCalls.size} pending calls`);
+                continuationInProgress = true;
 
                 // Reconstruct the Assistant Message that triggered these tools
                 const toolCalls = [];
@@ -286,7 +289,7 @@ export class McpMiddleware extends Middleware {
                         id: this.generateId('msg_ast'),
                         role: 'assistant',
                         content: state.textContent || null, // Ensure null if empty string for strict LLMs
-                        tool_calls: toolCalls.length > 0 ? toolCalls : undefined
+                        toolCalls: toolCalls.length > 0 ? toolCalls : undefined
                     };
                     input.messages.push(assistantMsg as any);
                     console.log(`[McpMiddleware] Added assistant message to history before tools: ${state.textContent?.slice(0, 50)}... [${toolCalls.length} tools]`);
@@ -304,7 +307,7 @@ export class McpMiddleware extends Middleware {
                     input.messages.push({
                         id: messageId,
                         role: 'tool',
-                        tool_call_id: toolCallId,
+                        toolCallId,
                         content: result,
                     } as any);
                 }
@@ -317,22 +320,26 @@ export class McpMiddleware extends Middleware {
                 anyInput.runId = this.generateId('mcp_run');
                 console.log(`[McpMiddleware] === CONTINUATION RUN === messages: ${input.messages.length}`);
 
-                // Subscribe to continuation
-                next.run(input).subscribe({
+                subscribeToRun(true);
+            };
+
+            const subscribeToRun = (isContinuation: boolean): Subscription => {
+                let subscription = new Subscription();
+                subscription = next.run(input).subscribe({
                     next: (event) => {
                         if (state.error) return;
 
                         this.handleToolCallEvent(event, state);
 
                         if (event.type === EventType.RUN_ERROR) {
-                            console.log(`[McpMiddleware] RUN_ERROR received in continuation`);
+                            console.log(`[McpMiddleware] RUN_ERROR received${isContinuation ? ' in continuation' : ''}`);
                             state.error = true;
                             observer.next(event);
                             observer.complete();
                             return;
                         }
 
-                        if (event.type === EventType.RUN_STARTED) {
+                        if (isContinuation && event.type === EventType.RUN_STARTED) {
                             console.log(`[McpMiddleware] Filtering RUN_STARTED from continuation`);
                             return;
                         }
@@ -341,6 +348,7 @@ export class McpMiddleware extends Middleware {
                             if (state.pendingMcpCalls.size > 0) {
                                 handleRunFinished();
                             } else {
+                                continuationInProgress = false;
                                 observer.next(event);
                                 observer.complete();
                             }
@@ -350,44 +358,28 @@ export class McpMiddleware extends Middleware {
                     },
                     error: (err) => {
                         state.error = true;
+                        continuationInProgress = false;
                         observer.error(err);
                     },
                     complete: () => {
-                        if (!state.error && state.pendingMcpCalls.size === 0) observer.complete();
+                        subscriptions.delete(subscription);
+                        if (!state.error && state.pendingMcpCalls.size === 0 && !continuationInProgress) observer.complete();
                     },
                 });
+                if (!subscription.closed) {
+                    subscriptions.add(subscription);
+                }
+                return subscription;
             };
 
-            const subscription = next.run(input).subscribe({
-                next: (event) => {
-                    if (state.error) return;
+            subscribeToRun(false);
 
-                    this.handleToolCallEvent(event, state);
-
-                    if (event.type === EventType.RUN_ERROR) {
-                        console.log(`[McpMiddleware] RUN_ERROR received`);
-                        state.error = true;
-                        observer.next(event);
-                        observer.complete();
-                        return;
-                    }
-
-                    if (event.type === EventType.RUN_FINISHED) {
-                        handleRunFinished();
-                        return;
-                    }
-                    observer.next(event);
-                },
-                error: (err) => {
-                    state.error = true;
-                    observer.error(err);
-                },
-                complete: () => {
-                    if (!state.error && state.pendingMcpCalls.size === 0) observer.complete();
-                },
-            });
-
-            return () => subscription.unsubscribe();
+            return () => {
+                for (const subscription of subscriptions) {
+                    subscription.unsubscribe();
+                }
+                subscriptions.clear();
+            };
         });
     }
 }
