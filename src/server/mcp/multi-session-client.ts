@@ -28,6 +28,15 @@ export interface MultiSessionOptions {
      * @default 1000
      */
     retryDelay?: number;
+    /**
+     * Optional callback for handling tool elicitation requests.
+     */
+    onElicitationRequest?: (params: {
+        mode: 'form' | 'url';
+        message: string;
+        requestedSchema?: Record<string, unknown>;
+        url?: string;
+    }) => Promise<{ action: 'accept' | 'decline' | 'cancel'; data?: Record<string, unknown> }>;
 }
 
 /**
@@ -162,6 +171,7 @@ export class MultiSessionClient {
                     serverName: session.serverName,
                     transportType: session.transportType,
                     headers: session.headers,
+                    onElicitationRequest: this.options.onElicitationRequest,
                 });
 
                 const timeoutMs = this.options.timeout ?? DEFAULT_TIMEOUT_MS;

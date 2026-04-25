@@ -48,8 +48,8 @@ function createServer() {
     {
       appName: z.string().describe('Name of the application to deploy'),
     },
-    async ({ appName }, { requestElicitation }) => {
-      const result = await requestElicitation({
+    async ({ appName }) => {
+      const result = await server.server.elicitInput({
         message: `You are about to deploy **${appName}**. Please confirm the target environment.`,
         requestedSchema: {
           type: 'object',
@@ -99,8 +99,8 @@ function createServer() {
     'configure_alert',
     'Configure a monitoring alert. Will collect channel, recipient and threshold via a form.',
     {},
-    async (_, { requestElicitation }) => {
-      const result = await requestElicitation({
+    async (_) => {
+      const result = await server.server.elicitInput({
         message: 'Configure your monitoring alert settings.',
         requestedSchema: {
           type: 'object',
@@ -160,8 +160,8 @@ function createServer() {
       dataset: z.string().describe('Name of the dataset'),
       count: z.number().int().min(1).describe('Number of records to delete'),
     },
-    async ({ dataset, count }, { requestElicitation }) => {
-      const result = await requestElicitation({
+    async ({ dataset, count }) => {
+      const result = await server.server.elicitInput({
         message: `⚠️ You are about to permanently delete **${count}** records from **${dataset}**. This action cannot be undone.`,
         requestedSchema: {
           type: 'object',
@@ -217,8 +217,8 @@ function createServer() {
     {
       provider: z.string().describe('Name of the account provider (e.g. github, stripe)'),
     },
-    async ({ provider }, { requestElicitation }) => {
-      const result = await requestElicitation({
+    async ({ provider }) => {
+      const result = await server.server.elicitInput({
         mode: 'url',
         url: `http://localhost:3000/oauth-mock?provider=${encodeURIComponent(provider)}`,
         message: `⚠️ To link your **${provider}** account, you must authorize access securely.`,

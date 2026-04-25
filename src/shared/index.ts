@@ -106,12 +106,9 @@ export {
   createRegexSearchToolDefinition,
   createGetSchemaToolDefinition,
   createExecuteToolDefinition,
-  createElicitInputToolDefinition,
   executeMetaTool,
   isMetaTool,
   resolveMetaToolProxy,
   type CallToolFn,
-  type EmitElicitationFn,
-  type WaitForElicitationFn,
 } from './meta-tools.js';
 

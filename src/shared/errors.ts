@@ -29,6 +29,24 @@ export class McpError extends Error {
 }
 
 /**
+ * Specialized error thrown when an MCP server requests elicitation mid-execution.
+ * Caught by the AIAdapter to return the requested schema to the LLM.
+ */
+export class ElicitationInterruptError extends Error {
+  constructor(
+    public readonly params: {
+      mode: 'form' | 'url';
+      message: string;
+      requestedSchema?: Record<string, unknown>;
+      url?: string;
+    }
+  ) {
+    super(`Elicitation required: ${params.message}`);
+    this.name = 'ElicitationInterruptError';
+  }
+}
+
+/**
  * Thrown when OAuth authorization is required
  */
 export class UnauthorizedError extends McpError {

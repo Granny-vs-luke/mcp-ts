@@ -17,33 +17,8 @@
 
 import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolRouter } from './tool-router.js';
-import { nanoid } from 'nanoid';
 
-// ---------------------------------------------------------------------------
-// Elicitation Callback Types
-// ---------------------------------------------------------------------------
 
-/**
- * Called by `mcp_elicit_input` to emit the SSE elicitation event to the client.
- * Implemented by the SSEConnectionManager which owns the send channel.
- */
-export type EmitElicitationFn = (
-  elicitationId: string,
-  sessionId: string,
-  serverId: string,
-  mode: 'form' | 'url',
-  message: string,
-  schema?: Record<string, unknown>,
-  url?: string
-) => void;
-
-/**
- * Called by `mcp_elicit_input` to await the user's response.
- * Returns the form data submitted by the user (or throws on timeout/cancel).
- */
-export type WaitForElicitationFn = (
-  elicitationId: string
-) => Promise<{ action: 'accept' | 'decline' | 'cancel'; data?: Record<string, unknown> }>;
 
 // ---------------------------------------------------------------------------
 // Tool Definitions
@@ -187,56 +162,7 @@ export function createExecuteToolDefinition(): Tool {
   };
 }
 
-/**
- * Creates the `mcp_elicit_input` tool definition.
- *
- * When an LLM (or a tool handler) needs additional user input mid-execution,
- * it calls this tool with a prompt and a JSON Schema describing the expected
- * form fields. The tool pauses execution until the user submits the form.
- */
-export function createElicitInputToolDefinition(): Tool {
-  return {
-    name: 'mcp_elicit_input',
-    description:
-      'Request additional structured input from the user during tool execution. ' +
-      'Supports two modes: "form" (default) for structured JSON data, and "url" to direct the user to an external URL. ' +
-      'Only call this when a required parameter cannot be inferred.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        mode: {
-          type: 'string',
-          enum: ['form', 'url'],
-          description: 'The elicitation mode: "form" to collect data, "url" to redirect the user.',
-        },
-        prompt: {
-          type: 'string',
-          description: 'Human-readable question or instruction shown above the form or URL. Also supports "message".',
-        },
-        url: {
-          type: 'string',
-          description: 'The URL to navigate the user to (required if mode is "url").',
-        },
-        schema: {
-          type: 'object',
-          description:
-            'JSON Schema (draft-07) describing the fields to collect for "form" mode. ' +
-            'Example: { "type": "object", "properties": { "confirm": { "type": "boolean" } }, "required": ["confirm"] }',
-          additionalProperties: true,
-        },
-        sessionId: {
-          type: 'string',
-          description: 'The MCP session ID that owns this execution context.',
-        },
-        serverId: {
-          type: 'string',
-          description: 'The server ID for the session.',
-        },
-      },
-      required: ['prompt'],
-    },
-  };
-}
+
 
 /**
  * Callback for executing a real MCP tool via the correct client.
@@ -255,8 +181,6 @@ export type CallToolFn = (
  * @param args - The arguments from the LLM's tool call
  * @param router - The ToolRouter to query
  * @param callToolFn - Optional callback for executing real tools (required for mcp_execute_tool)
- * @param emitElicitationFn - Optional callback to emit SSE elicitation events (required for mcp_elicit_input)
- * @param waitForElicitationFn - Optional callback to await user responses (required for mcp_elicit_input)
  * @returns MCP-compatible CallToolResult, or null if this isn't a meta-tool
  */
 export async function executeMetaTool(
@@ -264,8 +188,6 @@ export async function executeMetaTool(
   args: Record<string, unknown>,
   router: ToolRouter,
   callToolFn?: CallToolFn,
-  emitElicitationFn?: EmitElicitationFn,
-  waitForElicitationFn?: WaitForElicitationFn
 ): Promise<CallToolResult | null> {
   const resolveToolSchema = (name: string, namespace?: string): { tool?: Tool; error?: CallToolResult } => {
     try {
@@ -468,64 +390,6 @@ export async function executeMetaTool(
       }
     }
 
-    case 'mcp_elicit_input': {
-      const mode = (args.mode as 'form' | 'url') || 'form';
-      const message = String(args.prompt ?? args.message ?? '');
-      const schema = (args.schema as Record<string, unknown>) ?? {};
-      const url = args.url ? String(args.url) : undefined;
-      const sessionId = String(args.sessionId ?? '');
-      const serverId = String(args.serverId ?? '');
-
-      if (!message) {
-        return {
-          content: [{ type: 'text', text: 'Missing required parameter "prompt" or "message" for mcp_elicit_input.' }],
-          isError: true,
-        };
-      }
-      
-      if (mode === 'url' && !url) {
-        return {
-          content: [{ type: 'text', text: 'Missing required parameter "url" for URL mode elicitation.' }],
-          isError: true,
-        };
-      }
-
-      if (!emitElicitationFn || !waitForElicitationFn) {
-        return {
-          content: [{ type: 'text', text: 'Elicitation is not supported in this execution context (no emit/wait callbacks configured).' }],
-          isError: true,
-        };
-      }
-
-      const elicitationId = `elicit_${nanoid(12)}`;
-
-      // Fire the SSE event — client will render the form or URL
-      emitElicitationFn(elicitationId, sessionId, serverId, mode, message, schema, url);
-
-      try {
-        // Suspend until the user submits the form (or timeout)
-        const response = await waitForElicitationFn(elicitationId);
-
-        if (response.action === 'decline') {
-          return { content: [{ type: 'text', text: 'User declined the elicitation request.' }], isError: false };
-        }
-        if (response.action === 'cancel') {
-          return { content: [{ type: 'text', text: 'User cancelled the elicitation request.' }], isError: false };
-        }
-
-        return {
-          content: [{ type: 'text', text: JSON.stringify(response.data ?? {}, null, 2) }],
-          isError: false,
-        };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return {
-          content: [{ type: 'text', text: `Elicitation failed or was cancelled: ${msg}` }],
-          isError: true,
-        };
-      }
-    }
-
     default:
       return null;
   }
@@ -537,8 +401,7 @@ export function isMetaTool(toolName: string): boolean {
     toolName === 'mcp_search_tool_bm25' ||
     toolName === 'mcp_search_tool_regex' ||
     toolName === 'mcp_get_tool_schema' ||
-    toolName === 'mcp_execute_tool' ||
-    toolName === 'mcp_elicit_input'
+    toolName === 'mcp_execute_tool'
   );
 }
 

@@ -4,6 +4,7 @@ import type { JSONSchema7 } from 'json-schema';
 import type { ToolSet } from 'ai';
 import { ToolRouter } from '../shared/tool-router.js';
 import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
+import { ElicitationInterruptError } from '../shared/errors.js';
 
 export interface AIAdapterOptions {
     /** 
@@ -77,6 +78,18 @@ export class AIAdapter {
                                 const response = await client.callTool(tool.name, args);
                                 return response;
                             } catch (error) {
+                                if (error instanceof ElicitationInterruptError) {
+                                    return {
+                                        content: [{
+                                            type: 'text',
+                                            text: JSON.stringify({
+                                                _mcp_elicitation: true,
+                                                ...error.params
+                                            })
+                                        }],
+                                        isError: true
+                                    };
+                                }
                                 const errorMessage = error instanceof Error ? error.message : String(error);
                                 throw new Error(`Tool execution failed: ${errorMessage}`);
                             }
@@ -149,22 +162,38 @@ export class AIAdapter {
                         description: tool.description,
                         inputSchema: this.jsonSchema!(tool.inputSchema as JSONSchema7),
                         execute: async (args: any) => {
-                            // Handle meta-tool calls via the router
-                            if (isMetaTool(tool.name)) {
-                                const result = await executeMetaTool(
-                                    tool.name,
-                                    args,
-                                    router,
-                                    (name, toolArgs, targetNamespace) => router.callTool(name, toolArgs, targetNamespace)
-                                );
-                                if (result) {
-                                  return result;
+                            try {
+                                // Handle meta-tool calls via the router
+                                if (isMetaTool(tool.name)) {
+                                    const result = await executeMetaTool(
+                                        tool.name,
+                                        args,
+                                        router,
+                                        (name, toolArgs, targetNamespace) => router.callTool(name, toolArgs, targetNamespace)
+                                    );
+                                    if (result) {
+                                      return result;
+                                    }
                                 }
-                            }
 
-                            // For non-meta tools in 'all' or 'groups' strategy,
-                            // route directly to the correct MCP client
-                            return await router.callTool(tool.name, args, namespace);
+                                // For non-meta tools in 'all' or 'groups' strategy,
+                                // route directly to the correct MCP client
+                                return await router.callTool(tool.name, args, namespace);
+                            } catch (error) {
+                                if (error instanceof ElicitationInterruptError) {
+                                    return {
+                                        content: [{
+                                            type: 'text',
+                                            text: JSON.stringify({
+                                                _mcp_elicitation: true,
+                                                ...error.params
+                                            })
+                                        }],
+                                        isError: true
+                                    };
+                                }
+                                throw error;
+                            }
                         },
                     },
                 ];

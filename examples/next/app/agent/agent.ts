@@ -3,7 +3,7 @@ import { MultiSessionClient } from "@mcp-ts/sdk/server";
 import { AIAdapter } from "@mcp-ts/sdk/adapters/ai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 
-const { ToolRouter } = await import("@mcp-ts/sdk/shared");
+const { ToolRouter, ElicitationInterruptError } = await import("@mcp-ts/sdk/shared");
 
 const INSTRUCTIONS = `
 You are an expert assistant, an AI assistant that helps users with their tasks using the available MCP tools
@@ -15,7 +15,11 @@ export async function createMcpAgent(identity: string = process.env.NEXT_PUBLIC_
   let client = globalForMcp.mcpClientMap?.get(identity);
 
   if (!client) {
-    client = new MultiSessionClient(identity);
+    client = new MultiSessionClient(identity, {
+      onElicitationRequest: async (params) => {
+        throw new ElicitationInterruptError(params);
+      }
+    });
     try {
       await client.connect();
       

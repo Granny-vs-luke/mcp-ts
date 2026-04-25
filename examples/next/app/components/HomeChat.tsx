@@ -5,10 +5,12 @@ import {
   DefaultChatTransport,
   getToolName,
   isToolUIPart,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
   type DynamicToolUIPart,
   type ToolUIPart,
   type UIMessage,
 } from "ai";
+import { ShieldAlert } from "lucide-react";
 import {
   Conversation,
   ConversationContent,
@@ -38,7 +40,6 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { RiRobot2Line } from "react-icons/ri";
-import type { ComponentType } from "react";
 import { McpAppRenderer, getMcpAppMetadata, type McpClient } from "@mcp-ts/sdk/client/react";
 
 /** True once the latest assistant turn has something to render (text or tool UI). */
@@ -66,8 +67,9 @@ export default function HomeChat({
   className,
   mcpClient,
 }: HomeChatProps) {
-  const { error, status, sendMessage, messages, regenerate, stop } = useChat({
+  const { error, status, sendMessage, messages, regenerate, stop, addToolApprovalResponse } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
 
   const isGenerating = status === "submitted" || status === "streaming";
@@ -129,6 +131,99 @@ export default function HomeChat({
                         ? "complete"
                         : "idle";
 
+                    const elicitationData = (() => {
+                      if (!toolPart.output || typeof toolPart.output !== 'object') return null;
+                      const output = toolPart.output as any;
+                      if (!output.isError || !Array.isArray(output.content)) return null;
+                      const textPart = output.content.find((c: any) => c.type === 'text');
+                      if (!textPart || typeof textPart.text !== 'string') return null;
+                      try {
+                        const parsed = JSON.parse(textPart.text);
+                        return parsed._mcp_elicitation ? parsed : null;
+                      } catch {
+                        return null;
+                      }
+                    })();
+
+                    if (elicitationData) {
+                      return (
+                        <div key={index} className="my-3 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <ShieldAlert className="size-4 text-blue-500" />
+                            <span className="font-medium text-sm text-blue-700 dark:text-blue-400">Information Requested</span>
+                          </div>
+                          <p className="text-sm font-medium mb-1">{elicitationData.message}</p>
+                          {elicitationData.requestedSchema?.properties && (
+                            <div className="mt-2 space-y-1">
+                              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Requested Fields:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {Object.keys(elicitationData.requestedSchema.properties).map(prop => (
+                                  <span key={prop} className="text-[10px] bg-blue-500/10 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20">
+                                    {prop}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          <p className="text-[10px] text-muted-foreground mt-3 italic">
+                            Please provide these details in the chat below.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    if (toolPart.state === "approval-requested") {
+                      return (
+                        <div key={index} className="my-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <ShieldAlert className="size-4 text-amber-500" />
+                            <span className="font-medium text-sm text-amber-700 dark:text-amber-400">Tool Approval Required</span>
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-3">
+                            The agent wants to execute <code className="bg-amber-500/10 px-1 rounded text-amber-700 dark:text-amber-400">{resolvedToolName}</code>
+                          </p>
+                          {input && Object.keys(input).length > 0 && (
+                            <pre className="text-[10px] bg-muted/50 p-2 rounded mb-4 overflow-auto max-h-32 border border-border/50">
+                              {JSON.stringify(input, null, 2)}
+                            </pre>
+                          )}
+                          <div className="flex gap-2">
+                            <Button 
+                              size="sm" 
+                              className="bg-amber-600 hover:bg-amber-700 text-white border-0"
+                              onClick={() => {
+                                if ('approval' in toolPart && toolPart.approval) {
+                                  addToolApprovalResponse({
+                                    id: (toolPart.approval as any).id,
+                                    approved: true,
+                                  });
+                                }
+                              }}
+                            >
+                              Approve
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              className="border-amber-200 dark:border-amber-900 hover:bg-amber-100 dark:hover:bg-amber-950"
+                              onClick={() => {
+                                if ('approval' in toolPart && toolPart.approval) {
+                                  addToolApprovalResponse({
+                                    id: (toolPart.approval as any).id,
+                                    approved: false,
+                                  });
+                                }
+                              }}
+                            >
+                              Deny
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+
+
                     if (toolPart.type === "dynamic-tool") {
                       return (
                         <div key={index} className="space-y-3">
@@ -173,6 +268,8 @@ export default function HomeChat({
                         </div>
                       );
                     }
+
+
 
                     return (
                       <div key={index} className="space-y-3">

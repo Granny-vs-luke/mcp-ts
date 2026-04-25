@@ -618,28 +618,6 @@ export class SSEConnectionManager {
       const { nanoid } = await import('nanoid');
       const elicitationId = `elicit_${nanoid(12)}`;
 
-      // Emit the SSE event so the browser renders the form or URL
-      this.getEmitElicitationFn()(elicitationId, sessionId, serverId, mode, message, requestedSchema, url);
-
-      // Suspend until the user submits, declines, or cancels
-      return this.elicitationManager.elicit(elicitationId);
-    };
-  }
-
-  /**
-   * Returns the emit callback needed by the `mcp_elicit_input` meta-tool.
-   * Fires an SSE `elicitation` event to the connected browser client.
-   */
-  getEmitElicitationFn() {
-    return (
-      elicitationId: string,
-      sessionId: string,
-      serverId: string,
-      mode: 'form' | 'url',
-      message: string,
-      schema?: Record<string, unknown>,
-      url?: string
-    ) => {
       const event: McpElicitationEvent = {
         type: 'elicitation',
         elicitationId,
@@ -647,20 +625,15 @@ export class SSEConnectionManager {
         serverId,
         mode,
         message,
-        schema,
+        schema: requestedSchema,
         url,
         timestamp: Date.now(),
       };
       this.sendEvent(event);
-    };
-  }
 
-  /**
-   * Returns the wait callback needed by the `mcp_elicit_input` meta-tool.
-   * Suspends until the client POSTs elicitationRespond (or the request times out).
-   */
-  getWaitForElicitationFn() {
-    return (elicitationId: string) => this.elicitationManager.elicit(elicitationId);
+      // Suspend until the user submits, declines, or cancels
+      return this.elicitationManager.elicit(elicitationId);
+    };
   }
 
   /**

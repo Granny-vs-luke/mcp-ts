@@ -19,6 +19,12 @@ function OAuthCallbackContent() {
     authToken: "demo-auth-token",
     autoConnect: true,
     autoInitialize: false,
+  });
+
+  useEffect(() => {
+    if (processedRef.current) return;
+    processedRef.current = true;
+
     const code = searchParams.get("code");
     const state = searchParams.get("state");
     const errorParam = searchParams.get("error");

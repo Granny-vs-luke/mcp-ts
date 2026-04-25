@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { createOAuthPopupRedirectHandler, useMcp } from "@mcp-ts/sdk/client/react";
 import HomeChat from "./HomeChat";
 import McpSidebar from "./McpSidebar";
+import ElicitationDialog from "./ElicitationDialog";
 
 export default function HomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -75,6 +76,9 @@ export default function HomePage() {
             mcpClient={mcpClient}
           />
         </main>
+        
+        {/* Render Elicitation Requests */}
+        <ElicitationDialog mcpClient={mcpClient} />
       </div>
     </TooltipProvider>
   );
