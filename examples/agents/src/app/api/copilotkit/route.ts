@@ -7,6 +7,7 @@ import {
 import { HttpAgent } from "@ag-ui/client";
 import { AguiAdapter } from "@mcp-ts/sdk/adapters/agui-adapter";
 import { createMcpMiddleware } from "@mcp-ts/sdk/adapters/agui-middleware";
+import { ToolRouter } from "@mcp-ts/sdk/shared";
 
 const serviceAdapter = new EmptyAdapter();
 
@@ -19,7 +20,7 @@ export const POST = async (req: NextRequest) => {
     url:
       process.env.NEXT_PUBLIC_BACKEND_URL ||
       "http://127.0.0.1:8000/agent",
-      headers: {
+    headers: {
       "Content-Type": "application/json",
     },
   });
@@ -36,7 +37,9 @@ export const POST = async (req: NextRequest) => {
   const clients = client.getClients();
   console.log(`[CopilotKit] Connected to ${clients.length} MCP clients`);
 
+  const router = new ToolRouter(client, { strategy: "search", maxTools: 5 });
   const adapter = new AguiAdapter(client, {
+    toolRouter: router
     // prefix: `mcp_tool`, //optionally set a prefix for tool names
   });
 
@@ -49,7 +52,7 @@ export const POST = async (req: NextRequest) => {
    * Add MCP Tool Execution Middleware
    * This middleware intercepts MCP tool calls (server-*) and executes them server-side
    */
-  mcpAssistant.use(createMcpMiddleware({ tools: mcpTools})); // maxResult limits tool output length (dev environment)
+  mcpAssistant.use(createMcpMiddleware({ tools: mcpTools })); // maxResult limits tool output length (dev environment)
   /**
    * Runtime
    */
