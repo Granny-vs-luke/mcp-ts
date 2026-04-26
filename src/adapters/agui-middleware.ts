@@ -19,6 +19,7 @@ import {
     type Tool,
 } from '@ag-ui/client';
 import { type AguiTool, cleanSchema } from './agui-adapter.js';
+import { getElicitationBroker, type ElicitationBrokerRequest } from '../server/mcp/elicitation-broker.js';
 
 /** Tool execution result for continuation */
 interface ToolResult {
@@ -26,6 +27,15 @@ interface ToolResult {
     toolName: string;
     result: string;
     messageId: string;
+}
+
+export interface AguiElicitationOptions {
+    /** Optional identity filter so only this user's MCP elicitations are surfaced. */
+    identity?: string;
+    /** Optional session filter for multi-session MCP clients. */
+    sessionId?: string;
+    /** Optional server filter for multi-server MCP clients. */
+    serverId?: string;
 }
 
 /** State for tracking tool calls during a run */
@@ -43,6 +53,11 @@ interface RunState {
 export interface McpMiddlewareConfig {
     /** Pre-loaded tools with handlers (required) */
     tools: AguiTool[];
+    /**
+     * Emit MCP elicitation requests as AG-UI CUSTOM events named
+     * `mcp_elicitation` while the underlying MCP tool remains pending.
+     */
+    elicitation?: AguiElicitationOptions;
 }
 
 /**
@@ -51,10 +66,12 @@ export interface McpMiddlewareConfig {
 export class McpMiddleware extends Middleware {
     private tools: AguiTool[];
     private toolSchemas: Tool[];
+    private elicitation?: AguiElicitationOptions;
 
     constructor(config: McpMiddlewareConfig) {
         super();
         this.tools = config.tools;
+        this.elicitation = config.elicitation;
         this.toolSchemas = this.tools.map((t: AguiTool) => ({
             name: t.name,
             description: t.description,
@@ -85,6 +102,38 @@ export class McpMiddleware extends Middleware {
             console.error(`[McpMiddleware] Failed to parse args:`, argsString);
             return {};
         }
+    }
+
+    private shouldEmitElicitation(request: ElicitationBrokerRequest): boolean {
+        if (!this.elicitation) return true;
+        if (this.elicitation.identity && request.identity !== this.elicitation.identity) return false;
+        if (this.elicitation.sessionId && request.sessionId !== this.elicitation.sessionId) return false;
+        if (this.elicitation.serverId && request.serverId !== this.elicitation.serverId) return false;
+        return true;
+    }
+
+    private createElicitationEvent(
+        request: ElicitationBrokerRequest,
+        toolCallId: string | undefined,
+        toolName: string | undefined
+    ): BaseEvent {
+        return {
+            type: EventType.CUSTOM,
+            name: 'mcp_elicitation',
+            value: {
+                _mcp_elicitation: true,
+                elicitationId: request.elicitationId,
+                mode: request.mode,
+                message: request.message,
+                requestedSchema: request.requestedSchema,
+                url: request.url,
+                sessionId: request.sessionId,
+                serverId: request.serverId,
+                toolCallId,
+                toolName,
+            },
+            timestamp: Date.now(),
+        } as any;
     }
 
     private async executeTool(toolName: string, args: Record<string, any>): Promise<string> {
@@ -187,29 +236,55 @@ export class McpMiddleware extends Middleware {
     }
 
     /** Execute pending MCP tools and return results */
-    private async executeTools(state: RunState): Promise<ToolResult[]> {
+    private async executeTools(
+        state: RunState,
+        observer: Subscriber<BaseEvent>
+    ): Promise<ToolResult[]> {
         const { toolCallArgsBuffer, toolCallNames, pendingMcpCalls } = state;
         const results: ToolResult[] = [];
+        const activeMcpCalls = new Map<string, string>();
+        const emittedElicitationIds = new Set<string>();
+        const unsubscribe = getElicitationBroker().subscribe((request) => {
+            if (!this.shouldEmitElicitation(request) || emittedElicitationIds.has(request.elicitationId)) {
+                return;
+            }
 
-        const promises = [...pendingMcpCalls].map(async (toolCallId) => {
-            const toolName = toolCallNames.get(toolCallId);
-            if (!toolName) return;
-
-            const args = this.parseArgs(toolCallArgsBuffer.get(toolCallId) || '{}');
-            console.log(`[McpMiddleware] Executing pending tool: ${toolName}`);
-
-            const result = await this.executeTool(toolName, args);
-            results.push({
-                toolCallId,
-                toolName,
-                result,
-                messageId: this.generateId('mcp_result'),
-            });
-            pendingMcpCalls.delete(toolCallId);
+            emittedElicitationIds.add(request.elicitationId);
+            const activeCalls = [...activeMcpCalls.entries()];
+            const [toolCallId, toolName] = activeCalls.length === 1
+                ? activeCalls[0]
+                : [undefined, undefined];
+            observer.next(this.createElicitationEvent(request, toolCallId, toolName));
         });
 
-        await Promise.all(promises);
-        return results;
+        try {
+            const promises = [...pendingMcpCalls].map(async (toolCallId) => {
+                const toolName = toolCallNames.get(toolCallId);
+                if (!toolName) return;
+
+                const args = this.parseArgs(toolCallArgsBuffer.get(toolCallId) || '{}');
+                console.log(`[McpMiddleware] Executing pending tool: ${toolName}`);
+                activeMcpCalls.set(toolCallId, toolName);
+
+                try {
+                    const result = await this.executeTool(toolName, args);
+                    results.push({
+                        toolCallId,
+                        toolName,
+                        result,
+                        messageId: this.generateId('mcp_result'),
+                    });
+                    pendingMcpCalls.delete(toolCallId);
+                } finally {
+                    activeMcpCalls.delete(toolCallId);
+                }
+            });
+
+            await Promise.all(promises);
+            return results;
+        } finally {
+            unsubscribe();
+        }
     }
 
     /** Emit tool results (without RUN_FINISHED - that's emitted when truly done) */
@@ -293,7 +368,7 @@ export class McpMiddleware extends Middleware {
                 }
 
                 // Execute tools and emit results (no RUN_FINISHED yet - continuation follows)
-                const results = await this.executeTools(state);
+                const results = await this.executeTools(state, observer);
                 this.emitToolResults(observer, results);
 
                 // Prepare continuation
@@ -396,7 +471,7 @@ export class McpMiddleware extends Middleware {
  * Factory function to create MCP middleware.
  */
 export function createMcpMiddleware(
-    options: { tools: AguiTool[] }
+    options: McpMiddlewareConfig
 ) {
     const middleware = new McpMiddleware(options);
     return (input: RunAgentInput, next: AbstractAgent): Observable<BaseEvent> => {

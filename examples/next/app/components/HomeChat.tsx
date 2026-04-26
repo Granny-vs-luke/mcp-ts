@@ -74,6 +74,7 @@ interface HomeChatProps {
 
 type ElicitationData = {
   _mcp_elicitation: true;
+  elicitationId?: string;
   mode?: "form" | "url";
   message?: string;
   requestedSchema?: {
@@ -114,10 +115,11 @@ function ElicitationFormCard({
   onSubmit,
 }: {
   data: ElicitationData;
-  onSubmit: (message: string) => void;
+  onSubmit: (action: "accept" | "decline" | "cancel", data?: Record<string, unknown>) => void | Promise<void>;
 }) {
   const [formData, setFormData] = useState<Record<string, unknown>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const schema = data.requestedSchema ?? {};
   const properties = schema.properties ?? {};
@@ -136,13 +138,14 @@ function ElicitationFormCard({
     });
   };
 
-  const submit = (action: "accept" | "decline" | "cancel") => {
-    const payload =
-      action === "accept"
-        ? `Elicitation response accepted for "${data.message ?? "MCP request"}":\n${JSON.stringify(formData, null, 2)}`
-        : `Elicitation response ${action}ed for "${data.message ?? "MCP request"}".`;
-    setSubmitted(true);
-    onSubmit(payload);
+  const submit = async (action: "accept" | "decline" | "cancel") => {
+    setSubmitting(true);
+    try {
+      await onSubmit(action, action === "accept" ? formData : undefined);
+      setSubmitted(true);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -161,7 +164,7 @@ function ElicitationFormCard({
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
-            disabled={submitted}
+            disabled={submitted || submitting}
             onClick={() => {
               if (data.url) window.open(data.url, "_blank", "noopener,noreferrer");
               submit("accept");
@@ -172,7 +175,7 @@ function ElicitationFormCard({
           <Button
             size="sm"
             variant="outline"
-            disabled={submitted}
+            disabled={submitted || submitting}
             onClick={() => submit("decline")}
           >
             Decline
@@ -197,7 +200,7 @@ function ElicitationFormCard({
                     type="checkbox"
                     className="size-4 rounded border-border"
                     checked={Boolean(formData[key])}
-                    disabled={submitted}
+                    disabled={submitted || submitting}
                     onChange={(event) => updateField(key, event.target.checked)}
                   />
                   <span>
@@ -217,7 +220,7 @@ function ElicitationFormCard({
                   </label>
                   <Select
                     value={String(formData[key] ?? "")}
-                    disabled={submitted}
+                    disabled={submitted || submitting}
                     onValueChange={(value) => updateField(key, value)}
                   >
                     <SelectTrigger className="w-full">
@@ -247,7 +250,7 @@ function ElicitationFormCard({
                   min={prop.minimum}
                   max={prop.maximum}
                   value={String(formData[key] ?? "")}
-                  disabled={submitted}
+                  disabled={submitted || submitting}
                   onChange={(event) =>
                     updateField(
                       key,
@@ -262,14 +265,14 @@ function ElicitationFormCard({
           })}
 
           <div className="flex flex-wrap gap-2 pt-1">
-            <Button size="sm" type="submit" disabled={submitted}>
+            <Button size="sm" type="submit" disabled={submitted || submitting}>
               Submit
             </Button>
             <Button
               size="sm"
               type="button"
               variant="outline"
-              disabled={submitted}
+              disabled={submitted || submitting}
               onClick={() => submit("decline")}
             >
               Decline
@@ -278,7 +281,7 @@ function ElicitationFormCard({
               size="sm"
               type="button"
               variant="ghost"
-              disabled={submitted}
+              disabled={submitted || submitting}
               onClick={() => submit("cancel")}
             >
               Cancel
@@ -361,26 +364,13 @@ export default function HomeChat({
                     const elicitationData = (() => {
                       if (!toolPart.output || typeof toolPart.output !== 'object') return null;
                       const output = toolPart.output as ToolTextOutput;
-                      if (!output.isError || !Array.isArray(output.content)) return null;
+                      if (!Array.isArray(output.content)) return null;
                       const textPart = output.content.find((c) => c.type === 'text');
                       if (!textPart || typeof textPart.text !== 'string') return null;
-                      console.log("[MCP-ElicitDebug][HomeChat] inspecting tool output", {
-                        toolName: frameToolName,
-                        text: textPart.text.slice(0, 200),
-                      });
                       try {
                         const parsed = JSON.parse(textPart.text);
-                        console.log("[MCP-ElicitDebug][HomeChat] parsed tool output", {
-                          toolName: frameToolName,
-                          isElicitation: isElicitationData(parsed),
-                          parsed,
-                        });
                         return isElicitationData(parsed) ? parsed : null;
                       } catch (error) {
-                        console.log("[MCP-ElicitDebug][HomeChat] failed to parse tool output", {
-                          toolName: frameToolName,
-                          error: error instanceof Error ? error.message : String(error),
-                        });
                         return null;
                       }
                     })();
@@ -390,8 +380,18 @@ export default function HomeChat({
                         <ElicitationFormCard
                           key={index}
                           data={elicitationData}
-                          onSubmit={(text) => {
-                            void sendMessage({ parts: [{ type: "text", text }] } as never);
+                          onSubmit={async (action, formData) => {
+                            if (!elicitationData.elicitationId) {
+                              throw new Error("Missing MCP elicitation id");
+                            }
+                            if (!mcpClient) {
+                              throw new Error("MCP client is not ready");
+                            }
+                            await mcpClient.respondToElicitation(
+                              elicitationData.elicitationId,
+                              action,
+                              formData
+                            );
                           }}
                         />
                       );

@@ -10,6 +10,7 @@ export { storage, type StorageBackend } from './storage/index.js';
 export { StorageOAuthClientProvider } from './mcp/storage-oauth-provider.js';
 export { MultiSessionClient } from './mcp/multi-session-client.js';
 export { ElicitationManager } from './mcp/elicitation-manager.js';
+export { ElicitationBroker, getElicitationBroker, type ElicitationBrokerRequest } from './mcp/elicitation-broker.js';
 
 /** SSE handler for real-time connections */
 export { createSSEHandler, SSEConnectionManager, type SSEHandlerOptions, type ClientMetadata } from './handlers/sse-handler.js';

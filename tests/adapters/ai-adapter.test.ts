@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { AIAdapter } from '../../src/adapters/ai-adapter';
+import { AIAdapter, hasMcpElicitation } from '../../src/adapters/ai-adapter';
 import { MCPClient } from '../../src/server/mcp/oauth-client';
 import { ToolRouter } from '../../src/shared/tool-router';
 import { ElicitationInterruptError } from '../../src/shared/errors';
+import { getElicitationBroker } from '../../src/server/mcp/elicitation-broker';
 
 class MockMCPClient {
     private connected = true;
@@ -221,5 +222,109 @@ test.describe('AIAdapter', () => {
         expect(payload._mcp_elicitation).toBe(true);
         expect(payload.message).toBe(params.message);
         expect(payload.requestedSchema).toEqual(params.requestedSchema);
+    });
+
+    test('should stop the AI SDK tool loop when an MCP elicitation is pending', () => {
+        const output = {
+            isError: true,
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify({
+                        _mcp_elicitation: true,
+                        mode: 'form',
+                        message: 'Configure your monitoring alert settings.',
+                    }),
+                },
+            ],
+        };
+
+        const shouldStop = hasMcpElicitation();
+
+        expect(
+            shouldStop({
+                steps: [
+                    {
+                        toolResults: [
+                            {
+                                output,
+                            },
+                        ],
+                    },
+                ] as any,
+            })
+        ).toBe(true);
+    });
+
+    test('should yield MCP elicitation as preliminary output and wait for the final tool result', async () => {
+        const broker = getElicitationBroker();
+        const client = {
+            isConnected: () => true,
+            getServerId: () => 'alert-server',
+            getServerName: () => 'Alert Server',
+            getSessionId: () => 'alert-session',
+            listTools: async () => ({
+                tools: [
+                    {
+                        name: 'configure_alert',
+                        description: 'Configure a monitoring alert',
+                        inputSchema: { type: 'object' as const, properties: {} },
+                    },
+                ],
+            }),
+            callTool: async () => {
+                const response = await broker.request({
+                    identity: 'user-1',
+                    sessionId: 'alert-session',
+                    serverId: 'alert-server',
+                    mode: 'form',
+                    message: 'Configure your monitoring alert settings.',
+                    requestedSchema: {
+                        type: 'object',
+                        properties: {
+                            channel: { type: 'string' },
+                        },
+                    },
+                });
+
+                return {
+                    content: [
+                        {
+                            type: 'text' as const,
+                            text: `Configured ${response.data?.channel}`,
+                        },
+                    ],
+                };
+            },
+        };
+        const adapter = new AIAdapter(client as any, {
+            elicitation: {
+                mode: 'preliminary',
+                identity: 'user-1',
+            },
+        });
+
+        const tools = await adapter.getTools();
+        const outputStream = (tools[Object.keys(tools)[0]] as any).execute({});
+        const iterator = outputStream[Symbol.asyncIterator]();
+        const first = await iterator.next();
+        const payload = JSON.parse(first.value.content[0].text);
+
+        expect(first.done).toBe(false);
+        expect(payload._mcp_elicitation).toBe(true);
+        expect(payload.elicitationId).toMatch(/^elicit_/);
+        expect(payload.message).toBe('Configure your monitoring alert settings.');
+
+        expect(
+            broker.respond(payload.elicitationId, {
+                action: 'accept',
+                data: { channel: 'slack' },
+            })
+        ).toBe(true);
+
+        const final = await iterator.next();
+        expect(final.done).toBe(false);
+        expect(final.value.content[0].text).toBe('Configured slack');
+        await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
     });
 });

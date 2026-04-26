@@ -10,6 +10,16 @@ import { createMcpMiddleware } from "@mcp-ts/sdk/adapters/agui-middleware";
 
 const serviceAdapter = new EmptyAdapter();
 
+type ElicitationRequestParams = {
+  identity?: string;
+  sessionId?: string;
+  serverId?: string;
+  mode: "form" | "url";
+  message: string;
+  requestedSchema?: Record<string, unknown>;
+  url?: string;
+};
+
 export const POST = async (req: NextRequest) => {
 
   /**
@@ -26,8 +36,19 @@ export const POST = async (req: NextRequest) => {
 
   const identity = "demo-user-123";
   // Import dynamically to avoid build-time issues if package is linking
-  const { MultiSessionClient } = await import("@mcp-ts/sdk/server");
-  const client = new MultiSessionClient(identity);
+  const { MultiSessionClient, getElicitationBroker } = await import("@mcp-ts/sdk/server");
+  const client = new MultiSessionClient(identity, {
+    onElicitationRequest: async (params: ElicitationRequestParams) =>
+      getElicitationBroker().request({
+        identity,
+        sessionId: params.sessionId,
+        serverId: params.serverId,
+        mode: params.mode,
+        message: params.message,
+        requestedSchema: params.requestedSchema,
+        url: params.url,
+      }),
+  });
 
   // Connect to all active sessions before getting tools
   await client.connect();
@@ -47,9 +68,12 @@ export const POST = async (req: NextRequest) => {
 
   /**
    * Add MCP Tool Execution Middleware
-   * This middleware intercepts MCP tool calls (server-*) and executes them server-side
+   * This middleware intercepts MCP tool calls and executes them server-side.
    */
-  mcpAssistant.use(createMcpMiddleware({ tools: mcpTools})); // maxResult limits tool output length (dev environment)
+  mcpAssistant.use(createMcpMiddleware({
+    tools: mcpTools,
+    elicitation: { identity },
+  }));
   /**
    * Runtime
    */

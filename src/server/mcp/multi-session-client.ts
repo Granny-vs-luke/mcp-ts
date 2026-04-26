@@ -32,6 +32,9 @@ export interface MultiSessionOptions {
      * Optional callback for handling tool elicitation requests.
      */
     onElicitationRequest?: (params: {
+        identity?: string;
+        sessionId?: string;
+        serverId?: string;
         mode: 'form' | 'url';
         message: string;
         requestedSchema?: Record<string, unknown>;
@@ -171,7 +174,14 @@ export class MultiSessionClient {
                     serverName: session.serverName,
                     transportType: session.transportType,
                     headers: session.headers,
-                    onElicitationRequest: this.options.onElicitationRequest,
+                    onElicitationRequest: this.options.onElicitationRequest
+                        ? (params) => this.options.onElicitationRequest!({
+                            ...params,
+                            identity: this.identity,
+                            sessionId: session.sessionId,
+                            serverId: session.serverId,
+                        })
+                        : undefined,
                 });
 
                 const timeoutMs = this.options.timeout ?? DEFAULT_TIMEOUT_MS;

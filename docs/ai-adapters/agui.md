@@ -83,8 +83,20 @@ export const POST = async (req: NextRequest) => {
   });
 
   // Connect to MCP servers
-  const { MultiSessionClient } = await import("@mcp-ts/sdk/server");
-  const client = new MultiSessionClient("user_123");
+  const { MultiSessionClient, getElicitationBroker } = await import("@mcp-ts/sdk/server");
+  const identity = "user_123";
+  const client = new MultiSessionClient(identity, {
+    onElicitationRequest: async (params) =>
+      getElicitationBroker().request({
+        identity,
+        sessionId: params.sessionId,
+        serverId: params.serverId,
+        mode: params.mode,
+        message: params.message,
+        requestedSchema: params.requestedSchema,
+        url: params.url,
+      }),
+  });
   await client.connect();
 
   // Create adapter and get tools
@@ -93,8 +105,8 @@ export const POST = async (req: NextRequest) => {
 
   // Add middleware to intercept and execute MCP tools
   mcpAssistant.use(createMcpMiddleware({
-    toolPrefix: 'server-',  // Tools starting with this prefix are MCP tools
     tools: mcpTools,
+    elicitation: { identity },
   }));
   
   // Run the agent...
@@ -111,13 +123,38 @@ The middleware intercepts AG-UI events and executes MCP tools:
 | `TOOL_CALL_ARGS` | Accumulates streamed arguments |
 | `TOOL_CALL_END` | Marks tool call as complete |
 | `RUN_FINISHED` | Executes pending MCP tools, emits results, triggers new run |
+| `CUSTOM` (`mcp_elicitation`) | Emitted when an MCP tool requests elicited user input |
 | `TOOL_CALL_RESULT` | Emitted by middleware with MCP tool results |
+
+### Elicitation Flow
+
+When an MCP server calls `elicitation/create`, the middleware emits a structured AG-UI `CUSTOM` event named `mcp_elicitation` and keeps the MCP tool pending. The UI should render the form from `event.value.requestedSchema`, then submit the structured response with `mcpClient.respondToElicitation(event.value.elicitationId, action, data)`. That response resolves the original MCP tool call directly; it should not be sent back as a chat message.
+
+```typescript
+agent.subscribe({
+  onCustomEvent({ event }) {
+    if (event.name !== "mcp_elicitation") return;
+
+    // Render event.value.message and event.value.requestedSchema.
+    // On submit:
+    mcpClient.respondToElicitation(
+      event.value.elicitationId,
+      "accept",
+      formData
+    );
+  },
+});
+```
 
 ### Configuration Options
 
 ```typescript
 createMcpMiddleware({
-  toolPrefix: 'server-',  // Prefix to identify MCP tools (default: 'server-')
   tools: mcpTools,        // Pre-loaded tools with handlers
+  elicitation: {
+    identity: "user_123",  // Optional filter for multi-user servers
+    sessionId: "...",      // Optional MCP session filter
+    serverId: "...",       // Optional MCP server filter
+  },
 });
 ```

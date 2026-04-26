@@ -40,6 +40,7 @@ import { MCPClient } from '../mcp/oauth-client.js';
 import { storage } from '../storage/index.js';
 import { ElicitationManager } from '../mcp/elicitation-manager.js';
 import type { ElicitationResponse } from '../mcp/elicitation-manager.js';
+import { getElicitationBroker } from '../mcp/elicitation-broker.js';
 import type { McpElicitationEvent } from '../../shared/events.js';
 import type { ElicitRespondParams, ElicitRespondResult } from '../../shared/types.js';
 
@@ -602,7 +603,9 @@ export class SSEConnectionManager {
   private async elicitRespond(params: ElicitRespondParams): Promise<ElicitRespondResult> {
     const { elicitationId, action, data } = params;
     const response: ElicitationResponse = { action, data };
-    const success = this.elicitationManager.respond(elicitationId, response);
+    const success =
+      getElicitationBroker().respond(elicitationId, response) ||
+      this.elicitationManager.respond(elicitationId, response);
     return { success };
   }
 

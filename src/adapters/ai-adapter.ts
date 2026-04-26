@@ -1,10 +1,85 @@
 import { MCPClient } from '../server/mcp/oauth-client';
 import { MultiSessionClient } from '../server/mcp/multi-session-client';
 import type { JSONSchema7 } from 'json-schema';
-import type { ToolSet } from 'ai';
+import type { StopCondition, ToolSet } from 'ai';
 import { ToolRouter } from '../shared/tool-router.js';
 import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
 import { isElicitationInterruptError } from '../shared/errors.js';
+import { getElicitationBroker, type ElicitationBrokerRequest } from '../server/mcp/elicitation-broker.js';
+
+type ElicitationToolOutput = {
+    isError?: boolean;
+    content?: Array<{
+        type?: unknown;
+        text?: unknown;
+    }>;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | null {
+    try {
+        const parsed = JSON.parse(text);
+        return isRecord(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+function isMcpElicitationPayload(value: unknown): boolean {
+    return isRecord(value) && value._mcp_elicitation === true;
+}
+
+function isMcpElicitationToolOutput(output: unknown): boolean {
+    if (isMcpElicitationPayload(output)) {
+        return true;
+    }
+
+    if (typeof output === 'string') {
+        return isMcpElicitationPayload(parseJsonObject(output));
+    }
+
+    if (!isRecord(output)) {
+        return false;
+    }
+
+    const toolOutput = output as ElicitationToolOutput;
+    if (!Array.isArray(toolOutput.content)) {
+        return false;
+    }
+
+    return toolOutput.content.some((part) => {
+        if (part?.type !== 'text' || typeof part.text !== 'string') {
+            return false;
+        }
+        return isMcpElicitationPayload(parseJsonObject(part.text));
+    });
+}
+
+/**
+ * AI SDK stop condition that pauses the tool loop when an MCP server requests
+ * elicitation. Without this, the model receives the elicitation payload as a
+ * normal tool result and may continue by narrating that a form is needed.
+ */
+export function hasMcpElicitation(): StopCondition<any> {
+    return ({ steps }) => {
+        const lastStep = steps[steps.length - 1];
+        if (!lastStep) {
+            return false;
+        }
+
+        const resultOutputs = [
+            ...(lastStep.toolResults ?? []).map((result) => result.output),
+            ...(lastStep.content ?? [])
+                .filter((part) => part.type === 'tool-result' || part.type === 'tool-error')
+                .map((part) => (part as { output?: unknown }).output),
+        ];
+
+        return resultOutputs.some(isMcpElicitationToolOutput);
+    };
+}
 
 export interface AIAdapterOptions {
     /** 
@@ -23,6 +98,22 @@ export interface AIAdapterOptions {
      * When not provided, all tools are returned as before (backward-compatible).
      */
     toolRouter?: ToolRouter;
+
+    /**
+     * Controls how MCP elicitation requests are surfaced to AI SDK callers.
+     *
+     * - `interrupt` keeps the historical behavior: elicitation is returned as a
+     *   final structured tool output and the tool loop can stop on it.
+     * - `preliminary` yields the elicitation request as a preliminary tool
+     *   output while the original MCP tool call remains pending until the user
+     *   responds via `elicitationRespond`.
+     */
+    elicitation?: {
+        mode: 'interrupt' | 'preliminary';
+        identity?: string;
+        sessionId?: string;
+        serverId?: string;
+    };
 }
 
 /**
@@ -46,6 +137,113 @@ export class AIAdapter {
             const { jsonSchema } = await import('ai');
             this.jsonSchema = jsonSchema;
         }
+    }
+
+    private shouldPreviewElicitation(request: ElicitationBrokerRequest): boolean {
+        const config = this.options.elicitation;
+        if (config?.mode !== 'preliminary') {
+            return false;
+        }
+
+        if (config.identity && request.identity !== config.identity) {
+            return false;
+        }
+        if (config.sessionId && request.sessionId !== config.sessionId) {
+            return false;
+        }
+        if (config.serverId && request.serverId !== config.serverId) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private createElicitationOutput(request: ElicitationBrokerRequest) {
+        return {
+            content: [{
+                type: 'text',
+                text: JSON.stringify({
+                    _mcp_elicitation: true,
+                    elicitationId: request.elicitationId,
+                    mode: request.mode,
+                    message: request.message,
+                    requestedSchema: request.requestedSchema,
+                    url: request.url,
+                    sessionId: request.sessionId,
+                    serverId: request.serverId,
+                })
+            }],
+            isError: false
+        };
+    }
+
+    private executeWithElicitationPreviews<T>(executeCall: () => Promise<T>): AsyncGenerator<T | ReturnType<AIAdapter['createElicitationOutput']>> {
+        const self = this;
+
+        return (async function* () {
+            const broker = getElicitationBroker();
+            const queue: ElicitationBrokerRequest[] = [];
+            const waiters: Array<() => void> = [];
+            let settled = false;
+
+            const notify = () => {
+                while (waiters.length > 0) {
+                    waiters.shift()?.();
+                }
+            };
+
+            const unsubscribe = broker.subscribe((request) => {
+                if (!self.shouldPreviewElicitation(request)) {
+                    return;
+                }
+
+                queue.push(request);
+                notify();
+            });
+
+            const resultPromise: Promise<{ ok: true; value: T } | { ok: false; error: unknown }> = executeCall()
+                .then((value) => {
+                    settled = true;
+                    notify();
+                    return { ok: true as const, value };
+                })
+                .catch((error) => {
+                    settled = true;
+                    notify();
+                    return { ok: false as const, error };
+                });
+
+            try {
+                while (true) {
+                    while (queue.length > 0) {
+                        yield self.createElicitationOutput(queue.shift()!);
+                    }
+
+                    if (settled) {
+                        const result = await resultPromise;
+                        if (result.ok === false) {
+                            throw result.error;
+                        }
+                        yield result.value;
+                        return;
+                    }
+
+                    await new Promise<void>((resolve) => {
+                        waiters.push(resolve);
+                    });
+                }
+            } finally {
+                unsubscribe();
+            }
+        })();
+    }
+
+    private executeMaybeWithElicitationPreviews<T>(executeCall: () => Promise<T>): Promise<T> | AsyncGenerator<T | ReturnType<AIAdapter['createElicitationOutput']>> {
+        if (this.options.elicitation?.mode === 'preliminary') {
+            return this.executeWithElicitationPreviews(executeCall);
+        }
+
+        return executeCall();
     }
 
     private async transformTools(client: MCPClient): Promise<ToolSet> {
@@ -73,7 +271,7 @@ export class AIAdapter {
                     {
                         description: tool.description,
                         inputSchema: this.jsonSchema!(tool.inputSchema as JSONSchema7),
-                        execute: async (args: any) => {
+                        execute: (args: any) => this.executeMaybeWithElicitationPreviews(async () => {
                             try {
                                 console.log('[MCP-ElicitDebug][ai-adapter] executing direct tool', {
                                     toolName: tool.name,
@@ -109,7 +307,7 @@ export class AIAdapter {
                                 const errorMessage = error instanceof Error ? error.message : String(error);
                                 throw new Error(`Tool execution failed: ${errorMessage}`);
                             }
-                        }
+                        })
                     }
                 ];
             })
@@ -177,7 +375,7 @@ export class AIAdapter {
                     {
                         description: tool.description,
                         inputSchema: this.jsonSchema!(tool.inputSchema as JSONSchema7),
-                        execute: async (args: any) => {
+                        execute: (args: any) => this.executeMaybeWithElicitationPreviews(async () => {
                             try {
                                 // Handle meta-tool calls via the router
                                 if (isMetaTool(tool.name)) {
@@ -235,7 +433,7 @@ export class AIAdapter {
                                 }
                                 throw error;
                             }
-                        },
+                        }),
                     },
                 ];
             })

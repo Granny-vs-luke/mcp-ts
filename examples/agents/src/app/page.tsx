@@ -4,6 +4,7 @@ import { CopilotChat, CopilotKitCSSProperties } from "@copilotkit/react-ui";
 import { McpSidebar } from "@/components/mcp";
 import { ToolRenderer } from "@/components/ToolRenderer";
 import { McpProvider } from "@/components/mcp/mcp-provider";
+import { McpElicitationUI } from "@/components/mcp";
 
 const darkTheme: CopilotKitCSSProperties = {
   "--copilot-kit-primary-color": "#444444",
@@ -25,6 +26,7 @@ export default function CopilotKitPage() {
         </aside>
         <div className="flex-1 min-w-0 max-w-4xl mx-auto flex flex-col h-full">
           <ToolRenderer />
+          <McpElicitationUI agentId="mcpAssistant" />
 
           <div className="flex-1 bg-gray-900 border-t border-gray-700">
             <CopilotChat
