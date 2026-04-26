@@ -13,15 +13,32 @@ const globalForMcp = globalThis as unknown as { mcpClientMap?: Map<string, Multi
 
 export async function createMcpAgent(identity: string = process.env.NEXT_PUBLIC_MCP_IDENTITY!) {
   let client = globalForMcp.mcpClientMap?.get(identity);
+  console.log("[MCP-ElicitDebug][next-agent] createMcpAgent", {
+    identity,
+    reusedClient: !!client,
+  });
 
   if (!client) {
     client = new MultiSessionClient(identity, {
       onElicitationRequest: async (params) => {
+        console.log("[MCP-ElicitDebug][next-agent] onElicitationRequest invoked; throwing interrupt", {
+          mode: params.mode,
+          message: params.message,
+          hasSchema: !!params.requestedSchema,
+          hasUrl: !!params.url,
+        });
         throw new ElicitationInterruptError(params);
       }
     });
     try {
       await client.connect();
+      console.log("[MCP-ElicitDebug][next-agent] MultiSessionClient connected", {
+        clients: client.getClients().map((c) => ({
+          sessionId: c.getSessionId(),
+          serverId: c.getServerId(),
+          serverName: c.getServerName(),
+        })),
+      });
       
       if (!globalForMcp.mcpClientMap) {
         globalForMcp.mcpClientMap = new Map();
@@ -36,6 +53,9 @@ export async function createMcpAgent(identity: string = process.env.NEXT_PUBLIC_
   const router = new ToolRouter(client, { strategy: "search", maxTools: 5 });
   const adapter = new AIAdapter(client, { toolRouter: router });
   const tools = await adapter.getTools();
+  console.log("[MCP-ElicitDebug][next-agent] tools loaded", {
+    toolNames: Object.keys(tools),
+  });
 
   return new ToolLoopAgent({
     model: createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY })(

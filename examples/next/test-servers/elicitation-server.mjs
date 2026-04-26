@@ -100,6 +100,7 @@ function createServer() {
     'Configure a monitoring alert. Will collect channel, recipient and threshold via a form.',
     {},
     async (_) => {
+      console.log('[MCP-ElicitDebug][test-server] configure_alert called; requesting elicitation form');
       const result = await server.server.elicitInput({
         message: 'Configure your monitoring alert settings.',
         requestedSchema: {
@@ -128,6 +129,10 @@ function createServer() {
           },
           required: ['channel', 'recipient'],
         },
+      });
+      console.log('[MCP-ElicitDebug][test-server] configure_alert elicitation returned', {
+        action: result.action,
+        content: result.content,
       });
 
       if (result.action !== 'accept') {

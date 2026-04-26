@@ -17,6 +17,7 @@
 
 import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolRouter } from './tool-router.js';
+import { isElicitationInterruptError } from './errors.js';
 
 
 
@@ -334,6 +335,11 @@ export async function executeMetaTool(
       const targetToolName = String(args.toolName ?? '');
       const namespace = String(args.serverId ?? '') || undefined;
       const toolArgs = (args.args as Record<string, unknown>) ?? {};
+      console.log('[MCP-ElicitDebug][meta-tools] mcp_execute_tool invoked', {
+        targetToolName,
+        namespace,
+        argKeys: Object.keys(toolArgs),
+      });
 
       if (!targetToolName) {
         return {
@@ -368,7 +374,16 @@ export async function executeMetaTool(
       }
 
       try {
+        console.log('[MCP-ElicitDebug][meta-tools] calling real MCP tool', {
+          targetToolName,
+          namespace,
+        });
         const result = await callToolFn(targetToolName, toolArgs, namespace);
+        console.log('[MCP-ElicitDebug][meta-tools] real MCP tool resolved', {
+          targetToolName,
+          hasContent: !!(result && typeof result === 'object' && 'content' in result),
+          isError: result && typeof result === 'object' && 'isError' in result ? (result as { isError?: unknown }).isError : undefined,
+        });
 
         // Normalize result to text
         if (result && typeof result === 'object' && 'content' in result) {
@@ -382,6 +397,16 @@ export async function executeMetaTool(
           isError: false,
         };
       } catch (err) {
+        console.log('[MCP-ElicitDebug][meta-tools] real MCP tool threw', {
+          targetToolName,
+          name: err instanceof Error ? err.name : typeof err,
+          message: err instanceof Error ? err.message : String(err),
+          isElicitationInterrupt: isElicitationInterruptError(err),
+          hasParams: !!(err as { params?: unknown } | null | undefined)?.params,
+        });
+        if (isElicitationInterruptError(err)) {
+          throw err;
+        }
         const errorMessage = err instanceof Error ? err.message : String(err);
         return {
           content: [{ type: 'text', text: `Tool execution failed: ${errorMessage}` }],

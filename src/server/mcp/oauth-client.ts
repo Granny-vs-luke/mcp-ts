@@ -33,7 +33,7 @@ import type { OAuthTokens, OAuthClientInformationFull } from '@modelcontextproto
 import { StorageOAuthClientProvider, type AgentsOAuthProvider } from './storage-oauth-provider.js';
 import { sanitizeServerLabel } from '../../shared/utils.js';
 import { Emitter, type McpConnectionEvent, type McpObservabilityEvent, type McpConnectionState } from '../../shared/events.js';
-import { UnauthorizedError } from '../../shared/errors.js';
+import { ElicitationInterruptError, isElicitationInterruptError, UnauthorizedError } from '../../shared/errors.js';
 import { storage } from '../storage/index.js';
 import {
   MCP_CLIENT_NAME,
@@ -93,6 +93,50 @@ export interface MCPOAuthClientOptions {
   }) => Promise<{ action: 'accept' | 'decline' | 'cancel'; data?: Record<string, unknown> }>;
 }
 
+export type ElicitationRequestParams = {
+  mode: 'form' | 'url';
+  message: string;
+  requestedSchema?: Record<string, unknown>;
+  url?: string;
+};
+
+export type ElicitationRequestCallback = NonNullable<MCPOAuthClientOptions['onElicitationRequest']>;
+
+export async function handleElicitationRequestForMcp(
+  params: ElicitationRequestParams,
+  onElicitationRequest: ElicitationRequestCallback
+): Promise<{ action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }> {
+  console.log('[MCP-ElicitDebug][oauth-client] invoking onElicitationRequest', {
+    mode: params.mode,
+    message: params.message,
+    hasSchema: !!params.requestedSchema,
+    hasUrl: !!params.url,
+  });
+  try {
+    const response = await onElicitationRequest(params);
+    console.log('[MCP-ElicitDebug][oauth-client] callback resolved', {
+      action: response.action,
+      hasData: !!response.data,
+    });
+    return {
+      action: response.action,
+      ...(response.action === 'accept' && response.data && params.mode === 'form' ? { content: response.data } : {}),
+    };
+  } catch (error) {
+    console.log('[MCP-ElicitDebug][oauth-client] callback threw', {
+      name: error instanceof Error ? error.name : typeof error,
+      message: error instanceof Error ? error.message : String(error),
+      isElicitationInterrupt: isElicitationInterruptError(error),
+      hasParams: !!(error as { params?: unknown } | null | undefined)?.params,
+    });
+    if (isElicitationInterruptError(error)) {
+      throw error;
+    }
+    console.log('[MCP-ElicitDebug][oauth-client] returning cancel for non-elicitation error');
+    return { action: 'cancel' as const };
+  }
+}
+
 /**
  * MCP Client with OAuth 2.1 authentication support
  * Manages connections to MCP servers with automatic token refresh and session restoration
@@ -122,6 +166,7 @@ export class MCPClient {
 
   /** Callback for handling protocol-level elicitation/create requests from the server */
   private onElicitationRequest?: MCPOAuthClientOptions['onElicitationRequest'];
+  private pendingElicitationInterrupt?: ElicitationInterruptError;
 
 
   /** Event emitters for connection lifecycle */
@@ -132,6 +177,24 @@ export class MCPClient {
   public readonly onObservabilityEvent = this._onObservabilityEvent.event;
 
   private currentState: McpConnectionState = 'DISCONNECTED';
+
+  private captureElicitationInterrupt(error: unknown): boolean {
+    if (!isElicitationInterruptError(error)) {
+      return false;
+    }
+
+    this.pendingElicitationInterrupt =
+      error instanceof ElicitationInterruptError
+        ? error
+        : new ElicitationInterruptError(error.params);
+    return true;
+  }
+
+  private consumePendingElicitationInterrupt(): ElicitationInterruptError | undefined {
+    const interrupt = this.pendingElicitationInterrupt;
+    this.pendingElicitationInterrupt = undefined;
+    return interrupt;
+  }
 
   /**
    * Creates a new MCP client instance
@@ -373,20 +436,31 @@ export class MCPClient {
         const message = params.message ?? '';
         const requestedSchema = params.requestedSchema;
         const url = params.url;
+        console.log('[MCP-ElicitDebug][oauth-client] received elicitation/create', {
+          sessionId: this.sessionId,
+          serverId: this.serverId,
+          mode,
+          message,
+          hasCallback: !!this.onElicitationRequest,
+        });
 
         if (!this.onElicitationRequest) {
           // Spec says clients SHOULD allow declining — auto-decline if no handler configured
+          console.log('[MCP-ElicitDebug][oauth-client] no callback configured; returning decline');
           return { action: 'decline' as const };
         }
 
         try {
-          const response = await this.onElicitationRequest({ mode, message, requestedSchema, url });
-          return {
-            action: response.action,
-            ...(response.action === 'accept' && response.data && mode === 'form' ? { content: response.data } : {}),
-          };
-        } catch {
-          return { action: 'cancel' as const };
+          return await handleElicitationRequestForMcp(
+            { mode, message, requestedSchema, url },
+            this.onElicitationRequest
+          );
+        } catch (error) {
+          if (this.captureElicitationInterrupt(error)) {
+            console.log('[MCP-ElicitDebug][oauth-client] captured elicitation interrupt; returning cancel to MCP protocol');
+            return { action: 'cancel' as const };
+          }
+          throw error;
         }
       });
     }
@@ -816,6 +890,7 @@ export class MCPClient {
     if (!this.client) {
       throw new Error('Not connected to server');
     }
+    this.consumePendingElicitationInterrupt();
 
     const request: CallToolRequest = {
       method: 'tools/call',
@@ -827,6 +902,14 @@ export class MCPClient {
 
     try {
       const result = await this.client.request(request, CallToolResultSchema);
+      const pendingInterrupt = this.consumePendingElicitationInterrupt();
+      if (pendingInterrupt) {
+        console.log('[MCP-ElicitDebug][oauth-client] throwing captured elicitation interrupt after tool response', {
+          toolName,
+          message: pendingInterrupt.params.message,
+        });
+        throw pendingInterrupt;
+      }
 
       this._onObservabilityEvent.fire({
         type: 'mcp:client:tool_call',
@@ -845,6 +928,21 @@ export class MCPClient {
 
       return result;
     } catch (error) {
+      const pendingInterrupt = this.consumePendingElicitationInterrupt();
+      if (pendingInterrupt) {
+        console.log('[MCP-ElicitDebug][oauth-client] throwing captured elicitation interrupt after tool error', {
+          toolName,
+          originalError: error instanceof Error ? error.message : String(error),
+          message: pendingInterrupt.params.message,
+        });
+        throw pendingInterrupt;
+      }
+      if (isElicitationInterruptError(error)) {
+        throw error instanceof ElicitationInterruptError
+          ? error
+          : new ElicitationInterruptError(error.params);
+      }
+
       const errorMessage = error instanceof Error ? error.message : `Failed to call tool ${toolName}`;
 
       this._onObservabilityEvent.fire({

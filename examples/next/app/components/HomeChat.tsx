@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
@@ -37,6 +38,14 @@ import {
   PromptInputTools,
 } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { RiRobot2Line } from "react-icons/ri";
@@ -61,6 +70,224 @@ function assistantShowsProgress(m: UIMessage | undefined): boolean {
 interface HomeChatProps {
   className?: string;
   mcpClient?: McpClient | null;
+}
+
+type ElicitationData = {
+  _mcp_elicitation: true;
+  mode?: "form" | "url";
+  message?: string;
+  requestedSchema?: {
+    properties?: Record<string, JsonSchemaProperty>;
+    required?: string[];
+  };
+  url?: string;
+};
+
+type JsonSchemaProperty = {
+  type?: string;
+  title?: string;
+  enum?: string[];
+  enumNames?: string[];
+  minimum?: number;
+  maximum?: number;
+};
+
+type ToolTextOutput = {
+  isError?: boolean;
+  content?: Array<{
+    type?: string;
+    text?: string;
+  }>;
+};
+
+function isElicitationData(value: unknown): value is ElicitationData {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "_mcp_elicitation" in value &&
+    (value as { _mcp_elicitation?: unknown })._mcp_elicitation === true
+  );
+}
+
+function ElicitationFormCard({
+  data,
+  onSubmit,
+}: {
+  data: ElicitationData;
+  onSubmit: (message: string) => void;
+}) {
+  const [formData, setFormData] = useState<Record<string, unknown>>({});
+  const [submitted, setSubmitted] = useState(false);
+
+  const schema = data.requestedSchema ?? {};
+  const properties = schema.properties ?? {};
+  const required = schema.required ?? [];
+  const mode = data.mode ?? "form";
+
+  const updateField = (key: string, value: unknown) => {
+    setFormData((prev) => {
+      const next = { ...prev };
+      if (value === "" || value == null) {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
+      return next;
+    });
+  };
+
+  const submit = (action: "accept" | "decline" | "cancel") => {
+    const payload =
+      action === "accept"
+        ? `Elicitation response accepted for "${data.message ?? "MCP request"}":\n${JSON.stringify(formData, null, 2)}`
+        : `Elicitation response ${action}ed for "${data.message ?? "MCP request"}".`;
+    setSubmitted(true);
+    onSubmit(payload);
+  };
+
+  return (
+    <div className="my-3 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <ShieldAlert className="size-4 text-blue-500" />
+        <span className="font-medium text-sm text-blue-700 dark:text-blue-400">
+          Information Requested
+        </span>
+      </div>
+      {data.message ? (
+        <p className="mb-3 text-sm font-medium">{data.message}</p>
+      ) : null}
+
+      {mode === "url" ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={submitted}
+            onClick={() => {
+              if (data.url) window.open(data.url, "_blank", "noopener,noreferrer");
+              submit("accept");
+            }}
+          >
+            Authorize
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={submitted}
+            onClick={() => submit("decline")}
+          >
+            Decline
+          </Button>
+        </div>
+      ) : (
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit("accept");
+          }}
+        >
+          {Object.entries(properties).map(([key, prop]) => {
+            const label = prop.title || key;
+            const requiredMark = required.includes(key) ? " *" : "";
+
+            if (prop.type === "boolean") {
+              return (
+                <label key={key} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-4 rounded border-border"
+                    checked={Boolean(formData[key])}
+                    disabled={submitted}
+                    onChange={(event) => updateField(key, event.target.checked)}
+                  />
+                  <span>
+                    {label}
+                    {requiredMark}
+                  </span>
+                </label>
+              );
+            }
+
+            if (Array.isArray(prop.enum)) {
+              return (
+                <div key={key} className="grid gap-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {label}
+                    {requiredMark}
+                  </label>
+                  <Select
+                    value={String(formData[key] ?? "")}
+                    disabled={submitted}
+                    onValueChange={(value) => updateField(key, value)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {prop.enum.map((option, optionIndex) => (
+                        <SelectItem key={option} value={option}>
+                          {prop.enumNames?.[optionIndex] ?? option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            }
+
+            return (
+              <div key={key} className="grid gap-1.5">
+                <label htmlFor={`elicitation-${key}`} className="text-xs font-medium text-muted-foreground">
+                  {label}
+                  {requiredMark}
+                </label>
+                <Input
+                  id={`elicitation-${key}`}
+                  type={prop.type === "number" ? "number" : "text"}
+                  min={prop.minimum}
+                  max={prop.maximum}
+                  value={String(formData[key] ?? "")}
+                  disabled={submitted}
+                  onChange={(event) =>
+                    updateField(
+                      key,
+                      prop.type === "number" && event.target.value !== ""
+                        ? Number(event.target.value)
+                        : event.target.value
+                    )
+                  }
+                />
+              </div>
+            );
+          })}
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button size="sm" type="submit" disabled={submitted}>
+              Submit
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              variant="outline"
+              disabled={submitted}
+              onClick={() => submit("decline")}
+            >
+              Decline
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              variant="ghost"
+              disabled={submitted}
+              onClick={() => submit("cancel")}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
 }
 
 export default function HomeChat({
@@ -133,42 +360,40 @@ export default function HomeChat({
 
                     const elicitationData = (() => {
                       if (!toolPart.output || typeof toolPart.output !== 'object') return null;
-                      const output = toolPart.output as any;
+                      const output = toolPart.output as ToolTextOutput;
                       if (!output.isError || !Array.isArray(output.content)) return null;
-                      const textPart = output.content.find((c: any) => c.type === 'text');
+                      const textPart = output.content.find((c) => c.type === 'text');
                       if (!textPart || typeof textPart.text !== 'string') return null;
+                      console.log("[MCP-ElicitDebug][HomeChat] inspecting tool output", {
+                        toolName: frameToolName,
+                        text: textPart.text.slice(0, 200),
+                      });
                       try {
                         const parsed = JSON.parse(textPart.text);
-                        return parsed._mcp_elicitation ? parsed : null;
-                      } catch {
+                        console.log("[MCP-ElicitDebug][HomeChat] parsed tool output", {
+                          toolName: frameToolName,
+                          isElicitation: isElicitationData(parsed),
+                          parsed,
+                        });
+                        return isElicitationData(parsed) ? parsed : null;
+                      } catch (error) {
+                        console.log("[MCP-ElicitDebug][HomeChat] failed to parse tool output", {
+                          toolName: frameToolName,
+                          error: error instanceof Error ? error.message : String(error),
+                        });
                         return null;
                       }
                     })();
 
                     if (elicitationData) {
                       return (
-                        <div key={index} className="my-3 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
-                          <div className="flex items-center gap-2 mb-3">
-                            <ShieldAlert className="size-4 text-blue-500" />
-                            <span className="font-medium text-sm text-blue-700 dark:text-blue-400">Information Requested</span>
-                          </div>
-                          <p className="text-sm font-medium mb-1">{elicitationData.message}</p>
-                          {elicitationData.requestedSchema?.properties && (
-                            <div className="mt-2 space-y-1">
-                              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Requested Fields:</p>
-                              <div className="flex flex-wrap gap-1">
-                                {Object.keys(elicitationData.requestedSchema.properties).map(prop => (
-                                  <span key={prop} className="text-[10px] bg-blue-500/10 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20">
-                                    {prop}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          <p className="text-[10px] text-muted-foreground mt-3 italic">
-                            Please provide these details in the chat below.
-                          </p>
-                        </div>
+                        <ElicitationFormCard
+                          key={index}
+                          data={elicitationData}
+                          onSubmit={(text) => {
+                            void sendMessage({ parts: [{ type: "text", text }] } as never);
+                          }}
+                        />
                       );
                     }
 
@@ -192,9 +417,10 @@ export default function HomeChat({
                               size="sm" 
                               className="bg-amber-600 hover:bg-amber-700 text-white border-0"
                               onClick={() => {
-                                if ('approval' in toolPart && toolPart.approval) {
+                                const approval = ("approval" in toolPart ? toolPart.approval : undefined) as { id?: string } | undefined;
+                                if (approval?.id) {
                                   addToolApprovalResponse({
-                                    id: (toolPart.approval as any).id,
+                                    id: approval.id,
                                     approved: true,
                                   });
                                 }
@@ -207,9 +433,10 @@ export default function HomeChat({
                               variant="outline"
                               className="border-amber-200 dark:border-amber-900 hover:bg-amber-100 dark:hover:bg-amber-950"
                               onClick={() => {
-                                if ('approval' in toolPart && toolPart.approval) {
+                                const approval = ("approval" in toolPart ? toolPart.approval : undefined) as { id?: string } | undefined;
+                                if (approval?.id) {
                                   addToolApprovalResponse({
-                                    id: (toolPart.approval as any).id,
+                                    id: approval.id,
                                     approved: false,
                                   });
                                 }

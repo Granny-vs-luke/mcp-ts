@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { executeMetaTool } from '../src/shared/meta-tools';
+import { ElicitationInterruptError } from '../src/shared/errors';
 
 test.describe('executeMetaTool', () => {
     test('should return structured errors for ambiguous schema lookup', async () => {
@@ -35,5 +36,73 @@ test.describe('executeMetaTool', () => {
 
         expect(result?.isError).toBe(true);
         expect((result?.content[0] as any).text).toContain('serverName');
+    });
+
+    test('should rethrow elicitation interrupts from proxied tool execution', async () => {
+        const params = {
+            mode: 'form' as const,
+            message: 'Configure alert',
+            requestedSchema: {
+                type: 'object',
+                properties: {
+                    channel: { type: 'string' },
+                },
+            },
+        };
+        const interrupt = new ElicitationInterruptError(params);
+        const router = {
+            getToolSchema: () => ({
+                name: 'configure_alert',
+                description: 'Configure a monitoring alert',
+                inputSchema: { type: 'object', properties: {} },
+            }),
+        };
+
+        await expect(
+            executeMetaTool(
+                'mcp_execute_tool',
+                { toolName: 'configure_alert', args: {} },
+                router as any,
+                async () => {
+                    throw interrupt;
+                }
+            )
+        ).rejects.toBe(interrupt);
+    });
+
+    test('should rethrow elicitation interrupts created by a different bundled entrypoint', async () => {
+        const params = {
+            mode: 'form' as const,
+            message: 'Configure alert',
+            requestedSchema: {
+                type: 'object',
+                properties: {
+                    channel: { type: 'string' },
+                },
+            },
+        };
+        const interrupt = new Error(`Elicitation required: ${params.message}`) as Error & {
+            params: typeof params;
+        };
+        interrupt.name = 'ElicitationInterruptError';
+        interrupt.params = params;
+        const router = {
+            getToolSchema: () => ({
+                name: 'configure_alert',
+                description: 'Configure a monitoring alert',
+                inputSchema: { type: 'object', properties: {} },
+            }),
+        };
+
+        await expect(
+            executeMetaTool(
+                'mcp_execute_tool',
+                { toolName: 'configure_alert', args: {} },
+                router as any,
+                async () => {
+                    throw interrupt;
+                }
+            )
+        ).rejects.toBe(interrupt);
     });
 });

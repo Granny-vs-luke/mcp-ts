@@ -4,7 +4,7 @@ import type { JSONSchema7 } from 'json-schema';
 import type { ToolSet } from 'ai';
 import { ToolRouter } from '../shared/tool-router.js';
 import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
-import { ElicitationInterruptError } from '../shared/errors.js';
+import { isElicitationInterruptError } from '../shared/errors.js';
 
 export interface AIAdapterOptions {
     /** 
@@ -75,10 +75,26 @@ export class AIAdapter {
                         inputSchema: this.jsonSchema!(tool.inputSchema as JSONSchema7),
                         execute: async (args: any) => {
                             try {
+                                console.log('[MCP-ElicitDebug][ai-adapter] executing direct tool', {
+                                    toolName: tool.name,
+                                });
                                 const response = await client.callTool(tool.name, args);
+                                console.log('[MCP-ElicitDebug][ai-adapter] direct tool resolved', {
+                                    toolName: tool.name,
+                                });
                                 return response;
                             } catch (error) {
-                                if (error instanceof ElicitationInterruptError) {
+                                console.log('[MCP-ElicitDebug][ai-adapter] direct tool threw', {
+                                    toolName: tool.name,
+                                    name: error instanceof Error ? error.name : typeof error,
+                                    message: error instanceof Error ? error.message : String(error),
+                                    isElicitationInterrupt: isElicitationInterruptError(error),
+                                    hasParams: !!(error as { params?: unknown } | null | undefined)?.params,
+                                });
+                                if (isElicitationInterruptError(error)) {
+                                    console.log('[MCP-ElicitDebug][ai-adapter] returning structured elicitation output', {
+                                        toolName: tool.name,
+                                    });
                                     return {
                                         content: [{
                                             type: 'text',
@@ -165,6 +181,10 @@ export class AIAdapter {
                             try {
                                 // Handle meta-tool calls via the router
                                 if (isMetaTool(tool.name)) {
+                                    console.log('[MCP-ElicitDebug][ai-adapter] executing meta-tool', {
+                                        toolName: tool.name,
+                                        args,
+                                    });
                                     const result = await executeMetaTool(
                                         tool.name,
                                         args,
@@ -172,15 +192,36 @@ export class AIAdapter {
                                         (name, toolArgs, targetNamespace) => router.callTool(name, toolArgs, targetNamespace)
                                     );
                                     if (result) {
+                                      console.log('[MCP-ElicitDebug][ai-adapter] meta-tool resolved', {
+                                        toolName: tool.name,
+                                        isError: result.isError,
+                                        firstText: result.content?.[0]?.type === 'text'
+                                            ? result.content[0].text?.slice(0, 120)
+                                            : undefined,
+                                      });
                                       return result;
                                     }
                                 }
 
                                 // For non-meta tools in 'all' or 'groups' strategy,
                                 // route directly to the correct MCP client
+                                console.log('[MCP-ElicitDebug][ai-adapter] executing routed tool', {
+                                    toolName: tool.name,
+                                    namespace,
+                                });
                                 return await router.callTool(tool.name, args, namespace);
                             } catch (error) {
-                                if (error instanceof ElicitationInterruptError) {
+                                console.log('[MCP-ElicitDebug][ai-adapter] tool threw', {
+                                    toolName: tool.name,
+                                    name: error instanceof Error ? error.name : typeof error,
+                                    message: error instanceof Error ? error.message : String(error),
+                                    isElicitationInterrupt: isElicitationInterruptError(error),
+                                    hasParams: !!(error as { params?: unknown } | null | undefined)?.params,
+                                });
+                                if (isElicitationInterruptError(error)) {
+                                    console.log('[MCP-ElicitDebug][ai-adapter] returning structured elicitation output', {
+                                        toolName: tool.name,
+                                    });
                                     return {
                                         content: [{
                                             type: 'text',

@@ -32,18 +32,38 @@ export class McpError extends Error {
  * Specialized error thrown when an MCP server requests elicitation mid-execution.
  * Caught by the AIAdapter to return the requested schema to the LLM.
  */
+export type ElicitationInterruptParams = {
+  mode: 'form' | 'url';
+  message: string;
+  requestedSchema?: Record<string, unknown>;
+  url?: string;
+};
+
+export type ElicitationInterruptLike = {
+  name: 'ElicitationInterruptError';
+  params: ElicitationInterruptParams;
+};
+
 export class ElicitationInterruptError extends Error {
   constructor(
-    public readonly params: {
-      mode: 'form' | 'url';
-      message: string;
-      requestedSchema?: Record<string, unknown>;
-      url?: string;
-    }
+    public readonly params: ElicitationInterruptParams
   ) {
     super(`Elicitation required: ${params.message}`);
     this.name = 'ElicitationInterruptError';
   }
+}
+
+export function isElicitationInterruptError(error: unknown): error is ElicitationInterruptLike {
+  return (
+    error instanceof ElicitationInterruptError ||
+    (
+      typeof error === 'object' &&
+      error !== null &&
+      (error as { name?: unknown }).name === 'ElicitationInterruptError' &&
+      typeof (error as { params?: unknown }).params === 'object' &&
+      (error as { params?: unknown }).params !== null
+    )
+  );
 }
 
 /**
