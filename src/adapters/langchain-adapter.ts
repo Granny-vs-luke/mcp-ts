@@ -4,6 +4,11 @@ import type { DynamicStructuredTool, StructuredTool } from '@langchain/core/tool
 import type { z } from 'zod';
 import { ToolRouter } from '../shared/tool-router.js';
 import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
+import {
+    createRunCodeToolDefinition,
+    executeProgrammaticTool,
+    type ProgrammaticToolRunnerLike,
+} from '../shared/programmatic-tool-runner.js';
 
 export interface LangChainAdapterOptions {
     /** 
@@ -24,6 +29,12 @@ export interface LangChainAdapterOptions {
      * See AIAdapterOptions.toolRouter for details.
      */
     toolRouter?: ToolRouter;
+
+    /**
+     * Optional provider-neutral programmatic tool runner.
+     * When provided, exposes `mcp_run_code`.
+     */
+    programmaticToolRunner?: ProgrammaticToolRunnerLike;
 }
 
 /**
@@ -109,7 +120,7 @@ export class LangChainAdapter {
     async getTools(): Promise<StructuredTool[]> {
         // If a ToolRouter is provided, use its filtered output
         if (this.options.toolRouter) {
-            return this.getToolsViaRouter(this.options.toolRouter);
+            return this.withProgrammaticTool(await this.getToolsViaRouter(this.options.toolRouter));
         }
 
         // Use duck typing instead of instanceof to handle module bundling issues
@@ -128,7 +139,7 @@ export class LangChainAdapter {
                 }
             })
         );
-        return results.flat();
+        return this.withProgrammaticTool(results.flat());
     }
 
     /**
@@ -190,6 +201,28 @@ export class LangChainAdapter {
             .replace(/[^a-z0-9]+/g, '_')
             .replace(/^_+|_+$/g, '') || 'mcp';
         return `tool_${normalized}_${toolName}`;
+    }
+
+    private async withProgrammaticTool(tools: StructuredTool[]): Promise<StructuredTool[]> {
+        if (!this.options.programmaticToolRunner) {
+            return tools;
+        }
+
+        await this.ensureDependencies();
+
+        const tool = createRunCodeToolDefinition();
+        return [
+            ...tools,
+            new this.DynamicStructuredTool!({
+                name: tool.name,
+                description: tool.description || `Tool ${tool.name}`,
+                schema: this.jsonSchemaToZod(tool.inputSchema),
+                func: async (args: any) => {
+                    const result = await executeProgrammaticTool(tool.name, args, this.options.programmaticToolRunner!);
+                    return result;
+                },
+            }),
+        ];
     }
 
     /**

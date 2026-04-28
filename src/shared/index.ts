@@ -109,3 +109,24 @@ export {
   type CallToolFn,
 } from './meta-tools.js';
 
+export {
+  PROGRAMMATIC_TOOL_NAME,
+  ProgrammaticToolRunner,
+  createRunCodeToolDefinition,
+  executeProgrammaticTool,
+  isProgrammaticTool,
+  type ProgrammaticToolRunnerOptions,
+  type ProgrammaticToolRunnerLike,
+  type ProgrammaticRunInput,
+  type ProgrammaticRunResult,
+  type ProgrammaticRunTrace,
+  type ProgrammaticToolCallTrace,
+  type ProgrammaticAllowedTool,
+  type ProgrammaticAllowedToolInput,
+  type ProgrammaticToolClientInput,
+  type SandboxRuntime,
+  type SandboxRunInput,
+  type SandboxRunResult,
+  type SandboxToolCall,
+} from './programmatic-tool-runner.js';
+

@@ -1,6 +1,11 @@
 import { MCPClient } from '../server/mcp/oauth-client';
 import { MultiSessionClient } from '../server/mcp/multi-session-client';
 import type { z } from 'zod';
+import {
+    createRunCodeToolDefinition,
+    executeProgrammaticTool,
+    type ProgrammaticToolRunnerLike,
+} from '../shared/programmatic-tool-runner.js';
 
 export interface MastraAdapterOptions {
     /** 
@@ -8,6 +13,12 @@ export interface MastraAdapterOptions {
      * Defaults to the client's serverId.
      */
     prefix?: string;
+
+    /**
+     * Optional provider-neutral programmatic tool runner.
+     * When provided, exposes `mcp_run_code`.
+     */
+    programmaticToolRunner?: ProgrammaticToolRunnerLike;
 }
 
 /**
@@ -114,7 +125,28 @@ export class MastraAdapter {
                 }
             })
         );
-        return results.reduce((acc, tools) => ({ ...acc, ...tools }), {});
+        return this.withProgrammaticTool(results.reduce((acc, tools) => ({ ...acc, ...tools }), {}));
+    }
+
+    private async withProgrammaticTool(tools: Record<string, MastraTool>): Promise<Record<string, MastraTool>> {
+        if (!this.options.programmaticToolRunner) {
+            return tools;
+        }
+
+        await this.ensureZod();
+
+        const tool = createRunCodeToolDefinition();
+        return {
+            ...tools,
+            [tool.name]: {
+                id: tool.name,
+                description: tool.description || `Tool ${tool.name}`,
+                inputSchema: this.jsonSchemaToZod(tool.inputSchema),
+                execute: async (args: any) => {
+                    return executeProgrammaticTool(tool.name, args, this.options.programmaticToolRunner!);
+                },
+            },
+        };
     }
 
     /**

@@ -82,6 +82,53 @@ test.describe('AguiAdapter', () => {
     const tools = await adapter.getTools();
     expect(tools).toHaveLength(0);
   });
+
+  test('should expose mcp_run_code when a programmatic runner is configured', async () => {
+    const mockClient = new MockMCPClient() as unknown as MCPClient;
+    const calls: any[] = [];
+    const adapter = new AguiAdapter(mockClient, {
+      programmaticToolRunner: {
+        runCode: async (input: any) => {
+          calls.push(input);
+          return {
+            isError: false,
+            output: { ok: true },
+            trace: {
+              toolCalls: [],
+              durationMs: 1,
+              finalOutputTruncated: false,
+            },
+          };
+        },
+      } as any,
+    });
+
+    const tools = await adapter.getTools();
+    const runCodeTool = tools.find((tool) => tool.name === 'mcp_run_code');
+
+    expect(runCodeTool).toBeTruthy();
+
+    const result = await runCodeTool!.handler?.({
+      code: 'return { ok: true }',
+      allowedTools: ['get-time'],
+    });
+
+    expect(result).toEqual({
+      isError: false,
+      output: { ok: true },
+      trace: {
+        toolCalls: [],
+        durationMs: 1,
+        finalOutputTruncated: false,
+      },
+    });
+    expect(calls).toEqual([
+      {
+        code: 'return { ok: true }',
+        allowedTools: ['get-time'],
+      },
+    ]);
+  });
 });
 
 

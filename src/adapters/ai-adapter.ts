@@ -4,6 +4,11 @@ import type { JSONSchema7 } from 'json-schema';
 import type { ToolSet } from 'ai';
 import { ToolRouter } from '../shared/tool-router.js';
 import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
+import {
+    createRunCodeToolDefinition,
+    executeProgrammaticTool,
+    type ProgrammaticToolRunnerLike,
+} from '../shared/programmatic-tool-runner.js';
 
 export interface AIAdapterOptions {
     /** 
@@ -22,6 +27,15 @@ export interface AIAdapterOptions {
      * When not provided, all tools are returned as before (backward-compatible).
      */
     toolRouter?: ToolRouter;
+
+    /**
+     * Optional programmatic tool runner.
+     *
+     * When provided, the adapter exposes `mcp_run_code`, a provider-neutral
+     * tool that runs sandboxed JavaScript with allowlisted MCP tools injected
+     * as async functions.
+     */
+    programmaticToolRunner?: ProgrammaticToolRunnerLike;
 }
 
 /**
@@ -95,7 +109,7 @@ export class AIAdapter {
 
         // If a ToolRouter is provided, use its filtered output
         if (this.options.toolRouter) {
-            return this.getToolsViaRouter(this.options.toolRouter);
+            return this.withProgrammaticTool(await this.getToolsViaRouter(this.options.toolRouter));
         }
 
         // Use duck typing instead of instanceof to handle module bundling issues
@@ -121,7 +135,7 @@ export class AIAdapter {
             })
         );
 
-        return results.reduce((acc, tools) => ({ ...acc, ...tools }), {});
+        return this.withProgrammaticTool(results.reduce((acc, tools) => ({ ...acc, ...tools }), {}));
     }
 
     /**
@@ -179,6 +193,24 @@ export class AIAdapter {
             .replace(/[^a-z0-9]+/g, '_')
             .replace(/^_+|_+$/g, '') || 'mcp';
         return `tool_${normalized}_${toolName}`;
+    }
+
+    private withProgrammaticTool(tools: ToolSet): ToolSet {
+        if (!this.options.programmaticToolRunner) {
+            return tools;
+        }
+
+        const tool = createRunCodeToolDefinition();
+        return {
+            ...tools,
+            [tool.name]: {
+                description: tool.description,
+                inputSchema: this.jsonSchema!(tool.inputSchema as JSONSchema7),
+                execute: async (args: any) => {
+                    return executeProgrammaticTool(tool.name, args, this.options.programmaticToolRunner!);
+                },
+            },
+        } as ToolSet;
     }
 
     /**

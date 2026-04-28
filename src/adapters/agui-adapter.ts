@@ -30,6 +30,11 @@ import { MCPClient } from '../server/mcp/oauth-client.js';
 import { MultiSessionClient } from '../server/mcp/multi-session-client.js';
 import { ToolRouter } from '../shared/tool-router.js';
 import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
+import {
+    createRunCodeToolDefinition,
+    executeProgrammaticTool,
+    type ProgrammaticToolRunnerLike,
+} from '../shared/programmatic-tool-runner.js';
 
 /**
  * Extended JSON Schema properties that Pydantic's strict validation rejects.
@@ -103,6 +108,12 @@ export interface AguiAdapterOptions {
      * Optional ToolRouter for intelligent tool selection.
      */
     toolRouter?: ToolRouter;
+
+    /**
+     * Optional provider-neutral programmatic tool runner.
+     * When provided, exposes `mcp_run_code`.
+     */
+    programmaticToolRunner?: ProgrammaticToolRunnerLike;
 }
 
 /**
@@ -140,7 +151,7 @@ export class AguiAdapter {
      */
     async getTools(): Promise<AguiTool[]> {
         if (this.options.toolRouter) {
-            return this.getToolsViaRouter(this.options.toolRouter);
+            return this.withProgrammaticTool(await this.getToolsViaRouter(this.options.toolRouter));
         }
 
         if (this.isMultiSession()) {
@@ -149,9 +160,9 @@ export class AguiAdapter {
             for (const client of clients) {
                 allTools.push(...await this.transformTools(client));
             }
-            return allTools;
+            return this.withProgrammaticTool(allTools);
         }
-        return this.transformTools(this.client as MCPClient);
+        return this.withProgrammaticTool(await this.transformTools(this.client as MCPClient));
     }
 
     /**
@@ -159,7 +170,7 @@ export class AguiAdapter {
      */
     async getToolDefinitions(): Promise<AguiToolDefinition[]> {
         if (this.options.toolRouter) {
-            return this.getToolDefinitionsViaRouter(this.options.toolRouter);
+            return this.withProgrammaticToolDefinition(await this.getToolDefinitionsViaRouter(this.options.toolRouter));
         }
 
         if (this.isMultiSession()) {
@@ -168,9 +179,9 @@ export class AguiAdapter {
             for (const client of clients) {
                 allTools.push(...await this.transformToolDefinitions(client));
             }
-            return allTools;
+            return this.withProgrammaticToolDefinition(allTools);
         }
-        return this.transformToolDefinitions(this.client as MCPClient);
+        return this.withProgrammaticToolDefinition(await this.transformToolDefinitions(this.client as MCPClient));
     }
 
     /**
@@ -297,5 +308,40 @@ export class AguiAdapter {
             .replace(/[^a-z0-9]+/g, '_')
             .replace(/^_+|_+$/g, '') || 'mcp';
         return `tool_${normalized}_${toolName}`;
+    }
+
+    private withProgrammaticTool(tools: AguiTool[]): AguiTool[] {
+        if (!this.options.programmaticToolRunner) {
+            return tools;
+        }
+
+        const tool = createRunCodeToolDefinition();
+        return [
+            ...tools,
+            {
+                name: tool.name,
+                description: tool.description || `Execute ${tool.name}`,
+                parameters: cleanSchema(tool.inputSchema),
+                handler: async (args: any) => {
+                    return executeProgrammaticTool(tool.name, args, this.options.programmaticToolRunner!);
+                },
+            },
+        ];
+    }
+
+    private withProgrammaticToolDefinition(tools: AguiToolDefinition[]): AguiToolDefinition[] {
+        if (!this.options.programmaticToolRunner) {
+            return tools;
+        }
+
+        const tool = createRunCodeToolDefinition();
+        return [
+            ...tools,
+            {
+                name: tool.name,
+                description: tool.description || `Execute ${tool.name}`,
+                parameters: cleanSchema(tool.inputSchema),
+            },
+        ];
     }
 }

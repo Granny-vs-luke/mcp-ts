@@ -81,6 +81,52 @@ test.describe('MastraAdapter', () => {
         expect(Object.keys(tools)).toHaveLength(1);
     });
 
+    test('should expose mcp_run_code when a programmatic runner is configured', async () => {
+        const mockClient = new MockMCPClient() as unknown as MCPClient;
+        const calls: any[] = [];
+        const adapter = new MastraAdapter(mockClient, {
+            programmaticToolRunner: {
+                runCode: async (input: any) => {
+                    calls.push(input);
+                    return {
+                        isError: false,
+                        output: { ok: true },
+                        trace: {
+                            toolCalls: [],
+                            durationMs: 1,
+                            finalOutputTruncated: false,
+                        },
+                    };
+                },
+            } as any,
+        });
+
+        const tools = await adapter.getTools();
+
+        expect(Object.keys(tools)).toContain('mcp_run_code');
+
+        const result = await tools.mcp_run_code.execute({
+            code: 'return { ok: true }',
+            allowedTools: ['test_tool'],
+        });
+
+        expect(result).toEqual({
+            isError: false,
+            output: { ok: true },
+            trace: {
+                toolCalls: [],
+                durationMs: 1,
+                finalOutputTruncated: false,
+            },
+        });
+        expect(calls).toEqual([
+            {
+                code: 'return { ok: true }',
+                allowedTools: ['test_tool'],
+            },
+        ]);
+    });
+
     test('should have correct tool structure', async () => {
         const mockClient = new MockMCPClient() as unknown as MCPClient;
         const adapter = new MastraAdapter(mockClient);

@@ -81,6 +81,53 @@ test.describe('LangChainAdapter', () => {
         expect(tools).toHaveLength(1);
     });
 
+    test('should expose mcp_run_code when a programmatic runner is configured', async () => {
+        const mockClient = new MockMCPClient() as unknown as MCPClient;
+        const calls: any[] = [];
+        const adapter = new LangChainAdapter(mockClient, {
+            programmaticToolRunner: {
+                runCode: async (input: any) => {
+                    calls.push(input);
+                    return {
+                        isError: false,
+                        output: { ok: true },
+                        trace: {
+                            toolCalls: [],
+                            durationMs: 1,
+                            finalOutputTruncated: false,
+                        },
+                    };
+                },
+            } as any,
+        });
+
+        const tools = await adapter.getTools();
+        const runCodeTool = tools.find((tool) => tool.name === 'mcp_run_code');
+
+        expect(runCodeTool).toBeTruthy();
+
+        const result = await runCodeTool!.invoke({
+            code: 'return { ok: true }',
+            allowedTools: ['test_tool'],
+        });
+
+        expect(result).toEqual({
+            isError: false,
+            output: { ok: true },
+            trace: {
+                toolCalls: [],
+                durationMs: 1,
+                finalOutputTruncated: false,
+            },
+        });
+        expect(calls).toEqual([
+            {
+                code: 'return { ok: true }',
+                allowedTools: ['test_tool'],
+            },
+        ]);
+    });
+
     test('should handle errors gracefully with simplifyErrors option', async () => {
         const mockClient = new MockMCPClient() as unknown as MCPClient;
         (mockClient as any).callTool = async () => {
