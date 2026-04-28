@@ -84,6 +84,8 @@
     "test": "npx playwright test",
     "test:ui": "npx playwright test --ui",
     "test:debug": "npx playwright test --debug",
+    "benchmark:toolrouter": "npm run build && node benchmarks/toolrouter-efficiency.mjs",
+    "benchmark:toolrouter:live": "npm run build && node benchmarks/toolrouter-live.mjs",
     "supabase:push": "supabase db push",
     "supabase:reset": "supabase db reset",
     "supabase:status": "supabase status",

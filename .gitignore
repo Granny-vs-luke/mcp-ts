@@ -5,6 +5,7 @@ dist
 *.log
 .DS_Store
 docs/build_log*.txt
+benchmarks/results/
 
 # Playwright
 test-results/
