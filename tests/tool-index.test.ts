@@ -68,6 +68,35 @@ test.describe('ToolIndex', () => {
         );
     });
 
+    test('should prefer exact namespace matches before fuzzy server names', async () => {
+        const index = new ToolIndex();
+        const tools: IndexedTool[] = [
+            {
+                name: 'search',
+                description: 'Search GitHub pull requests and repositories',
+                inputSchema: { type: 'object', properties: {} },
+                serverName: 'GitHub',
+                sessionId: 'github-session',
+                serverId: 'github',
+            },
+            {
+                name: 'search',
+                description: 'Search enterprise GitHub resources',
+                inputSchema: { type: 'object', properties: {} },
+                serverName: 'GitHub Enterprise',
+                sessionId: 'enterprise-session',
+                serverId: 'enterprise',
+            },
+        ];
+
+        await index.buildIndex(tools);
+
+        const results = index.getTool('search', 'github');
+
+        expect(results).toHaveLength(1);
+        expect(results[0].serverId).toBe('github');
+    });
+
     test('should strip required-term prefixes before embedding query text', async () => {
         let embeddingQueryText: string | null = null;
         const embedFn = async (texts: string[]): Promise<number[][]> => {
