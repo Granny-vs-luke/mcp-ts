@@ -10,18 +10,23 @@ These tools follow the "Tool Search" pattern, allowing the LLM to autonomously f
 
 ## The Meta-Tool Catalog
 
-### `mcp_search_tool_bm25`
+### `mcp_search_tools`
 The primary entry point for discovery. The LLM calls this with a natural language query to find tools. The backend uses an in-memory BM25 index combined with smart heuristics to rank results.
-- **Input**: `query` (string), `limit` (number).
+- **Input**: `query` (string), `operation` (`"search"` or `"list"`), `serverId`/`serverName` (optional), `limit` (number), `cursor` (optional).
 - **Output**: A list of tool names, descriptions, and the servers they belong to.
 
 #### Advanced Search Features
-The `mcp_search_tool_bm25` meta-tool supports a powerful query syntax that helps the AI zero in on exact capabilities without context bloat:
+The `mcp_search_tools` meta-tool supports a powerful query syntax that helps the AI zero in on exact capabilities without context bloat:
 
 - **Direct Tool Selection (`select:<name>`)**: If the AI already knows the exact tool it wants to use (e.g., from past context), it can bypass the BM25 index entirely.
   - *Example*: `select:github_create_issue` returns the exact tool description instantly.
 - **Required Terms (`+term`)**: By prefixing a word with `+`, the AI strictly forces the index to *only* return tools that contain that word in their name or description.
   - *Example*: `+slack send` guarantees that only tools belonging to Slack are returned, even if another tool uses the word "send" frequently.
+- **Server Scoping**: Pass `serverId` or `serverName` to restrict results to one connected MCP server.
+  - *Example*: `query: "tables", serverName: "supabase"` searches only Supabase tools.
+- **Deterministic Server Listing**: Pass `operation: "list"` with `serverId` or `serverName` when the user asks for every tool from a server.
+  - *Example*: `query: "supabase", operation: "list", serverName: "supabase"` returns the server's tools with `totalCount`, `returnedCount`, and `nextCursor` metadata.
+- **Live-Information Fallback**: If a temporal or current-information query has no direct BM25 match, the router retries with generic web/search/browser terms so connected web-search tools can still surface.
 - **Enhanced Scoring Heuristics**: Behind the scenes, the BM25 index automatically grants massive score bonuses (+10 or +5 points) if a search term perfectly matches or is a substring of the MCP `serverName` or the tool `name`. This ensures that tools strictly related to a specific integration (e.g., querying for "neon" or "apify") always float above unrelated tools that merely mention the word in their parameters.
 
 ### `mcp_search_tool_regex`
@@ -53,7 +58,7 @@ The `mcp-ts` SDK implements the following flow to minimize context usage while m
     The SDK injects only the 4 Meta-Tools into the LLM context (cost: ~500 tokens).
   </Step>
   <Step title="Discovery (Search)">
-    When the user asks for a specific capability, the LLM calls `mcp_search_tool_bm25` or `mcp_search_tool_regex`.
+    When the user asks for a specific capability, the LLM calls `mcp_search_tools` or `mcp_search_tool_regex`.
   </Step>
   <Step title="Inspection (Get Schema)">
     Based on search results, the LLM calls `mcp_get_tool_schema` for the most relevant tool to see its parameters.

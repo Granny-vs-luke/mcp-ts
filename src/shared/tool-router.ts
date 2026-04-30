@@ -28,7 +28,15 @@
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolClient, ToolClientProvider } from './types.js';
-import { ToolIndex, type IndexedTool, type ToolSummary, type EmbedFn } from './tool-index.js';
+import {
+  ToolIndex,
+  type IndexedTool,
+  type ToolListResult,
+  type ToolSearchOptions,
+  type ToolServerSummary,
+  type ToolSummary,
+  type EmbedFn,
+} from './tool-index.js';
 import { SchemaCompressor, type CompactTool } from './schema-compressor.js';
 import {
   createSearchToolDefinition,
@@ -159,7 +167,7 @@ export class ToolRouter {
    * This is the main method adapters should call.
    *
    * - `all`    → returns all tools (unchanged behavior)
-   * - `search` → returns only meta-tools (mcp_search_tool_bm25, mcp_get_tool_schema, mcp_execute_tool)
+   * - `search` → returns only meta-tools (mcp_search_tools, mcp_get_tool_schema, mcp_execute_tool)
    * - `groups` → returns tools from active groups only
    */
   async getFilteredTools(): Promise<Tool[]> {
@@ -195,9 +203,24 @@ export class ToolRouter {
    * Search tools by natural-language query.
    * Works regardless of strategy.
    */
-  async searchTools(query: string, topK?: number): Promise<ToolSummary[]> {
+  async searchTools(
+    query: string,
+    topK?: number,
+    options: ToolSearchOptions = {}
+  ): Promise<ToolSummary[]> {
     await this.ensureInitialized();
-    return this.index.search(query, topK ?? this.maxTools);
+    const limit = topK ?? this.maxTools;
+    const results = await this.index.search(query, limit, options);
+    if (results.length > 0) {
+      return results;
+    }
+
+    const fallbackQuery = this.getFallbackSearchQuery(query);
+    if (!fallbackQuery) {
+      return results;
+    }
+
+    return this.index.search(fallbackQuery, limit, options);
   }
 
   /**
@@ -207,6 +230,18 @@ export class ToolRouter {
   async searchToolsRegex(pattern: string, topK?: number): Promise<ToolSummary[]> {
     await this.ensureInitialized();
     return this.index.searchRegex(pattern, topK ?? this.maxTools);
+  }
+
+  /** List connected MCP servers with indexed tool counts. */
+  async listServers(options: ToolSearchOptions = {}): Promise<ToolServerSummary[]> {
+    await this.ensureInitialized();
+    return this.index.listServers(options);
+  }
+
+  /** List tools deterministically, optionally scoped to a server. */
+  async listTools(options: ToolSearchOptions & { limit?: number; cursor?: string } = {}): Promise<ToolListResult> {
+    await this.ensureInitialized();
+    return this.index.listTools(options);
   }
 
   /**
@@ -318,7 +353,7 @@ export class ToolRouter {
       throw new Error(
         `Tool "${toolName}" not found${
           namespace ? ` on server "${namespace}"` : ''
-        }. Use mcp_search_tool_bm25 or mcp_search_tool_regex to discover available tools.`
+        }. Use mcp_search_tools or mcp_search_tool_regex to discover available tools.`
       );
     }
 
@@ -466,5 +501,19 @@ export class ToolRouter {
       createGetSchemaToolDefinition(),
       createExecuteToolDefinition(),
     ];
+  }
+
+  private getFallbackSearchQuery(query: string): string | undefined {
+    const normalized = query.toLowerCase();
+    const asksForLiveInformation =
+      /\b(today|yesterday|latest|recent|current|now|live|news|score|scores|won|winner|weather|price|stock|match|game)\b/.test(
+        normalized
+      );
+
+    if (!asksForLiveInformation) {
+      return undefined;
+    }
+
+    return `${query} web search internet browser current latest news live score`;
   }
 }

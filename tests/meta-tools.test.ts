@@ -1,7 +1,40 @@
 import { test, expect } from '@playwright/test';
-import { executeMetaTool } from '../src/shared/meta-tools';
+import { createSearchToolDefinition, executeMetaTool, isMetaTool } from '../src/shared/meta-tools';
+import { ToolRouter } from '../src/shared/tool-router';
+
+function createRouterClient(
+    serverId: string,
+    serverName: string,
+    tools: Array<{
+        name: string;
+        description?: string;
+        inputSchema?: Record<string, unknown>;
+    }>
+) {
+    return {
+        isConnected: () => true,
+        getServerId: () => serverId,
+        getServerName: () => serverName,
+        getSessionId: () => `${serverId}-session`,
+        listTools: async () => ({
+            tools: tools.map((tool) => ({
+                inputSchema: { type: 'object' as const, properties: {} },
+                ...tool,
+            })),
+        }),
+        callTool: async (name: string, args: Record<string, unknown>) => ({
+            content: [{ type: 'text' as const, text: `${serverName}:${name}:${JSON.stringify(args)}` }],
+            isError: false,
+        }),
+    };
+}
 
 test.describe('executeMetaTool', () => {
+    test('should expose the generic search tools meta-tool name', async () => {
+        expect(createSearchToolDefinition().name).toBe('mcp_search_tools');
+        expect(isMetaTool('mcp_search_tools')).toBe(true);
+    });
+
     test('should return structured errors for ambiguous schema lookup', async () => {
         const router = {
             getToolSchema: () => {
@@ -70,5 +103,94 @@ test.describe('executeMetaTool', () => {
             })
         );
         expect(schema.executionInstructions.note).toContain('Do not call this discovered tool directly');
+    });
+
+    test('should list every tool from a matching server without search-result truncation', async () => {
+        const supabaseTools = Array.from({ length: 29 }, (_, index) => ({
+            name: `supabase_tool_${index + 1}`,
+            description: `Supabase database capability ${index + 1}`,
+        }));
+        const router = new ToolRouter([
+            createRouterClient('supabase-server', 'Supabase MCP', supabaseTools) as any,
+        ], { strategy: 'search' });
+
+        const result = await executeMetaTool(
+            'mcp_search_tools',
+            { query: 'supabase', operation: 'list', serverName: 'supabase', limit: 100 },
+            router
+        );
+
+        expect(result?.isError).toBe(false);
+        const text = (result?.content[0] as any).text;
+        expect(text).toContain('totalCount: 29');
+        expect(text).toContain('returnedCount: 29');
+        expect(text).toContain('supabase_tool_1');
+        expect(text).toContain('supabase_tool_29');
+    });
+
+    test('should search within a server when serverName is provided', async () => {
+        const router = new ToolRouter([
+            createRouterClient('supabase-server', 'Supabase MCP', [
+                { name: 'search_projects', description: 'Search Supabase projects' },
+            ]) as any,
+            createRouterClient('web-server', 'Web Search', [
+                { name: 'web_search', description: 'Search the web' },
+            ]) as any,
+        ], { strategy: 'search' });
+
+        const result = await executeMetaTool(
+            'mcp_search_tools',
+            { query: 'search', serverName: 'supabase', limit: 10 },
+            router
+        );
+
+        expect(result?.isError).toBe(false);
+        const text = (result?.content[0] as any).text;
+        expect(text).toContain('search_projects');
+        expect(text).not.toContain('web_search');
+    });
+
+    test('should fall back from temporal fuzzy questions to connected web search tools', async () => {
+        const router = new ToolRouter([
+            createRouterClient('web-server', 'Web Search', [
+                {
+                    name: 'web_search',
+                    description: 'Search the web for current information and recent results',
+                    inputSchema: {
+                        type: 'object',
+                        properties: {
+                            query: { type: 'string', description: 'Search query' },
+                        },
+                    },
+                },
+            ]) as any,
+        ], { strategy: 'search' });
+
+        const result = await executeMetaTool(
+            'mcp_search_tools',
+            { query: "who won yesterday's ipl match", limit: 5 },
+            router
+        );
+
+        expect(result?.isError).toBe(false);
+        const text = (result?.content[0] as any).text;
+        expect(text).toContain('web_search');
+    });
+
+    test('should execute the search tools meta-tool name', async () => {
+        const router = new ToolRouter([
+            createRouterClient('web-server', 'Web Search', [
+                { name: 'web_search', description: 'Search the web' },
+            ]) as any,
+        ], { strategy: 'search' });
+
+        const result = await executeMetaTool(
+            'mcp_search_tools',
+            { query: 'web', limit: 5 },
+            router
+        );
+
+        expect(result?.isError).toBe(false);
+        expect((result?.content[0] as any).text).toContain('web_search');
     });
 });

@@ -1126,9 +1126,10 @@ export class MCPClient {
    * @returns Server name or undefined
    */
   getServerName(): string | undefined {
-    const info = (this.client as any)?.getServerVersion();
-    console.log('server info ->', info);
-    return info?.title ?? info?.name ?? this.serverName;
+    // Temporarily avoid deriving serverName from serverVersion metadata.
+    // const info = (this.client as any)?.getServerVersion();
+    // return info?.title ?? info?.name ?? this.serverName;
+    return this.serverName;
   }
 
   /**
@@ -1228,4 +1229,3 @@ export class MCPClient {
   }
 
 }
-
