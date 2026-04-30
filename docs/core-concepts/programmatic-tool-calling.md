@@ -19,7 +19,7 @@ Because `mcp_run_code` is just a normal tool definition, it works across adapter
 ## Setup
 
 ```typescript
-import { MultiSessionClient, JavaScriptSandboxRuntime } from "@mcp-ts/sdk/server";
+import { MultiSessionClient, E2BSandboxRuntime } from "@mcp-ts/sdk/server";
 import { ProgrammaticToolRunner } from "@mcp-ts/sdk/shared";
 import { AIAdapter } from "@mcp-ts/sdk/adapters/ai";
 
@@ -27,7 +27,10 @@ const client = new MultiSessionClient("user_123");
 await client.connect();
 
 const programmaticToolRunner = new ProgrammaticToolRunner(client, {
-  runtime: new JavaScriptSandboxRuntime(),
+  runtime: new E2BSandboxRuntime({
+    bridgeUrl: "https://your-app.example.com/api/mcp/tool-bridge",
+    bridgeToken: process.env.MCP_TOOL_BRIDGE_TOKEN,
+  }),
   allowedTools: ["list_users", "get_user_expenses"],
   maxToolCalls: 50,
   maxParallelToolCalls: 10,
@@ -80,8 +83,66 @@ The runner enforces:
 
 Each run also returns a trace with the executed tool names, server IDs, duration, success state, and final output truncation state.
 
-## Sandbox Notes
+## Sandbox Runtimes
 
-`JavaScriptSandboxRuntime` exposes only the injected `tools` object and a captured `console`. It does not expose `process`, `require`, `fetch`, filesystem access, environment variables, or package imports.
+`mcp-ts` includes multiple runtime adapters:
 
-The initial runtime is intended for controlled model-generated code. If you need to execute arbitrary untrusted user code, use a stronger external isolation backend by implementing the `SandboxRuntime` interface.
+- `E2BSandboxRuntime`: runs code in an E2B cloud sandbox. Install `@e2b/code-interpreter` to use it.
+- `VercelSandboxRuntime`: runs code in a Vercel Sandbox Firecracker microVM. Install `@vercel/sandbox` to use it.
+- `JavaScriptSandboxRuntime`: runs code in-process with Node `vm`. Use this for tests, demos, and local development only.
+
+External cloud runtimes need a `bridgeUrl` so sandboxed code can call back to your host application for MCP tool execution. The sandbox runs the JavaScript, but the real MCP tools still execute in your server process where credentials and MCP clients live.
+
+```typescript
+import { VercelSandboxRuntime } from "@mcp-ts/sdk/server";
+
+const runtime = new VercelSandboxRuntime({
+  bridgeUrl: "https://your-app.example.com/api/mcp/tool-bridge",
+  bridgeToken: process.env.MCP_TOOL_BRIDGE_TOKEN,
+  createOptions: {
+    runtime: "node24",
+  },
+});
+```
+
+The bridge endpoint should authenticate the token, enforce the same `allowedTools` policy, execute the requested MCP tool, and return:
+
+```typescript
+// app/api/mcp/tool-bridge/route.ts
+import { MultiSessionClient, ProgrammaticToolBridge } from "@mcp-ts/sdk/server";
+
+export async function POST(request: Request) {
+  const client = new MultiSessionClient("user_123");
+  await client.connect();
+
+  const bridge = new ProgrammaticToolBridge(client, {
+    bridgeToken: process.env.MCP_TOOL_BRIDGE_TOKEN,
+    allowedTools: ["list_users", "get_user_expenses"],
+  });
+
+  try {
+    return await bridge.handleRequest(request);
+  } finally {
+    await client.disconnect();
+  }
+}
+```
+
+Successful bridge responses look like:
+
+```json
+{
+  "result": { "ok": true }
+}
+```
+
+For errors:
+
+```json
+{
+  "isError": true,
+  "error": "Tool is not allowed"
+}
+```
+
+`JavaScriptSandboxRuntime` exposes only the injected `tools` object and a captured `console`. It does not expose `process`, `require`, `fetch`, filesystem access, environment variables, or package imports, but it is still not a production-grade boundary for arbitrary hostile code. Use E2B, Vercel Sandbox, or another external `SandboxRuntime` implementation for untrusted code.

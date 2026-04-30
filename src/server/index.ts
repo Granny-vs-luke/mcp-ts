@@ -10,6 +10,19 @@ export { storage, type StorageBackend } from './storage/index.js';
 export { StorageOAuthClientProvider } from './mcp/storage-oauth-provider.js';
 export { MultiSessionClient } from './mcp/multi-session-client.js';
 export { JavaScriptSandboxRuntime } from './programmatic/javascript-sandbox-runtime.js';
+export {
+  E2BSandboxRuntime,
+  VercelSandboxRuntime,
+  buildSandboxedJavaScript,
+  type E2BSandboxRuntimeOptions,
+  type VercelSandboxRuntimeOptions,
+  type SandboxedJavaScriptOptions,
+} from './programmatic/external-sandbox-runtimes.js';
+export {
+  ProgrammaticToolBridge,
+  type ProgrammaticToolBridgeOptions,
+  type ProgrammaticToolBridgeRequest,
+} from './programmatic/tool-bridge.js';
 
 /** SSE handler for real-time connections */
 export { createSSEHandler, SSEConnectionManager, type SSEHandlerOptions, type ClientMetadata } from './handlers/sse-handler.js';
