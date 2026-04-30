@@ -210,17 +210,7 @@ export class ToolRouter {
   ): Promise<ToolSummary[]> {
     await this.ensureInitialized();
     const limit = topK ?? this.maxTools;
-    const results = await this.index.search(query, limit, options);
-    if (results.length > 0) {
-      return results;
-    }
-
-    const fallbackQuery = this.getFallbackSearchQuery(query);
-    if (!fallbackQuery) {
-      return results;
-    }
-
-    return this.index.search(fallbackQuery, limit, options);
+    return this.index.search(query, limit, options);
   }
 
   /**
@@ -503,17 +493,4 @@ export class ToolRouter {
     ];
   }
 
-  private getFallbackSearchQuery(query: string): string | undefined {
-    const normalized = query.toLowerCase();
-    const asksForLiveInformation =
-      /\b(today|yesterday|latest|recent|current|now|live|news|score|scores|won|winner|weather|price|stock|match|game)\b/.test(
-        normalized
-      );
-
-    if (!asksForLiveInformation) {
-      return undefined;
-    }
-
-    return `${query} web search internet browser current latest news live score`;
-  }
 }

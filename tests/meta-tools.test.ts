@@ -150,7 +150,7 @@ test.describe('executeMetaTool', () => {
         expect(text).not.toContain('web_search');
     });
 
-    test('should fall back from temporal fuzzy questions to connected web search tools', async () => {
+    test('should not infer unrelated tools for temporal fuzzy questions without direct lexical match', async () => {
         const router = new ToolRouter([
             createRouterClient('web-server', 'Web Search', [
                 {
@@ -174,7 +174,7 @@ test.describe('executeMetaTool', () => {
 
         expect(result?.isError).toBe(false);
         const text = (result?.content[0] as any).text;
-        expect(text).toContain('web_search');
+        expect(text).toContain('No tools found matching your query');
     });
 
     test('should execute the search tools meta-tool name', async () => {
