@@ -498,7 +498,7 @@ export class ToolIndex {
       (t) =>
         t.sessionId === namespace ||
         t.serverId === namespace ||
-        t.serverName.toLowerCase() === namespaceLower
+        t.serverName.toLowerCase().includes(namespaceLower)
     );
   }
 
