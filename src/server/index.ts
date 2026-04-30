@@ -11,9 +11,13 @@ export { StorageOAuthClientProvider } from './mcp/storage-oauth-provider.js';
 export { MultiSessionClient } from './mcp/multi-session-client.js';
 export { JavaScriptSandboxRuntime } from './programmatic/javascript-sandbox-runtime.js';
 export {
+  E2BPythonCodeInterpreterRuntime,
   E2BSandboxRuntime,
   VercelSandboxRuntime,
   buildSandboxedJavaScript,
+  type E2BPythonCodeInterpreterRuntimeOptions,
+  type E2BPythonRunInput,
+  type E2BPythonRunResult,
   type E2BSandboxRuntimeOptions,
   type VercelSandboxRuntimeOptions,
   type SandboxedJavaScriptOptions,

@@ -15,9 +15,29 @@ export interface SandboxedJavaScriptOptions {
 export interface E2BSandboxRuntimeOptions {
   bridgeUrl?: string;
   bridgeToken?: string;
+  apiKey?: string;
   cleanup?: boolean;
   sandboxFactory?: () => Promise<any>;
+  e2bModule?: any;
   runCodeOptions?: Record<string, unknown>;
+}
+
+export interface E2BPythonCodeInterpreterRuntimeOptions {
+  apiKey?: string;
+  cleanup?: boolean;
+  sandboxFactory?: () => Promise<any>;
+  e2bModule?: any;
+  runCodeOptions?: Record<string, unknown>;
+}
+
+export interface E2BPythonRunInput {
+  code: string;
+}
+
+export interface E2BPythonRunResult {
+  results: unknown[];
+  stdout: string[];
+  stderr: string[];
 }
 
 export interface VercelSandboxRuntimeOptions {
@@ -115,8 +135,55 @@ export class E2BSandboxRuntime implements SandboxRuntime {
       return this.options.sandboxFactory();
     }
 
-    const mod = await optionalImport('@e2b/code-interpreter');
-    return mod.Sandbox.create();
+    const mod = this.options.e2bModule ?? await optionalImport('@e2b/code-interpreter');
+    return mod.Sandbox.create(this.options.apiKey ? { apiKey: this.options.apiKey } : undefined);
+  }
+}
+
+export class E2BPythonCodeInterpreterRuntime {
+  constructor(private options: E2BPythonCodeInterpreterRuntimeOptions = {}) {}
+
+  async runPython(input: E2BPythonRunInput): Promise<E2BPythonRunResult> {
+    const sandbox = await this.createSandbox();
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    try {
+      const execution = await sandbox.runCode(input.code, {
+        onStdout: (message: string) => stdout.push(message),
+        onStderr: (message: string) => stderr.push(message),
+        ...this.options.runCodeOptions,
+      });
+
+      if (execution?.error) {
+        throw new Error(execution.error.value ?? execution.error.message ?? String(execution.error));
+      }
+
+      const results = Array.isArray(execution?.results)
+        ? execution.results.map((result: any) => {
+            return typeof result?.toJSON === 'function' ? result.toJSON() : result;
+          })
+        : [];
+
+      return {
+        results,
+        stdout,
+        stderr,
+      };
+    } finally {
+      if (this.options.cleanup !== false) {
+        await stopSandbox(sandbox);
+      }
+    }
+  }
+
+  private async createSandbox(): Promise<any> {
+    if (this.options.sandboxFactory) {
+      return this.options.sandboxFactory();
+    }
+
+    const mod = this.options.e2bModule ?? await optionalImport('@e2b/code-interpreter');
+    return mod.Sandbox.create(this.options.apiKey ? { apiKey: this.options.apiKey } : undefined);
   }
 }
 

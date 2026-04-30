@@ -31,8 +31,11 @@ import { MultiSessionClient } from '../server/mcp/multi-session-client.js';
 import { ToolRouter } from '../shared/tool-router.js';
 import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
 import {
+    createPythonCodeInterpreterToolDefinition,
     createRunCodeToolDefinition,
+    executePythonCodeInterpreterTool,
     executeProgrammaticTool,
+    type PythonCodeInterpreterRuntimeLike,
     type ProgrammaticToolRunnerLike,
 } from '../shared/programmatic-tool-runner.js';
 
@@ -114,6 +117,12 @@ export interface AguiAdapterOptions {
      * When provided, exposes `mcp_run_code`.
      */
     programmaticToolRunner?: ProgrammaticToolRunnerLike;
+
+    /**
+     * Optional standalone Python code interpreter runtime.
+     * When provided, exposes `execute_python`.
+     */
+    pythonCodeInterpreterRuntime?: PythonCodeInterpreterRuntimeLike;
 }
 
 /**
@@ -151,7 +160,7 @@ export class AguiAdapter {
      */
     async getTools(): Promise<AguiTool[]> {
         if (this.options.toolRouter) {
-            return this.withProgrammaticTool(await this.getToolsViaRouter(this.options.toolRouter));
+            return this.withCodeInterpreterTools(await this.getToolsViaRouter(this.options.toolRouter));
         }
 
         if (this.isMultiSession()) {
@@ -160,9 +169,9 @@ export class AguiAdapter {
             for (const client of clients) {
                 allTools.push(...await this.transformTools(client));
             }
-            return this.withProgrammaticTool(allTools);
+            return this.withCodeInterpreterTools(allTools);
         }
-        return this.withProgrammaticTool(await this.transformTools(this.client as MCPClient));
+        return this.withCodeInterpreterTools(await this.transformTools(this.client as MCPClient));
     }
 
     /**
@@ -170,7 +179,7 @@ export class AguiAdapter {
      */
     async getToolDefinitions(): Promise<AguiToolDefinition[]> {
         if (this.options.toolRouter) {
-            return this.withProgrammaticToolDefinition(await this.getToolDefinitionsViaRouter(this.options.toolRouter));
+            return this.withCodeInterpreterToolDefinitions(await this.getToolDefinitionsViaRouter(this.options.toolRouter));
         }
 
         if (this.isMultiSession()) {
@@ -179,9 +188,9 @@ export class AguiAdapter {
             for (const client of clients) {
                 allTools.push(...await this.transformToolDefinitions(client));
             }
-            return this.withProgrammaticToolDefinition(allTools);
+            return this.withCodeInterpreterToolDefinitions(allTools);
         }
-        return this.withProgrammaticToolDefinition(await this.transformToolDefinitions(this.client as MCPClient));
+        return this.withCodeInterpreterToolDefinitions(await this.transformToolDefinitions(this.client as MCPClient));
     }
 
     /**
@@ -310,38 +319,57 @@ export class AguiAdapter {
         return `tool_${normalized}_${toolName}`;
     }
 
-    private withProgrammaticTool(tools: AguiTool[]): AguiTool[] {
-        if (!this.options.programmaticToolRunner) {
-            return tools;
-        }
+    private withCodeInterpreterTools(tools: AguiTool[]): AguiTool[] {
+        const nextTools = [...tools];
 
-        const tool = createRunCodeToolDefinition();
-        return [
-            ...tools,
-            {
+        if (this.options.programmaticToolRunner) {
+            const tool = createRunCodeToolDefinition();
+            nextTools.push({
                 name: tool.name,
                 description: tool.description || `Execute ${tool.name}`,
                 parameters: cleanSchema(tool.inputSchema),
                 handler: async (args: any) => {
                     return executeProgrammaticTool(tool.name, args, this.options.programmaticToolRunner!);
                 },
-            },
-        ];
-    }
-
-    private withProgrammaticToolDefinition(tools: AguiToolDefinition[]): AguiToolDefinition[] {
-        if (!this.options.programmaticToolRunner) {
-            return tools;
+            });
         }
 
-        const tool = createRunCodeToolDefinition();
-        return [
-            ...tools,
-            {
+        if (this.options.pythonCodeInterpreterRuntime) {
+            const tool = createPythonCodeInterpreterToolDefinition();
+            nextTools.push({
                 name: tool.name,
                 description: tool.description || `Execute ${tool.name}`,
                 parameters: cleanSchema(tool.inputSchema),
-            },
-        ];
+                handler: async (args: any) => {
+                    return executePythonCodeInterpreterTool(tool.name, args, this.options.pythonCodeInterpreterRuntime!);
+                },
+            });
+        }
+
+        return nextTools;
+    }
+
+    private withCodeInterpreterToolDefinitions(tools: AguiToolDefinition[]): AguiToolDefinition[] {
+        const nextTools = [...tools];
+
+        if (this.options.programmaticToolRunner) {
+            const tool = createRunCodeToolDefinition();
+            nextTools.push({
+                name: tool.name,
+                description: tool.description || `Execute ${tool.name}`,
+                parameters: cleanSchema(tool.inputSchema),
+            });
+        }
+
+        if (this.options.pythonCodeInterpreterRuntime) {
+            const tool = createPythonCodeInterpreterToolDefinition();
+            nextTools.push({
+                name: tool.name,
+                description: tool.description || `Execute ${tool.name}`,
+                parameters: cleanSchema(tool.inputSchema),
+            });
+        }
+
+        return nextTools;
     }
 }

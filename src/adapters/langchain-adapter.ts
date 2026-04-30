@@ -5,8 +5,11 @@ import type { z } from 'zod';
 import { ToolRouter } from '../shared/tool-router.js';
 import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
 import {
+    createPythonCodeInterpreterToolDefinition,
     createRunCodeToolDefinition,
+    executePythonCodeInterpreterTool,
     executeProgrammaticTool,
+    type PythonCodeInterpreterRuntimeLike,
     type ProgrammaticToolRunnerLike,
 } from '../shared/programmatic-tool-runner.js';
 
@@ -35,6 +38,12 @@ export interface LangChainAdapterOptions {
      * When provided, exposes `mcp_run_code`.
      */
     programmaticToolRunner?: ProgrammaticToolRunnerLike;
+
+    /**
+     * Optional standalone Python code interpreter runtime.
+     * When provided, exposes `execute_python`.
+     */
+    pythonCodeInterpreterRuntime?: PythonCodeInterpreterRuntimeLike;
 }
 
 /**
@@ -120,7 +129,7 @@ export class LangChainAdapter {
     async getTools(): Promise<StructuredTool[]> {
         // If a ToolRouter is provided, use its filtered output
         if (this.options.toolRouter) {
-            return this.withProgrammaticTool(await this.getToolsViaRouter(this.options.toolRouter));
+            return this.withCodeInterpreterTools(await this.getToolsViaRouter(this.options.toolRouter));
         }
 
         // Use duck typing instead of instanceof to handle module bundling issues
@@ -139,7 +148,7 @@ export class LangChainAdapter {
                 }
             })
         );
-        return this.withProgrammaticTool(results.flat());
+        return this.withCodeInterpreterTools(results.flat());
     }
 
     /**
@@ -203,17 +212,13 @@ export class LangChainAdapter {
         return `tool_${normalized}_${toolName}`;
     }
 
-    private async withProgrammaticTool(tools: StructuredTool[]): Promise<StructuredTool[]> {
-        if (!this.options.programmaticToolRunner) {
-            return tools;
-        }
-
+    private async withCodeInterpreterTools(tools: StructuredTool[]): Promise<StructuredTool[]> {
         await this.ensureDependencies();
+        const nextTools = [...tools];
 
-        const tool = createRunCodeToolDefinition();
-        return [
-            ...tools,
-            new this.DynamicStructuredTool!({
+        if (this.options.programmaticToolRunner) {
+            const tool = createRunCodeToolDefinition();
+            nextTools.push(new this.DynamicStructuredTool!({
                 name: tool.name,
                 description: tool.description || `Tool ${tool.name}`,
                 schema: this.jsonSchemaToZod(tool.inputSchema),
@@ -221,8 +226,23 @@ export class LangChainAdapter {
                     const result = await executeProgrammaticTool(tool.name, args, this.options.programmaticToolRunner!);
                     return result;
                 },
-            }),
-        ];
+            }));
+        }
+
+        if (this.options.pythonCodeInterpreterRuntime) {
+            const tool = createPythonCodeInterpreterToolDefinition();
+            nextTools.push(new this.DynamicStructuredTool!({
+                name: tool.name,
+                description: tool.description || `Tool ${tool.name}`,
+                schema: this.jsonSchemaToZod(tool.inputSchema),
+                func: async (args: any) => {
+                    const result = await executePythonCodeInterpreterTool(tool.name, args, this.options.pythonCodeInterpreterRuntime!);
+                    return result;
+                },
+            }));
+        }
+
+        return nextTools;
     }
 
     /**

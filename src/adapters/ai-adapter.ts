@@ -5,8 +5,11 @@ import type { ToolSet } from 'ai';
 import { ToolRouter } from '../shared/tool-router.js';
 import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
 import {
+    createPythonCodeInterpreterToolDefinition,
     createRunCodeToolDefinition,
+    executePythonCodeInterpreterTool,
     executeProgrammaticTool,
+    type PythonCodeInterpreterRuntimeLike,
     type ProgrammaticToolRunnerLike,
 } from '../shared/programmatic-tool-runner.js';
 
@@ -36,6 +39,14 @@ export interface AIAdapterOptions {
      * as async functions.
      */
     programmaticToolRunner?: ProgrammaticToolRunnerLike;
+
+    /**
+     * Optional standalone Python code interpreter runtime.
+     *
+     * When provided, the adapter exposes `execute_python` for sandboxed Python
+     * execution that does not have MCP tool access.
+     */
+    pythonCodeInterpreterRuntime?: PythonCodeInterpreterRuntimeLike;
 }
 
 /**
@@ -109,7 +120,7 @@ export class AIAdapter {
 
         // If a ToolRouter is provided, use its filtered output
         if (this.options.toolRouter) {
-            return this.withProgrammaticTool(await this.getToolsViaRouter(this.options.toolRouter));
+            return this.withCodeInterpreterTools(await this.getToolsViaRouter(this.options.toolRouter));
         }
 
         // Use duck typing instead of instanceof to handle module bundling issues
@@ -135,7 +146,7 @@ export class AIAdapter {
             })
         );
 
-        return this.withProgrammaticTool(results.reduce((acc, tools) => ({ ...acc, ...tools }), {}));
+        return this.withCodeInterpreterTools(results.reduce((acc, tools) => ({ ...acc, ...tools }), {}));
     }
 
     /**
@@ -195,22 +206,38 @@ export class AIAdapter {
         return `tool_${normalized}_${toolName}`;
     }
 
-    private withProgrammaticTool(tools: ToolSet): ToolSet {
-        if (!this.options.programmaticToolRunner) {
-            return tools;
+    private withCodeInterpreterTools(tools: ToolSet): ToolSet {
+        let nextTools = tools;
+
+        if (this.options.programmaticToolRunner) {
+            const tool = createRunCodeToolDefinition();
+            nextTools = {
+                ...nextTools,
+                [tool.name]: {
+                    description: tool.description,
+                    inputSchema: this.jsonSchema!(tool.inputSchema as JSONSchema7),
+                    execute: async (args: any) => {
+                        return executeProgrammaticTool(tool.name, args, this.options.programmaticToolRunner!);
+                    },
+                },
+            } as ToolSet;
         }
 
-        const tool = createRunCodeToolDefinition();
-        return {
-            ...tools,
-            [tool.name]: {
-                description: tool.description,
-                inputSchema: this.jsonSchema!(tool.inputSchema as JSONSchema7),
-                execute: async (args: any) => {
-                    return executeProgrammaticTool(tool.name, args, this.options.programmaticToolRunner!);
+        if (this.options.pythonCodeInterpreterRuntime) {
+            const tool = createPythonCodeInterpreterToolDefinition();
+            nextTools = {
+                ...nextTools,
+                [tool.name]: {
+                    description: tool.description,
+                    inputSchema: this.jsonSchema!(tool.inputSchema as JSONSchema7),
+                    execute: async (args: any) => {
+                        return executePythonCodeInterpreterTool(tool.name, args, this.options.pythonCodeInterpreterRuntime!);
+                    },
                 },
-            },
-        } as ToolSet;
+            } as ToolSet;
+        }
+
+        return nextTools;
     }
 
     /**

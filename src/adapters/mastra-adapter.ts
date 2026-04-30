@@ -2,8 +2,11 @@ import { MCPClient } from '../server/mcp/oauth-client';
 import { MultiSessionClient } from '../server/mcp/multi-session-client';
 import type { z } from 'zod';
 import {
+    createPythonCodeInterpreterToolDefinition,
     createRunCodeToolDefinition,
+    executePythonCodeInterpreterTool,
     executeProgrammaticTool,
+    type PythonCodeInterpreterRuntimeLike,
     type ProgrammaticToolRunnerLike,
 } from '../shared/programmatic-tool-runner.js';
 
@@ -19,6 +22,12 @@ export interface MastraAdapterOptions {
      * When provided, exposes `mcp_run_code`.
      */
     programmaticToolRunner?: ProgrammaticToolRunnerLike;
+
+    /**
+     * Optional standalone Python code interpreter runtime.
+     * When provided, exposes `execute_python`.
+     */
+    pythonCodeInterpreterRuntime?: PythonCodeInterpreterRuntimeLike;
 }
 
 /**
@@ -125,28 +134,44 @@ export class MastraAdapter {
                 }
             })
         );
-        return this.withProgrammaticTool(results.reduce((acc, tools) => ({ ...acc, ...tools }), {}));
+        return this.withCodeInterpreterTools(results.reduce((acc, tools) => ({ ...acc, ...tools }), {}));
     }
 
-    private async withProgrammaticTool(tools: Record<string, MastraTool>): Promise<Record<string, MastraTool>> {
-        if (!this.options.programmaticToolRunner) {
-            return tools;
+    private async withCodeInterpreterTools(tools: Record<string, MastraTool>): Promise<Record<string, MastraTool>> {
+        await this.ensureZod();
+        let nextTools = tools;
+
+        if (this.options.programmaticToolRunner) {
+            const tool = createRunCodeToolDefinition();
+            nextTools = {
+                ...nextTools,
+                [tool.name]: {
+                    id: tool.name,
+                    description: tool.description || `Tool ${tool.name}`,
+                    inputSchema: this.jsonSchemaToZod(tool.inputSchema),
+                    execute: async (args: any) => {
+                        return executeProgrammaticTool(tool.name, args, this.options.programmaticToolRunner!);
+                    },
+                },
+            };
         }
 
-        await this.ensureZod();
-
-        const tool = createRunCodeToolDefinition();
-        return {
-            ...tools,
-            [tool.name]: {
-                id: tool.name,
-                description: tool.description || `Tool ${tool.name}`,
-                inputSchema: this.jsonSchemaToZod(tool.inputSchema),
-                execute: async (args: any) => {
-                    return executeProgrammaticTool(tool.name, args, this.options.programmaticToolRunner!);
+        if (this.options.pythonCodeInterpreterRuntime) {
+            const tool = createPythonCodeInterpreterToolDefinition();
+            nextTools = {
+                ...nextTools,
+                [tool.name]: {
+                    id: tool.name,
+                    description: tool.description || `Tool ${tool.name}`,
+                    inputSchema: this.jsonSchemaToZod(tool.inputSchema),
+                    execute: async (args: any) => {
+                        return executePythonCodeInterpreterTool(tool.name, args, this.options.pythonCodeInterpreterRuntime!);
+                    },
                 },
-            },
-        };
+            };
+        }
+
+        return nextTools;
     }
 
     /**

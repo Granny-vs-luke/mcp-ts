@@ -128,6 +128,38 @@ test.describe('AIAdapter', () => {
         ]);
     });
 
+    test('should expose execute_python when a python code interpreter runtime is configured', async () => {
+        const mockClient = new MockMCPClient() as unknown as MCPClient;
+        const calls: any[] = [];
+        const adapter = new AIAdapter(mockClient, {
+            pythonCodeInterpreterRuntime: {
+                runPython: async (input: any) => {
+                    calls.push(input);
+                    return {
+                        results: [{ text: '42' }],
+                        stdout: ['hello'],
+                        stderr: [],
+                    };
+                },
+            } as any,
+        });
+
+        const tools = await adapter.getTools();
+
+        expect(Object.keys(tools)).toContain('execute_python');
+
+        const result = await (tools.execute_python as any).execute({
+            code: 'print("hello")\n42',
+        });
+
+        expect(result).toEqual({
+            results: [{ text: '42' }],
+            stdout: ['hello'],
+            stderr: [],
+        });
+        expect(calls).toEqual([{ code: 'print("hello")\n42' }]);
+    });
+
     test('should namespace router-backed duplicate tool names per server', async () => {
         const createRouterClient = (serverId: string, serverName: string, sessionId: string) => ({
             isConnected: () => true,

@@ -88,6 +88,7 @@ Each run also returns a trace with the executed tool names, server IDs, duration
 `mcp-ts` includes multiple runtime adapters:
 
 - `E2BSandboxRuntime`: runs code in an E2B cloud sandbox. Install `@e2b/code-interpreter` to use it.
+- `E2BPythonCodeInterpreterRuntime`: exposes a standalone `execute_python` tool backed by E2B's Python code interpreter.
 - `VercelSandboxRuntime`: runs code in a Vercel Sandbox Firecracker microVM. Install `@vercel/sandbox` to use it.
 - `JavaScriptSandboxRuntime`: runs code in-process with Node `vm`. Use this for tests, demos, and local development only.
 
@@ -146,3 +147,30 @@ For errors:
 ```
 
 `JavaScriptSandboxRuntime` exposes only the injected `tools` object and a captured `console`. It does not expose `process`, `require`, `fetch`, filesystem access, environment variables, or package imports, but it is still not a production-grade boundary for arbitrary hostile code. Use E2B, Vercel Sandbox, or another external `SandboxRuntime` implementation for untrusted code.
+
+## Standalone E2B Python
+
+For pure code-interpreter workflows, you can expose `execute_python` without MCP tool access:
+
+```typescript
+import { E2BPythonCodeInterpreterRuntime } from "@mcp-ts/sdk/server";
+import { AIAdapter } from "@mcp-ts/sdk/adapters/ai";
+
+const tools = await AIAdapter.getTools(client, {
+  pythonCodeInterpreterRuntime: new E2BPythonCodeInterpreterRuntime({
+    apiKey: process.env.E2B_API_KEY,
+  }),
+});
+```
+
+The model can call:
+
+```json
+{
+  "code": "import pandas as pd\nprint('hello')\n42"
+}
+```
+
+The result includes notebook-style `results`, plus captured `stdout` and `stderr`.
+
+Use `execute_python` for calculations, data analysis, plotting, package-backed computation, or file-oriented Python work. Use `mcp_run_code` when the code needs to call MCP tools through `tools.some_tool(...)`.

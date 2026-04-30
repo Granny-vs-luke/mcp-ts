@@ -2,6 +2,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolClient, ToolClientProvider } from './types.js';
 
 export const PROGRAMMATIC_TOOL_NAME = 'mcp_run_code';
+export const PYTHON_CODE_INTERPRETER_TOOL_NAME = 'execute_python';
 
 export interface SandboxToolCall {
   (args: Record<string, unknown>): Promise<unknown>;
@@ -47,6 +48,20 @@ export interface ProgrammaticRunInput {
 
 export interface ProgrammaticToolRunnerLike {
   runCode(input: ProgrammaticRunInput): Promise<ProgrammaticRunResult>;
+}
+
+export interface PythonCodeInterpreterRunInput {
+  code: string;
+}
+
+export interface PythonCodeInterpreterRunResult {
+  results: unknown[];
+  stdout: string[];
+  stderr: string[];
+}
+
+export interface PythonCodeInterpreterRuntimeLike {
+  runPython(input: PythonCodeInterpreterRunInput): Promise<PythonCodeInterpreterRunResult>;
 }
 
 export interface ProgrammaticToolCallTrace {
@@ -390,5 +405,37 @@ export async function executeProgrammaticTool(
   return runner.runCode({
     code: String(args.code ?? ''),
     allowedTools,
+  });
+}
+
+export function createPythonCodeInterpreterToolDefinition(): Tool {
+  return {
+    name: PYTHON_CODE_INTERPRETER_TOOL_NAME,
+    description:
+      'Execute Python code in an isolated code interpreter sandbox. ' +
+      'Use this for data analysis, calculations, file processing, plotting, package-backed computation, and tasks that do not need MCP tool access. ' +
+      'MCP tools are not available inside this Python interpreter.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        code: {
+          type: 'string',
+          description: 'Python code to execute in a single interpreter cell.',
+        },
+      },
+      required: ['code'],
+    },
+  };
+}
+
+export async function executePythonCodeInterpreterTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  runtime: PythonCodeInterpreterRuntimeLike
+): Promise<PythonCodeInterpreterRunResult | null> {
+  if (toolName !== PYTHON_CODE_INTERPRETER_TOOL_NAME) return null;
+
+  return runtime.runPython({
+    code: String(args.code ?? ''),
   });
 }

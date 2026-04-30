@@ -129,6 +129,39 @@ test.describe('AguiAdapter', () => {
       },
     ]);
   });
+
+  test('should expose execute_python when a python code interpreter runtime is configured', async () => {
+    const mockClient = new MockMCPClient() as unknown as MCPClient;
+    const calls: any[] = [];
+    const adapter = new AguiAdapter(mockClient, {
+      pythonCodeInterpreterRuntime: {
+        runPython: async (input: any) => {
+          calls.push(input);
+          return {
+            results: [{ text: '42' }],
+            stdout: ['hello'],
+            stderr: [],
+          };
+        },
+      } as any,
+    });
+
+    const tools = await adapter.getTools();
+    const pythonTool = tools.find((tool) => tool.name === 'execute_python');
+
+    expect(pythonTool).toBeTruthy();
+
+    const result = await pythonTool!.handler?.({
+      code: 'print("hello")\n42',
+    });
+
+    expect(result).toEqual({
+      results: [{ text: '42' }],
+      stdout: ['hello'],
+      stderr: [],
+    });
+    expect(calls).toEqual([{ code: 'print("hello")\n42' }]);
+  });
 });
 
 

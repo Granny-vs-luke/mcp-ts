@@ -111,10 +111,16 @@ export {
 
 export {
   PROGRAMMATIC_TOOL_NAME,
+  PYTHON_CODE_INTERPRETER_TOOL_NAME,
   ProgrammaticToolRunner,
+  createPythonCodeInterpreterToolDefinition,
   createRunCodeToolDefinition,
+  executePythonCodeInterpreterTool,
   executeProgrammaticTool,
   isProgrammaticTool,
+  type PythonCodeInterpreterRunInput,
+  type PythonCodeInterpreterRunResult,
+  type PythonCodeInterpreterRuntimeLike,
   type ProgrammaticToolRunnerOptions,
   type ProgrammaticToolRunnerLike,
   type ProgrammaticRunInput,
