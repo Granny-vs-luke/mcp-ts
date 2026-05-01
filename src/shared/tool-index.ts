@@ -487,19 +487,20 @@ export class ToolIndex {
 
   /**
    * Get tool definition(s) by name.
-   * If namespace is provided, it tries to match sessionId or serverName.
+   * If namespace is provided, exact sessionId/serverId matches take precedence.
+   * Falls back to serverName fragment matching only when no exact identifier matches.
    */
   getTool(name: string, namespace?: string): IndexedTool[] {
     const list = this.tools.get(name) ?? [];
     if (!namespace) return list;
 
-    const namespaceLower = namespace.toLowerCase();
-    return list.filter(
-      (t) =>
-        t.sessionId === namespace ||
-        t.serverId === namespace ||
-        t.serverName.toLowerCase().includes(namespaceLower)
+    const exactMatches = list.filter(
+      (t) => t.sessionId === namespace || t.serverId === namespace
     );
+    if (exactMatches.length > 0) return exactMatches;
+
+    const namespaceLower = namespace.toLowerCase();
+    return list.filter((t) => t.serverName.toLowerCase().includes(namespaceLower));
   }
 
   /** All indexed tool names. */
