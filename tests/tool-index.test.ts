@@ -68,6 +68,59 @@ test.describe('ToolIndex', () => {
         );
     });
 
+    test('should prefer exact namespace matches before fuzzy server names', async () => {
+        const index = new ToolIndex();
+        const tools: IndexedTool[] = [
+            {
+                name: 'search',
+                description: 'Search GitHub pull requests and repositories',
+                inputSchema: { type: 'object', properties: {} },
+                serverName: 'GitHub',
+                sessionId: 'github-session',
+                serverId: 'github',
+            },
+            {
+                name: 'search',
+                description: 'Search enterprise GitHub resources',
+                inputSchema: { type: 'object', properties: {} },
+                serverName: 'GitHub Enterprise',
+                sessionId: 'enterprise-session',
+                serverId: 'enterprise',
+            },
+        ];
+
+        await index.buildIndex(tools);
+
+        const results = index.getTool('search', 'github');
+
+        expect(results).toHaveLength(1);
+        expect(results[0].serverId).toBe('github');
+    });
+
+    test('should require explicit opt-in before matching namespace against serverName fragments', async () => {
+        const index = new ToolIndex();
+        const tools: IndexedTool[] = [
+            {
+                name: 'search',
+                description: 'Search database tables',
+                inputSchema: { type: 'object', properties: {} },
+                serverName: 'Database MCP',
+                sessionId: 'database-session',
+                serverId: 'database-server',
+            },
+        ];
+
+        await index.buildIndex(tools);
+
+        expect(index.getTool('search', 'database')).toEqual([]);
+
+        const fragmentResults = index.getTool('search', 'database', {
+            allowServerNameFragment: true,
+        });
+        expect(fragmentResults).toHaveLength(1);
+        expect(fragmentResults[0].serverName).toBe('Database MCP');
+    });
+
     test('should strip required-term prefixes before embedding query text', async () => {
         let embeddingQueryText: string | null = null;
         const embedFn = async (texts: string[]): Promise<number[][]> => {

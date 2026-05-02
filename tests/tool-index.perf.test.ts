@@ -63,7 +63,7 @@ async function measureIndexPerformance(
     await index.buildIndex(tools);
     const buildMs = performance.now() - buildStart;
 
-    const bm25Queries = [
+    const searchQueries = [
         'github pull request repository',
         'slack channel messages',
         'database query records',
@@ -71,11 +71,11 @@ async function measureIndexPerformance(
         'search workflow query',
     ];
 
-    const bm25Start = performance.now();
+    const searchStart = performance.now();
     for (let i = 0; i < 100; i++) {
-        await index.search(bm25Queries[i % bm25Queries.length], 10);
+        await index.search(searchQueries[i % searchQueries.length], 10);
     }
-    const bm25Ms = performance.now() - bm25Start;
+    const searchMs = performance.now() - searchStart;
 
     const regexStart = performance.now();
     for (let i = 0; i < 100; i++) {
@@ -93,7 +93,7 @@ async function measureIndexPerformance(
         datasetSize: tools.length,
         duplicateNames: 200,
         buildMs: Number(buildMs.toFixed(2)),
-        avgBm25Ms: Number((bm25Ms / 100).toFixed(4)),
+        avgSearchMs: Number((searchMs / 100).toFixed(4)),
         avgRegexMs: Number((regexMs / 100).toFixed(4)),
         totalTokenLookupMs: Number(totalTokenMs.toFixed(4)),
         totalTokenCost,
@@ -105,19 +105,19 @@ async function measureIndexPerformance(
 function assertWithinBudget(
     result: {
         buildMs: number;
-        avgBm25Ms: number;
+        avgSearchMs: number;
         avgRegexMs: number;
         totalTokenLookupMs: number;
     },
     budget: {
         buildMs: number;
-        avgBm25Ms: number;
+        avgSearchMs: number;
         avgRegexMs: number;
         totalTokenLookupMs: number;
     }
 ) {
     expect(result.buildMs).toBeLessThan(budget.buildMs);
-    expect(result.avgBm25Ms).toBeLessThan(budget.avgBm25Ms);
+    expect(result.avgSearchMs).toBeLessThan(budget.avgSearchMs);
     expect(result.avgRegexMs).toBeLessThan(budget.avgRegexMs);
     expect(result.totalTokenLookupMs).toBeLessThan(budget.totalTokenLookupMs);
 }
@@ -136,7 +136,7 @@ test.describe('ToolIndex performance', () => {
         expect(result.totalTokenCost).toBeGreaterThan(0);
         assertWithinBudget(result, {
             buildMs: 1000,
-            avgBm25Ms: 5,
+            avgSearchMs: 5,
             avgRegexMs: 3,
             totalTokenLookupMs: 1,
         });
@@ -160,7 +160,7 @@ test.describe('ToolIndex performance', () => {
         expect(result.totalTokenCost).toBeGreaterThan(0);
         assertWithinBudget(result, {
             buildMs: 3000,
-            avgBm25Ms: 5,
+            avgSearchMs: 5,
             avgRegexMs: 3,
             totalTokenLookupMs: 1,
         });
@@ -187,7 +187,7 @@ test.describe('ToolIndex performance', () => {
         expect(result.totalTokenCost).toBeGreaterThan(0);
         assertWithinBudget(result, {
             buildMs: 1000,
-            avgBm25Ms: 5,
+            avgSearchMs: 5,
             avgRegexMs: 3,
             totalTokenLookupMs: 1,
         });

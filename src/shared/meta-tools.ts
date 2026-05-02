@@ -7,7 +7,7 @@
  * only the tools it actually needs.
  *
  * Meta-tools:
- *   • `mcp_search_tool_bm25`  — BM25 natural language search
+ *   • `mcp_search_tools`      — Search/list available tools
  *   • `mcp_search_tool_regex` — Regex pattern search
  *   • `mcp_get_tool_schema`   — Get full inputSchema for a discovered tool
  *   • `mcp_execute_tool`      — Execute a discovered tool
@@ -17,14 +17,14 @@
 
 import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolRouter } from './tool-router.js';
-import type { IndexedTool } from './tool-index.js';
+import type { IndexedTool, ToolLookupOptions } from './tool-index.js';
 
 // ---------------------------------------------------------------------------
 // Tool Definitions
 // ---------------------------------------------------------------------------
 
 /**
- * Creates the `mcp_search_tool_bm25` tool definition.
+ * Creates the `mcp_search_tools` tool definition.
  *
  * This tool lets the LLM search the full catalog of available MCP tools
  * using a BM25 natural-language query. Returns tool names and descriptions
@@ -32,7 +32,7 @@ import type { IndexedTool } from './tool-index.js';
  */
 export function createSearchToolDefinition(): Tool {
   return {
-    name: 'mcp_search_tool_bm25',
+    name: 'mcp_search_tools',
     description:
       'Search the catalog of available tools. Returns tool names, descriptions, and server info. ' +
       'Use this FIRST to find relevant tools before calling them.\n\n' +
@@ -47,12 +47,56 @@ export function createSearchToolDefinition(): Tool {
           type: 'string',
           description: 'Query to find tools. Use "select:<tool_name>" for direct selection, or keywords to search. Prefix keywords with + to require them.',
         },
+        operation: {
+          type: 'string',
+          enum: ['search', 'list'],
+          description:
+            'Operation to perform. Use "search" to find relevant tools by capability. Use "list" with serverId or serverName when the user asks for every tool from a connected MCP server.',
+        },
+        serverId: {
+          type: 'string',
+          description: 'Optional server ID to restrict search/list results to one MCP server.',
+        },
+        serverName: {
+          type: 'string',
+          description:
+            'Optional server name fragment to restrict search/list results to matching MCP servers, e.g. "supabase".',
+        },
         limit: {
           type: 'number',
-          description: 'Maximum number of results to return (default: 5, max: 20).',
+          description: 'Maximum number of results to return (default: 5 for search, 20 for list; max: 20 for search, 100 for list).',
+        },
+        cursor: {
+          type: 'string',
+          description: 'Optional pagination cursor returned by operation "list".',
         },
       },
       required: ['query'],
+    },
+  };
+}
+
+/**
+ * Creates the `mcp_list_servers` tool definition.
+ *
+ * This tool lets the LLM inspect connected MCP servers before doing
+ * server-scoped tool discovery.
+ */
+export function createListServersToolDefinition(): Tool {
+  return {
+    name: 'mcp_list_servers',
+    description:
+      'List connected MCP servers and their tool counts. ' +
+      'Use this when mcp_search_tools returns no matches, then retry mcp_search_tools with serverId or serverName.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description:
+            'Optional server filter text. Matches server name or serverId, e.g. "web" or "supabase".',
+        },
+      },
     },
   };
 }
@@ -89,7 +133,7 @@ export function createRegexSearchToolDefinition(): Tool {
 /**
  * Creates the `mcp_get_tool_schema` tool definition.
  *
- * After discovering tools via `mcp_search_tool_bm25` or
+ * After discovering tools via `mcp_search_tools` or
  * `mcp_search_tool_regex`, the LLM calls this to load the full
  * inputSchema for a specific tool so it can construct the correct
  * arguments.
@@ -99,7 +143,7 @@ export function createGetSchemaToolDefinition(): Tool {
     name: 'mcp_get_tool_schema',
     description:
       'Get the full input schema (parameters) for a specific tool. ' +
-      'Call this after mcp_search_tool_bm25 to get the parameter details ' +
+      'Call this after mcp_search_tools to get the parameter details ' +
       'needed to call a tool correctly. ' +
       'Do NOT call the discovered tool directly; after reading the schema, call mcp_execute_tool.',
     inputSchema: {
@@ -107,12 +151,12 @@ export function createGetSchemaToolDefinition(): Tool {
       properties: {
         toolName: {
           type: 'string',
-          description: 'The exact tool name returned by mcp_search_tool_bm25.',
+          description: 'The exact tool name returned by mcp_search_tools.',
         },
         serverId: {
           type: 'string',
           description:
-            'Optional: The server ID provided in mcp_search_tool_bm25. Required if multiple tools have the same name.',
+            'Optional: The server ID provided in mcp_search_tools. Required if multiple tools have the same name.',
         },
       },
       required: ['toolName'],
@@ -124,7 +168,7 @@ export function createGetSchemaToolDefinition(): Tool {
  * Creates the `mcp_execute_tool` tool definition.
  *
  * This is the execution meta-tool — the LLM calls this to execute any
- * tool discovered via `mcp_search_tool_bm25` or `mcp_search_tool_regex`.
+ * tool discovered via `mcp_search_tools` or `mcp_search_tool_regex`.
  * The LLM should first call `mcp_get_tool_schema` to know the correct
  * arguments.
  *
@@ -135,7 +179,7 @@ export function createExecuteToolDefinition(): Tool {
   return {
     name: 'mcp_execute_tool',
     description:
-      'Execute a tool that was discovered via mcp_search_tool_bm25. ' +
+      'Execute a tool that was discovered via mcp_search_tools. ' +
       'You MUST call mcp_get_tool_schema first to know the correct parameters. ' +
       'Pass the exact tool name and its arguments.',
     inputSchema: {
@@ -143,12 +187,12 @@ export function createExecuteToolDefinition(): Tool {
       properties: {
         toolName: {
           type: 'string',
-          description: 'The exact tool name from mcp_search_tool_bm25 results.',
+          description: 'The exact tool name from mcp_search_tools results.',
         },
         serverId: {
           type: 'string',
           description:
-            'Optional: The server ID provided in mcp_search_tool_bm25. Required if multiple tools have the same name.',
+            'Optional: The server ID provided in mcp_search_tools. Required if multiple tools have the same name.',
         },
         args: {
           type: 'object',
@@ -179,7 +223,7 @@ export type CallToolFn = (
 /**
  * Execute a meta-tool call and return the result in MCP CallToolResult format.
  *
- * @param toolName - One of the meta-tool names (mcp_search_tool_bm25, mcp_search_tool_regex, etc.)
+ * @param toolName - One of the meta-tool names (mcp_search_tools, mcp_list_servers, mcp_search_tool_regex, etc.)
  * @param args - The arguments from the LLM's tool call
  * @param router - The ToolRouter to query
  * @param callToolFn - Optional callback for executing real tools (required for mcp_execute_tool)
@@ -191,9 +235,13 @@ export async function executeMetaTool(
   router: ToolRouter,
   callToolFn?: CallToolFn
 ): Promise<CallToolResult | null> {
-  const resolveToolSchema = (name: string, namespace?: string): { tool?: IndexedTool; error?: CallToolResult } => {
+  const resolveToolSchema = (
+    name: string,
+    namespace?: string,
+    options?: ToolLookupOptions
+  ): { tool?: IndexedTool; error?: CallToolResult } => {
     try {
-      return { tool: router.getToolSchema(name, namespace) };
+      return { tool: router.getToolSchema(name, namespace, options) };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       return {
@@ -206,13 +254,61 @@ export async function executeMetaTool(
   };
 
   switch (toolName) {
-    case 'mcp_search_tool_bm25': {
+    case 'mcp_search_tools': {
       const query = String(args.query ?? '');
+      const operation = String(args.operation ?? 'search');
+      const serverId = String(args.serverId ?? '') || undefined;
+      const serverName = String(args.serverName ?? '') || undefined;
+
+      if (operation === 'list') {
+        const limit = Math.min(Number(args.limit) || 20, 100);
+        const cursor = String(args.cursor ?? '') || undefined;
+        const result = await router.listTools({
+          serverId,
+          serverName: serverName ?? (!serverId && query ? query : undefined),
+          limit,
+          cursor,
+        });
+
+        const serverText = result.servers.length > 0
+          ? result.servers
+              .map((server) => `${server.serverName} (serverId: ${server.serverId}, tools: ${server.toolCount})`)
+              .join(', ')
+          : 'none';
+
+        const lines: string[] = [
+          'operation: list',
+          `servers: ${serverText}`,
+          `totalCount: ${result.totalCount}`,
+          `returnedCount: ${result.returnedCount}`,
+          `nextCursor: ${result.nextCursor ?? 'null'}`,
+          '',
+        ];
+
+        if (result.tools.length > 0) {
+          lines.push(...formatToolSummaries(result.tools));
+        } else {
+          lines.push(
+            serverId || serverName
+              ? 'No tools found for the requested server scope.'
+              : 'No tools found. Try operation "search" or provide serverId/serverName.'
+          );
+        }
+
+        return {
+          content: [{ type: 'text', text: lines.join('\n') }],
+          isError: false,
+        };
+      }
+
       const limit = Math.min(Number(args.limit) || 5, 20);
+      const searchOptions = { serverId, serverName };
 
       // Fast path: Check for select: prefix
       const selectMatch = query.match(/^select:(.+)$/i);
       if (selectMatch) {
+        await router.listTools({ serverId, serverName, limit: 1 });
+
         const requested = selectMatch[1]!
           .split(',')
           .map((s) => s.trim())
@@ -221,15 +317,19 @@ export async function executeMetaTool(
         const found: any[] = [];
         const errors: string[] = [];
         
+        const namespace = serverId ?? serverName;
+
         for (const requestedToolName of requested) {
-          const { tool, error } = resolveToolSchema(requestedToolName);
+          const { tool, error } = resolveToolSchema(requestedToolName, namespace, {
+            allowServerNameFragment: Boolean(serverName && !serverId),
+          });
           if (error) {
             const errorMsg = error.content[0]?.type === 'text' ? error.content[0].text : 'Unknown error';
             errors.push(`- **${requestedToolName}**: ${errorMsg}`);
           } else if (tool) {
             found.push(tool);
           } else {
-            errors.push(`- **${requestedToolName}**: Tool not found. Try searching with mcp_search_tool_bm25.`);
+            errors.push(`- **${requestedToolName}**: Tool not found. Try searching with mcp_search_tools.`);
           }
         }
 
@@ -257,16 +357,31 @@ export async function executeMetaTool(
         };
       }
 
-      const results = await router.searchTools(query, limit);
+      const results = await router.searchTools(query, limit, searchOptions);
 
       const text = results.length === 0
-        ? 'No tools found matching your query. Try different keywords.'
-        : results
+        ? 'No tools found matching your query. Call mcp_list_servers to inspect connected servers, then retry mcp_search_tools with serverId or serverName.'
+        : formatToolSummaries(results).join('\n');
+
+      return {
+        content: [{ type: 'text', text }],
+        isError: false,
+      };
+    }
+
+    case 'mcp_list_servers': {
+      const query = String(args.query ?? '').trim();
+      const servers = await router.listServers({
+        serverName: query || undefined,
+      });
+
+      const text = servers.length === 0
+        ? 'No connected servers found.'
+        : servers
             .map(
-              (t, i) =>
-                `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n` +
-                `   ${t.description}\n` +
-                `   Estimated tokens: ${t.estimatedTokens}`
+              (server, i) =>
+                `${i + 1}. **${server.serverName}** (serverId: ${server.serverId}, sessionId: ${server.sessionId})\n` +
+                `   Tool count: ${server.toolCount}`
             )
             .join('\n');
 
@@ -284,14 +399,7 @@ export async function executeMetaTool(
 
       const text = results.length === 0
         ? 'No tools matched your regex pattern. Try a broader pattern.'
-        : results
-            .map(
-              (t, i) =>
-                `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n` +
-                `   ${t.description}\n` +
-                `   Estimated tokens: ${t.estimatedTokens}`
-            )
-            .join('\n');
+        : formatToolSummaries(results).join('\n');
 
       return {
         content: [{ type: 'text', text }],
@@ -313,7 +421,7 @@ export async function executeMetaTool(
           content: [
             {
               type: 'text',
-              text: `Tool "${name}" not found. Use mcp_search_tool_bm25 to find available tools first.`,
+              text: `Tool "${name}" not found. Use mcp_search_tools to find available tools first.`,
             },
           ],
           isError: true,
@@ -362,7 +470,7 @@ export async function executeMetaTool(
           content: [
             {
               type: 'text',
-              text: `Tool "${targetToolName}" not found. Use mcp_search_tool_bm25 to discover available tools first.`,
+              text: `Tool "${targetToolName}" not found. Use mcp_search_tools to discover available tools first.`,
             },
           ],
           isError: true,
@@ -404,10 +512,28 @@ export async function executeMetaTool(
   }
 }
 
+function formatToolSummaries(
+  tools: Array<{
+    name: string;
+    description: string;
+    serverName: string;
+    serverId: string;
+    estimatedTokens: number;
+  }>
+): string[] {
+  return tools.map(
+    (t, i) =>
+      `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n` +
+      `   ${t.description}\n` +
+      `   Estimated tokens: ${t.estimatedTokens}`
+  );
+}
+
 /** Check if a tool name is one of the meta-tools. */
 export function isMetaTool(toolName: string): boolean {
   return (
-    toolName === 'mcp_search_tool_bm25' ||
+    toolName === 'mcp_search_tools' ||
+    toolName === 'mcp_list_servers' ||
     toolName === 'mcp_search_tool_regex' ||
     toolName === 'mcp_get_tool_schema' ||
     toolName === 'mcp_execute_tool'

@@ -32,6 +32,43 @@ export interface ToolSummary {
   estimatedTokens: number;
 }
 
+/** Server-level summary derived from indexed tools. */
+export interface ToolServerSummary {
+  /** Human-readable server name */
+  serverName: string;
+  /** Stable server identifier */
+  serverId: string;
+  /** Session the server belongs to */
+  sessionId: string;
+  /** Number of indexed tools for this server */
+  toolCount: number;
+}
+
+/** Optional filters for search and listing. */
+export interface ToolSearchOptions {
+  /** Restrict results to this server ID. */
+  serverId?: string;
+  /** Restrict results to servers whose name or ID matches this value. */
+  serverName?: string;
+}
+
+/** Paginated tool listing result. */
+export interface ToolListResult {
+  tools: ToolSummary[];
+  totalCount: number;
+  returnedCount: number;
+  nextCursor?: string;
+  servers: ToolServerSummary[];
+}
+
+export interface ToolLookupOptions {
+  /**
+   * Allow namespace to match a fragment of serverName after exact
+   * sessionId/serverId matching fails.
+   */
+  allowServerNameFragment?: boolean;
+}
+
 /** A tool with routing metadata attached during indexing. */
 export interface IndexedTool extends Tool {
   sessionId: string;
@@ -259,14 +296,14 @@ export class ToolIndex {
    *
    *   `score = keywordWeight × keyword_score + (1 - keywordWeight) × cosine_score`
    */
-  async search(query: string, topK = 5): Promise<ToolSummary[]> {
+  async search(query: string, topK = 5, options: ToolSearchOptions = {}): Promise<ToolSummary[]> {
     if (this.tools.size === 0) return [];
 
     const queryLower = query.toLowerCase().trim();
 
     // Fast path: Exact tool name match (supports duplicate names across servers)
     const exactMatches = [...this.toolSummaries.values()].filter(
-      (summary) => summary.name.toLowerCase() === queryLower
+      (summary) => summary.name.toLowerCase() === queryLower && this.matchesServer(summary, options)
     );
     if (exactMatches.length > 0) {
       return exactMatches.slice(0, topK);
@@ -275,7 +312,7 @@ export class ToolIndex {
     // Fast path: MCP prefix match (e.g. "mcp__github")
     if (queryLower.startsWith('mcp__') && queryLower.length > 5) {
       const prefixMatches = [...this.toolSummaries.values()]
-        .filter((t) => t.name.toLowerCase().startsWith(queryLower))
+        .filter((t) => t.name.toLowerCase().startsWith(queryLower) && this.matchesServer(t, options))
         .slice(0, topK);
       if (prefixMatches.length > 0) return prefixMatches;
     }
@@ -300,9 +337,11 @@ export class ToolIndex {
     // Pre-filter: only keep documents that contain ALL required terms
     const candidateKeys = new Set<string>();
     for (const docKey of this.toolSummaries.keys()) {
+      const summary = this.toolSummaries.get(docKey)!;
+      if (!this.matchesServer(summary, options)) continue;
+
       if (requiredTerms.length > 0) {
         const text = this.searchTexts.get(docKey) || '';
-        const summary = this.toolSummaries.get(docKey)!;
         const nameLower = summary.name.toLowerCase();
         const matchesAll = requiredTerms.every(
           (term) => text.includes(term) || nameLower.includes(term)
@@ -456,18 +495,78 @@ export class ToolIndex {
 
   /**
    * Get tool definition(s) by name.
-   * If namespace is provided, it tries to match sessionId or serverName.
+   * If namespace is provided, exact sessionId/serverId matches take precedence.
+   * Falls back to serverName fragment matching only when explicitly allowed.
    */
-  getTool(name: string, namespace?: string): IndexedTool[] {
+  getTool(name: string, namespace?: string, options: ToolLookupOptions = {}): IndexedTool[] {
     const list = this.tools.get(name) ?? [];
     if (!namespace) return list;
 
-    return list.filter((t) => t.sessionId === namespace || t.serverId === namespace);
+    const exactMatches = list.filter(
+      (t) => t.sessionId === namespace || t.serverId === namespace
+    );
+    if (exactMatches.length > 0) return exactMatches;
+
+    if (!options.allowServerNameFragment) return [];
+
+    const namespaceLower = namespace.toLowerCase();
+    return list.filter((t) => t.serverName.toLowerCase().includes(namespaceLower));
   }
 
   /** All indexed tool names. */
   getToolNames(): string[] {
     return [...this.tools.keys()];
+  }
+
+  /** List indexed servers with tool counts. */
+  listServers(options: ToolSearchOptions = {}): ToolServerSummary[] {
+    const servers = new Map<string, ToolServerSummary>();
+
+    for (const summary of this.toolSummaries.values()) {
+      if (!this.matchesServer(summary, options)) continue;
+
+      const key = `${summary.sessionId}::${summary.serverId}`;
+      const existing = servers.get(key);
+      if (existing) {
+        existing.toolCount += 1;
+      } else {
+        servers.set(key, {
+          serverName: summary.serverName,
+          serverId: summary.serverId,
+          sessionId: summary.sessionId,
+          toolCount: 1,
+        });
+      }
+    }
+
+    return [...servers.values()].sort((a, b) => {
+      const byName = a.serverName.localeCompare(b.serverName);
+      return byName !== 0 ? byName : a.serverId.localeCompare(b.serverId);
+    });
+  }
+
+  /** List tools deterministically, optionally scoped to a server. */
+  listTools(options: ToolSearchOptions & { limit?: number; cursor?: string } = {}): ToolListResult {
+    const offset = Math.max(Number(options.cursor) || 0, 0);
+    const limit = Math.max(Number(options.limit) || 20, 1);
+    const tools = [...this.toolSummaries.values()]
+      .filter((summary) => this.matchesServer(summary, options))
+      .sort((a, b) => {
+        const byServer = a.serverName.localeCompare(b.serverName);
+        if (byServer !== 0) return byServer;
+        return a.name.localeCompare(b.name);
+      });
+
+    const page = tools.slice(offset, offset + limit);
+    const nextOffset = offset + page.length;
+
+    return {
+      tools: page,
+      totalCount: tools.length,
+      returnedCount: page.length,
+      nextCursor: nextOffset < tools.length ? String(nextOffset) : undefined,
+      servers: this.listServers(options),
+    };
   }
 
   /** Number of indexed tools (including duplicates). */
@@ -537,6 +636,23 @@ export class ToolIndex {
 
   private getDocumentKey(tool: IndexedTool): string {
     return `${tool.sessionId}::${tool.serverId}::${tool.name}`;
+  }
+
+  private matchesServer(summary: ToolSummary, options: ToolSearchOptions): boolean {
+    if (options.serverId && summary.serverId !== options.serverId) {
+      return false;
+    }
+
+    if (options.serverName) {
+      const serverNameQuery = options.serverName.toLowerCase();
+      const serverName = summary.serverName.toLowerCase();
+      const serverId = summary.serverId.toLowerCase();
+      if (!serverName.includes(serverNameQuery) && !serverId.includes(serverNameQuery)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   /** Simple whitespace + camelCase + snake_case tokenizer. */

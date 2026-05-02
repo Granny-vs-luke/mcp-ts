@@ -28,10 +28,20 @@
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolClient, ToolClientProvider } from './types.js';
-import { ToolIndex, type IndexedTool, type ToolSummary, type EmbedFn } from './tool-index.js';
+import {
+  ToolIndex,
+  type IndexedTool,
+  type ToolLookupOptions,
+  type ToolListResult,
+  type ToolSearchOptions,
+  type ToolServerSummary,
+  type ToolSummary,
+  type EmbedFn,
+} from './tool-index.js';
 import { SchemaCompressor, type CompactTool } from './schema-compressor.js';
 import {
   createSearchToolDefinition,
+  createListServersToolDefinition,
   createRegexSearchToolDefinition,
   createGetSchemaToolDefinition,
   createExecuteToolDefinition,
@@ -159,7 +169,7 @@ export class ToolRouter {
    * This is the main method adapters should call.
    *
    * - `all`    → returns all tools (unchanged behavior)
-   * - `search` → returns only meta-tools (mcp_search_tool_bm25, mcp_get_tool_schema, mcp_execute_tool)
+   * - `search` → returns only meta-tools (mcp_search_tools, mcp_get_tool_schema, mcp_execute_tool)
    * - `groups` → returns tools from active groups only
    */
   async getFilteredTools(): Promise<Tool[]> {
@@ -195,9 +205,14 @@ export class ToolRouter {
    * Search tools by natural-language query.
    * Works regardless of strategy.
    */
-  async searchTools(query: string, topK?: number): Promise<ToolSummary[]> {
+  async searchTools(
+    query: string,
+    topK?: number,
+    options: ToolSearchOptions = {}
+  ): Promise<ToolSummary[]> {
     await this.ensureInitialized();
-    return this.index.search(query, topK ?? this.maxTools);
+    const limit = topK ?? this.maxTools;
+    return this.index.search(query, limit, options);
   }
 
   /**
@@ -209,12 +224,28 @@ export class ToolRouter {
     return this.index.searchRegex(pattern, topK ?? this.maxTools);
   }
 
+  /** List connected MCP servers with indexed tool counts. */
+  async listServers(options: ToolSearchOptions = {}): Promise<ToolServerSummary[]> {
+    await this.ensureInitialized();
+    return this.index.listServers(options);
+  }
+
+  /** List tools deterministically, optionally scoped to a server. */
+  async listTools(options: ToolSearchOptions & { limit?: number; cursor?: string } = {}): Promise<ToolListResult> {
+    await this.ensureInitialized();
+    return this.index.listTools(options);
+  }
+
   /**
    * Get the full tool definition by name.
    * If tool name is ambiguous, use namespace to specify the server.
    */
-  getToolSchema(toolName: string, namespace?: string): IndexedTool | undefined {
-    const matches = this.index.getTool(toolName, namespace);
+  getToolSchema(
+    toolName: string,
+    namespace?: string,
+    options: ToolLookupOptions = {}
+  ): IndexedTool | undefined {
+    const matches = this.index.getTool(toolName, namespace, options);
 
     if (matches.length === 0) return undefined;
 
@@ -318,7 +349,7 @@ export class ToolRouter {
       throw new Error(
         `Tool "${toolName}" not found${
           namespace ? ` on server "${namespace}"` : ''
-        }. Use mcp_search_tool_bm25 or mcp_search_tool_regex to discover available tools.`
+        }. Use mcp_search_tools or mcp_search_tool_regex to discover available tools.`
       );
     }
 
@@ -462,9 +493,11 @@ export class ToolRouter {
   private getMetaToolDefinitions(): Tool[] {
     return [
       createSearchToolDefinition(),
+      createListServersToolDefinition(),
       createRegexSearchToolDefinition(),
       createGetSchemaToolDefinition(),
       createExecuteToolDefinition(),
     ];
   }
+
 }

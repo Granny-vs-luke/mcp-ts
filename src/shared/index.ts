@@ -87,6 +87,9 @@ export {
 export {
   ToolIndex,
   type ToolSummary,
+  type ToolServerSummary,
+  type ToolSearchOptions,
+  type ToolListResult,
   type IndexedTool,
   type ToolIndexOptions,
   type EmbedFn,
@@ -100,6 +103,7 @@ export {
 
 export {
   createSearchToolDefinition,
+  createListServersToolDefinition,
   createRegexSearchToolDefinition,
   createGetSchemaToolDefinition,
   createExecuteToolDefinition,

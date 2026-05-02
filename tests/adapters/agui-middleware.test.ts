@@ -82,7 +82,7 @@ test.describe('McpMiddleware', () => {
   test('waits for continuation terminal event after a fast MCP tool result', async () => {
     const tools: AguiTool[] = [
       {
-        name: 'mcp_search_tool_bm25',
+        name: 'mcp_search_tools',
         description: 'Search available tools',
         parameters: { type: 'object', properties: { query: { type: 'string' } } },
         handler: () => 'No tools found matching your query. Try different keywords.',
@@ -95,7 +95,7 @@ test.describe('McpMiddleware', () => {
     const next = createAgent(
       [
         (agentInput, subscriber) => {
-          startToolRun(agentInput, subscriber, 'call-1', 'mcp_search_tool_bm25', 'IPL match today cricket');
+          startToolRun(agentInput, subscriber, 'call-1', 'mcp_search_tools', 'IPL match today cricket');
           setTimeout(() => subscriber.complete(), 10);
         },
         (agentInput, subscriber) => {
@@ -141,7 +141,7 @@ test.describe('McpMiddleware', () => {
     const toolResults: string[] = [];
     const tools: AguiTool[] = [
       {
-        name: 'mcp_search_tool_bm25',
+        name: 'mcp_search_tools',
         description: 'Search available tools',
         parameters: { type: 'object', properties: { query: { type: 'string' } } },
         handler: ({ query }) => {
@@ -156,11 +156,11 @@ test.describe('McpMiddleware', () => {
     const next = createAgent(
       [
         (agentInput, subscriber) => {
-          startToolRun(agentInput, subscriber, 'call-1', 'mcp_search_tool_bm25', 'first search');
+          startToolRun(agentInput, subscriber, 'call-1', 'mcp_search_tools', 'first search');
           setTimeout(() => subscriber.complete(), 10);
         },
         (agentInput, subscriber) => {
-          startToolRun(agentInput, subscriber, 'call-2', 'mcp_search_tool_bm25', 'second search');
+          startToolRun(agentInput, subscriber, 'call-2', 'mcp_search_tools', 'second search');
           setTimeout(() => subscriber.complete(), 10);
         },
         (agentInput, subscriber) => {
@@ -191,7 +191,7 @@ test.describe('McpMiddleware', () => {
   test('preserves normalized text content in assistant history for continuation', async () => {
     const tools: AguiTool[] = [
       {
-        name: 'mcp_search_tool_bm25',
+        name: 'mcp_search_tools',
         description: 'Search available tools',
         parameters: { type: 'object', properties: { query: { type: 'string' } } },
         handler: () => 'No tools found matching your query. Try different keywords.',
@@ -203,7 +203,7 @@ test.describe('McpMiddleware', () => {
     const next = createAgent(
       [
         (agentInput, subscriber) => {
-          startToolRun(agentInput, subscriber, 'call-1', 'mcp_search_tool_bm25', 'IPL match today cricket');
+          startToolRun(agentInput, subscriber, 'call-1', 'mcp_search_tools', 'IPL match today cricket');
           setTimeout(() => subscriber.complete(), 10);
         },
         (nextInput, subscriber) => {
@@ -229,7 +229,7 @@ test.describe('McpMiddleware', () => {
       toolCalls: [
         expect.objectContaining({
           id: 'call-1',
-          function: expect.objectContaining({ name: 'mcp_search_tool_bm25' }),
+          function: expect.objectContaining({ name: 'mcp_search_tools' }),
         }),
       ],
     });
@@ -245,7 +245,7 @@ test.describe('McpMiddleware', () => {
     const toolResults: string[] = [];
     const tools: AguiTool[] = [
       {
-        name: 'mcp_search_tool_bm25',
+        name: 'mcp_search_tools',
         description: 'Search available tools',
         parameters: { type: 'object', properties: { query: { type: 'string' } } },
         handler: ({ query }) => {
@@ -266,7 +266,7 @@ test.describe('McpMiddleware', () => {
         subscriber.next({
           type: EventType.TOOL_CALL_START,
           toolCallId: 'call-1',
-          toolCallName: 'mcp_search_tool_bm25',
+          toolCallName: 'mcp_search_tools',
         } as BaseEvent);
         subscriber.next({
           type: EventType.TOOL_CALL_ARGS,
@@ -376,7 +376,7 @@ test.describe('McpMiddleware', () => {
     let continuationInput: RunAgentInput | undefined;
     const tools: AguiTool[] = [
       {
-        name: 'mcp_search_tool_bm25',
+        name: 'mcp_search_tools',
         description: 'Search available tools',
         parameters: { type: 'object', properties: { query: { type: 'string' } } },
         handler: ({ query }) => `result for ${query}`,
@@ -398,7 +398,7 @@ test.describe('McpMiddleware', () => {
                   id: 'call-1',
                   type: 'function',
                   function: {
-                    name: 'mcp_search_tool_bm25',
+                    name: 'mcp_search_tools',
                     arguments: JSON.stringify({ query: 'first search' }),
                   },
                 },
@@ -513,7 +513,7 @@ test.describe('McpMiddleware', () => {
   test('filters final full-history snapshots after MCP continuations to preserve streamed UI order', async () => {
     const tools: AguiTool[] = [
       {
-        name: 'mcp_search_tool_bm25',
+        name: 'mcp_search_tools',
         description: 'Search available tools',
         parameters: { type: 'object', properties: { query: { type: 'string' } } },
         handler: () => 'catalog result',
@@ -535,7 +535,7 @@ test.describe('McpMiddleware', () => {
                   id: 'call-1',
                   type: 'function',
                   function: {
-                    name: 'mcp_search_tool_bm25',
+                    name: 'mcp_search_tools',
                     arguments: JSON.stringify({ query: 'all tools' }),
                   },
                 },
@@ -593,7 +593,7 @@ test.describe('McpMiddleware', () => {
     let handlerCalls = 0;
     const tools: AguiTool[] = [
       {
-        name: 'mcp_search_tool_bm25',
+        name: 'mcp_search_tools',
         description: 'Search available tools',
         parameters: { type: 'object', properties: { query: { type: 'string' } } },
         handler: () => {
@@ -618,7 +618,7 @@ test.describe('McpMiddleware', () => {
                   id: 'call-1',
                   type: 'function',
                   function: {
-                    name: 'mcp_search_tool_bm25',
+                    name: 'mcp_search_tools',
                     arguments: JSON.stringify({ query: 'all tools' }),
                   },
                 },
