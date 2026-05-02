@@ -31,6 +31,7 @@ import type { ToolClient, ToolClientProvider } from './types.js';
 import {
   ToolIndex,
   type IndexedTool,
+  type ToolLookupOptions,
   type ToolListResult,
   type ToolSearchOptions,
   type ToolServerSummary,
@@ -239,8 +240,12 @@ export class ToolRouter {
    * Get the full tool definition by name.
    * If tool name is ambiguous, use namespace to specify the server.
    */
-  getToolSchema(toolName: string, namespace?: string): IndexedTool | undefined {
-    const matches = this.index.getTool(toolName, namespace);
+  getToolSchema(
+    toolName: string,
+    namespace?: string,
+    options: ToolLookupOptions = {}
+  ): IndexedTool | undefined {
+    const matches = this.index.getTool(toolName, namespace, options);
 
     if (matches.length === 0) return undefined;
 

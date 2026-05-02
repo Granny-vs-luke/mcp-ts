@@ -17,7 +17,7 @@
 
 import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolRouter } from './tool-router.js';
-import type { IndexedTool } from './tool-index.js';
+import type { IndexedTool, ToolLookupOptions } from './tool-index.js';
 
 // ---------------------------------------------------------------------------
 // Tool Definitions
@@ -235,9 +235,13 @@ export async function executeMetaTool(
   router: ToolRouter,
   callToolFn?: CallToolFn
 ): Promise<CallToolResult | null> {
-  const resolveToolSchema = (name: string, namespace?: string): { tool?: IndexedTool; error?: CallToolResult } => {
+  const resolveToolSchema = (
+    name: string,
+    namespace?: string,
+    options?: ToolLookupOptions
+  ): { tool?: IndexedTool; error?: CallToolResult } => {
     try {
-      return { tool: router.getToolSchema(name, namespace) };
+      return { tool: router.getToolSchema(name, namespace, options) };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       return {
@@ -250,7 +254,8 @@ export async function executeMetaTool(
   };
 
   switch (toolName) {
-    case 'mcp_search_tools': {
+    case 'mcp_search_tools':
+    case 'mcp_search_tool_bm25': {
       const query = String(args.query ?? '');
       const operation = String(args.operation ?? 'search');
       const serverId = String(args.serverId ?? '') || undefined;
@@ -303,6 +308,8 @@ export async function executeMetaTool(
       // Fast path: Check for select: prefix
       const selectMatch = query.match(/^select:(.+)$/i);
       if (selectMatch) {
+        await router.listTools({ serverId, serverName, limit: 1 });
+
         const requested = selectMatch[1]!
           .split(',')
           .map((s) => s.trim())
@@ -314,7 +321,9 @@ export async function executeMetaTool(
         const namespace = serverId ?? serverName;
 
         for (const requestedToolName of requested) {
-          const { tool, error } = resolveToolSchema(requestedToolName, namespace);
+          const { tool, error } = resolveToolSchema(requestedToolName, namespace, {
+            allowServerNameFragment: Boolean(serverName && !serverId),
+          });
           if (error) {
             const errorMsg = error.content[0]?.type === 'text' ? error.content[0].text : 'Unknown error';
             errors.push(`- **${requestedToolName}**: ${errorMsg}`);
@@ -525,6 +534,7 @@ function formatToolSummaries(
 export function isMetaTool(toolName: string): boolean {
   return (
     toolName === 'mcp_search_tools' ||
+    toolName === 'mcp_search_tool_bm25' ||
     toolName === 'mcp_list_servers' ||
     toolName === 'mcp_search_tool_regex' ||
     toolName === 'mcp_get_tool_schema' ||

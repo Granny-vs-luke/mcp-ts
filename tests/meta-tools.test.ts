@@ -39,6 +39,7 @@ test.describe('executeMetaTool', () => {
         expect(createSearchToolDefinition().name).toBe('mcp_search_tools');
         expect(createListServersToolDefinition().name).toBe('mcp_list_servers');
         expect(isMetaTool('mcp_search_tools')).toBe(true);
+        expect(isMetaTool('mcp_search_tool_bm25')).toBe(true);
         expect(isMetaTool('mcp_list_servers')).toBe(true);
     });
 
@@ -113,17 +114,17 @@ test.describe('executeMetaTool', () => {
     });
 
     test('should list every tool from a matching server without search-result truncation', async () => {
-        const supabaseTools = Array.from({ length: 29 }, (_, index) => ({
-            name: `supabase_tool_${index + 1}`,
-            description: `Supabase database capability ${index + 1}`,
+        const databaseTools = Array.from({ length: 29 }, (_, index) => ({
+            name: `database_tool_${index + 1}`,
+            description: `Database capability ${index + 1}`,
         }));
         const router = new ToolRouter([
-            createRouterClient('supabase-server', 'Supabase MCP', supabaseTools) as any,
+            createRouterClient('database-server', 'Database MCP', databaseTools) as any,
         ], { strategy: 'search' });
 
         const result = await executeMetaTool(
             'mcp_search_tools',
-            { query: 'supabase', operation: 'list', serverName: 'supabase', limit: 100 },
+            { query: 'database', operation: 'list', serverName: 'database', limit: 100 },
             router
         );
 
@@ -131,14 +132,14 @@ test.describe('executeMetaTool', () => {
         const text = (result?.content[0] as any).text;
         expect(text).toContain('totalCount: 29');
         expect(text).toContain('returnedCount: 29');
-        expect(text).toContain('supabase_tool_1');
-        expect(text).toContain('supabase_tool_29');
+        expect(text).toContain('database_tool_1');
+        expect(text).toContain('database_tool_29');
     });
 
     test('should search within a server when serverName is provided', async () => {
         const router = new ToolRouter([
-            createRouterClient('supabase-server', 'Supabase MCP', [
-                { name: 'search_projects', description: 'Search Supabase projects' },
+            createRouterClient('database-server', 'Database MCP', [
+                { name: 'search_projects', description: 'Search database projects' },
             ]) as any,
             createRouterClient('web-server', 'Web Search', [
                 { name: 'web_search', description: 'Search the web' },
@@ -147,7 +148,7 @@ test.describe('executeMetaTool', () => {
 
         const result = await executeMetaTool(
             'mcp_search_tools',
-            { query: 'search', serverName: 'supabase', limit: 10 },
+            { query: 'search', serverName: 'database', limit: 10 },
             router
         );
 
@@ -189,7 +190,7 @@ test.describe('executeMetaTool', () => {
             createRouterClient('web-server', 'Web Search', [
                 { name: 'web_search', description: 'Search the web' },
             ]) as any,
-            createRouterClient('supabase-server', 'Supabase MCP', [
+            createRouterClient('database-server', 'Database MCP', [
                 { name: 'list_tables', description: 'List tables' },
             ]) as any,
         ], { strategy: 'search' });
@@ -203,7 +204,7 @@ test.describe('executeMetaTool', () => {
         expect(result?.isError).toBe(false);
         const text = (result?.content[0] as any).text;
         expect(text).toContain('Web Search');
-        expect(text).toContain('Supabase MCP');
+        expect(text).toContain('Database MCP');
         expect(text).toContain('Tool count: 1');
     });
 
@@ -222,5 +223,41 @@ test.describe('executeMetaTool', () => {
 
         expect(result?.isError).toBe(false);
         expect((result?.content[0] as any).text).toContain('web_search');
+    });
+
+    test('should keep the old BM25 search meta-tool name as a compatibility alias', async () => {
+        const router = new ToolRouter([
+            createRouterClient('web-server', 'Web Search', [
+                { name: 'web_search', description: 'Search the web' },
+            ]) as any,
+        ], { strategy: 'search' });
+
+        const result = await executeMetaTool(
+            'mcp_search_tool_bm25',
+            { query: 'web', limit: 5 },
+            router
+        );
+
+        expect(result?.isError).toBe(false);
+        expect((result?.content[0] as any).text).toContain('web_search');
+    });
+
+    test('should resolve select queries using serverName fragments', async () => {
+        const router = new ToolRouter([
+            createRouterClient('database-server', 'Database MCP', [
+                { name: 'list_tables', description: 'List database tables' },
+            ]) as any,
+        ], { strategy: 'search' });
+
+        const result = await executeMetaTool(
+            'mcp_search_tools',
+            { query: 'select:list_tables', serverName: 'database' },
+            router
+        );
+
+        expect(result?.isError).toBe(false);
+        const text = (result?.content[0] as any).text;
+        expect(text).toContain('list_tables');
+        expect(text).toContain('Database MCP');
     });
 });

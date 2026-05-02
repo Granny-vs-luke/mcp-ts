@@ -97,6 +97,30 @@ test.describe('ToolIndex', () => {
         expect(results[0].serverId).toBe('github');
     });
 
+    test('should require explicit opt-in before matching namespace against serverName fragments', async () => {
+        const index = new ToolIndex();
+        const tools: IndexedTool[] = [
+            {
+                name: 'search',
+                description: 'Search database tables',
+                inputSchema: { type: 'object', properties: {} },
+                serverName: 'Database MCP',
+                sessionId: 'database-session',
+                serverId: 'database-server',
+            },
+        ];
+
+        await index.buildIndex(tools);
+
+        expect(index.getTool('search', 'database')).toEqual([]);
+
+        const fragmentResults = index.getTool('search', 'database', {
+            allowServerNameFragment: true,
+        });
+        expect(fragmentResults).toHaveLength(1);
+        expect(fragmentResults[0].serverName).toBe('Database MCP');
+    });
+
     test('should strip required-term prefixes before embedding query text', async () => {
         let embeddingQueryText: string | null = null;
         const embedFn = async (texts: string[]): Promise<number[][]> => {

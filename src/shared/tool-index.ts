@@ -61,6 +61,14 @@ export interface ToolListResult {
   servers: ToolServerSummary[];
 }
 
+export interface ToolLookupOptions {
+  /**
+   * Allow namespace to match a fragment of serverName after exact
+   * sessionId/serverId matching fails.
+   */
+  allowServerNameFragment?: boolean;
+}
+
 /** A tool with routing metadata attached during indexing. */
 export interface IndexedTool extends Tool {
   sessionId: string;
@@ -488,9 +496,9 @@ export class ToolIndex {
   /**
    * Get tool definition(s) by name.
    * If namespace is provided, exact sessionId/serverId matches take precedence.
-   * Falls back to serverName fragment matching only when no exact identifier matches.
+   * Falls back to serverName fragment matching only when explicitly allowed.
    */
-  getTool(name: string, namespace?: string): IndexedTool[] {
+  getTool(name: string, namespace?: string, options: ToolLookupOptions = {}): IndexedTool[] {
     const list = this.tools.get(name) ?? [];
     if (!namespace) return list;
 
@@ -498,6 +506,8 @@ export class ToolIndex {
       (t) => t.sessionId === namespace || t.serverId === namespace
     );
     if (exactMatches.length > 0) return exactMatches;
+
+    if (!options.allowServerNameFragment) return [];
 
     const namespaceLower = namespace.toLowerCase();
     return list.filter((t) => t.serverName.toLowerCase().includes(namespaceLower));
