@@ -39,7 +39,6 @@ test.describe('executeMetaTool', () => {
         expect(createSearchToolDefinition().name).toBe('mcp_search_tools');
         expect(createListServersToolDefinition().name).toBe('mcp_list_servers');
         expect(isMetaTool('mcp_search_tools')).toBe(true);
-        expect(isMetaTool('mcp_search_tool_bm25')).toBe(true);
         expect(isMetaTool('mcp_list_servers')).toBe(true);
     });
 
@@ -217,23 +216,6 @@ test.describe('executeMetaTool', () => {
 
         const result = await executeMetaTool(
             'mcp_search_tools',
-            { query: 'web', limit: 5 },
-            router
-        );
-
-        expect(result?.isError).toBe(false);
-        expect((result?.content[0] as any).text).toContain('web_search');
-    });
-
-    test('should keep the old BM25 search meta-tool name as a compatibility alias', async () => {
-        const router = new ToolRouter([
-            createRouterClient('web-server', 'Web Search', [
-                { name: 'web_search', description: 'Search the web' },
-            ]) as any,
-        ], { strategy: 'search' });
-
-        const result = await executeMetaTool(
-            'mcp_search_tool_bm25',
             { query: 'web', limit: 5 },
             router
         );

@@ -254,8 +254,7 @@ export async function executeMetaTool(
   };
 
   switch (toolName) {
-    case 'mcp_search_tools':
-    case 'mcp_search_tool_bm25': {
+    case 'mcp_search_tools': {
       const query = String(args.query ?? '');
       const operation = String(args.operation ?? 'search');
       const serverId = String(args.serverId ?? '') || undefined;
@@ -534,7 +533,6 @@ function formatToolSummaries(
 export function isMetaTool(toolName: string): boolean {
   return (
     toolName === 'mcp_search_tools' ||
-    toolName === 'mcp_search_tool_bm25' ||
     toolName === 'mcp_list_servers' ||
     toolName === 'mcp_search_tool_regex' ||
     toolName === 'mcp_get_tool_schema' ||
