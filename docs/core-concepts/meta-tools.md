@@ -29,6 +29,13 @@ The `mcp_search_tools` meta-tool supports a powerful query syntax that helps the
 - **Live-Information Fallback**: If a temporal or current-information query has no direct BM25 match, the router retries with generic web/search/browser terms so connected web-search tools can still surface.
 - **Enhanced Scoring Heuristics**: Behind the scenes, the BM25 index automatically grants massive score bonuses (+10 or +5 points) if a search term perfectly matches or is a substring of the MCP `serverName` or the tool `name`. This ensures that tools strictly related to a specific integration (e.g., querying for "neon" or "apify") always float above unrelated tools that merely mention the word in their parameters.
 
+
+### `mcp_list_servers`
+A diagnostic tool that allows the LLM to inspect which MCP servers are currently connected and available.
+- **Input**: `query` (optional string for filtering by server name or ID).
+- **Output**: A list of connected servers, their IDs, and tool counts.
+- **Usage**: Use this when `mcp_search_tools` returns no matches to discover what servers are active, then retry the search with a specific `serverId` or `serverName`.
+
 ### `mcp_search_tool_regex`
 A precision tool for finding specific patterns in tool names or descriptions.
 - **Input**: `query` (Regex string), `limit` (number).
@@ -55,7 +62,7 @@ The `mcp-ts` SDK implements the following flow to minimize context usage while m
 
 <Steps>
   <Step title="Initial Injection">
-    The SDK injects only the 4 Meta-Tools into the LLM context (cost: ~500 tokens).
+    The SDK injects only the 5 Meta-Tools into the LLM context (cost: ~500 tokens).
   </Step>
   <Step title="Discovery (Search)">
     When the user asks for a specific capability, the LLM calls `mcp_search_tools` or `mcp_search_tool_regex`.
