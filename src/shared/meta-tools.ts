@@ -77,6 +77,31 @@ export function createSearchToolDefinition(): Tool {
 }
 
 /**
+ * Creates the `mcp_list_servers` tool definition.
+ *
+ * This tool lets the LLM inspect connected MCP servers before doing
+ * server-scoped tool discovery.
+ */
+export function createListServersToolDefinition(): Tool {
+  return {
+    name: 'mcp_list_servers',
+    description:
+      'List connected MCP servers and their tool counts. ' +
+      'Use this when mcp_search_tools returns no matches, then retry mcp_search_tools with serverId or serverName.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description:
+            'Optional server filter text. Matches server name or serverId, e.g. "web" or "supabase".',
+        },
+      },
+    },
+  };
+}
+
+/**
  * Creates the `mcp_search_tool_regex` tool definition.
  * 
  * Matches Anthropic's tool_search_tool_regex exactly (takes a 'query' regex pattern).
@@ -198,7 +223,7 @@ export type CallToolFn = (
 /**
  * Execute a meta-tool call and return the result in MCP CallToolResult format.
  *
- * @param toolName - One of the meta-tool names (mcp_search_tools, mcp_search_tool_regex, etc.)
+ * @param toolName - One of the meta-tool names (mcp_search_tools, mcp_list_servers, mcp_search_tool_regex, etc.)
  * @param args - The arguments from the LLM's tool call
  * @param router - The ToolRouter to query
  * @param callToolFn - Optional callback for executing real tools (required for mcp_execute_tool)
@@ -327,8 +352,30 @@ export async function executeMetaTool(
       const results = await router.searchTools(query, limit, searchOptions);
 
       const text = results.length === 0
-        ? 'No tools found matching your query. Try different keywords.'
+        ? 'No tools found matching your query. Call mcp_list_servers to inspect connected servers, then retry mcp_search_tools with serverId or serverName.'
         : formatToolSummaries(results).join('\n');
+
+      return {
+        content: [{ type: 'text', text }],
+        isError: false,
+      };
+    }
+
+    case 'mcp_list_servers': {
+      const query = String(args.query ?? '').trim();
+      const servers = await router.listServers({
+        serverName: query || undefined,
+      });
+
+      const text = servers.length === 0
+        ? 'No connected servers found.'
+        : servers
+            .map(
+              (server, i) =>
+                `${i + 1}. **${server.serverName}** (serverId: ${server.serverId}, sessionId: ${server.sessionId})\n` +
+                `   Tool count: ${server.toolCount}`
+            )
+            .join('\n');
 
       return {
         content: [{ type: 'text', text }],
@@ -478,6 +525,7 @@ function formatToolSummaries(
 export function isMetaTool(toolName: string): boolean {
   return (
     toolName === 'mcp_search_tools' ||
+    toolName === 'mcp_list_servers' ||
     toolName === 'mcp_search_tool_regex' ||
     toolName === 'mcp_get_tool_schema' ||
     toolName === 'mcp_execute_tool'

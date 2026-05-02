@@ -40,6 +40,7 @@ import {
 import { SchemaCompressor, type CompactTool } from './schema-compressor.js';
 import {
   createSearchToolDefinition,
+  createListServersToolDefinition,
   createRegexSearchToolDefinition,
   createGetSchemaToolDefinition,
   createExecuteToolDefinition,
@@ -487,6 +488,7 @@ export class ToolRouter {
   private getMetaToolDefinitions(): Tool[] {
     return [
       createSearchToolDefinition(),
+      createListServersToolDefinition(),
       createRegexSearchToolDefinition(),
       createGetSchemaToolDefinition(),
       createExecuteToolDefinition(),

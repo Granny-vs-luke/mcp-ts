@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { createSearchToolDefinition, executeMetaTool, isMetaTool } from '../src/shared/meta-tools';
+import {
+    createListServersToolDefinition,
+    createSearchToolDefinition,
+    executeMetaTool,
+    isMetaTool,
+} from '../src/shared/meta-tools';
 import { ToolRouter } from '../src/shared/tool-router';
 
 function createRouterClient(
@@ -32,7 +37,9 @@ function createRouterClient(
 test.describe('executeMetaTool', () => {
     test('should expose the generic search tools meta-tool name', async () => {
         expect(createSearchToolDefinition().name).toBe('mcp_search_tools');
+        expect(createListServersToolDefinition().name).toBe('mcp_list_servers');
         expect(isMetaTool('mcp_search_tools')).toBe(true);
+        expect(isMetaTool('mcp_list_servers')).toBe(true);
     });
 
     test('should return structured errors for ambiguous schema lookup', async () => {
@@ -174,7 +181,30 @@ test.describe('executeMetaTool', () => {
 
         expect(result?.isError).toBe(false);
         const text = (result?.content[0] as any).text;
-        expect(text).toContain('No tools found matching your query');
+        expect(text).toContain('Call mcp_list_servers');
+    });
+
+    test('should list connected servers for server-aware recovery', async () => {
+        const router = new ToolRouter([
+            createRouterClient('web-server', 'Web Search', [
+                { name: 'web_search', description: 'Search the web' },
+            ]) as any,
+            createRouterClient('supabase-server', 'Supabase MCP', [
+                { name: 'list_tables', description: 'List tables' },
+            ]) as any,
+        ], { strategy: 'search' });
+
+        const result = await executeMetaTool(
+            'mcp_list_servers',
+            {},
+            router
+        );
+
+        expect(result?.isError).toBe(false);
+        const text = (result?.content[0] as any).text;
+        expect(text).toContain('Web Search');
+        expect(text).toContain('Supabase MCP');
+        expect(text).toContain('Tool count: 1');
     });
 
     test('should execute the search tools meta-tool name', async () => {

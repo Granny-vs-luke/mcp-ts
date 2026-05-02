@@ -103,6 +103,7 @@ export {
 
 export {
   createSearchToolDefinition,
+  createListServersToolDefinition,
   createRegexSearchToolDefinition,
   createGetSchemaToolDefinition,
   createExecuteToolDefinition,
