@@ -28,7 +28,6 @@ The `mcp_search_tools` meta-tool supports a powerful query syntax that helps the
   - *Example*: `query: "tables", serverId: "database-server"` searches only the exact server ID `database-server`.
 - **Deterministic Server Listing**: Pass `operation: "list"` with `serverId` or `serverName` when the user asks for every tool from a server.
   - *Example*: `query: "database", operation: "list", serverName: "database"` returns the matching server's tools with `totalCount`, `returnedCount`, and `nextCursor` metadata.
-- **Live-Information Fallback**: If a temporal or current-information query has no direct BM25 match, the router retries with generic web/search/browser terms so connected web-search tools can still surface.
 - **Enhanced Scoring Heuristics**: Behind the scenes, the BM25 index automatically grants massive score bonuses (+10 or +5 points) if a search term perfectly matches or is a substring of the MCP `serverName` or the tool `name`. This ensures that tools strictly related to a specific integration (e.g., querying for "neon" or "apify") always float above unrelated tools that merely mention the word in their parameters.
 
 
