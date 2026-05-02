@@ -21,7 +21,7 @@ In this strategy, every discovered tool is passed through to the LLM.
 - **Best for**: Small projects with fewer than 10-15 tools.
 
 ### 2. The `search` Strategy (Scalability)
-This is the most advanced strategy. Instead of exposing your real tools, the SDK injects 4 system **Meta-Tools**. The LLM then "searches" for the tools it needs on-demand.
+This is the most advanced strategy. Instead of exposing your real tools, the SDK injects 5 system **Meta-Tools**. The LLM then "searches" for the tools it needs on-demand.
 - **Pros**: Virtually unlimited scalability (1000+ tools), minimal token usage, higher accuracy.
 - **Cons**: Requires a 2-turn flow for tool discovery.
 - **Best for**: Enterprise applications and deep tool catalogs.

@@ -20,12 +20,14 @@ The `mcp_search_tools` meta-tool supports a powerful query syntax that helps the
 
 - **Direct Tool Selection (`select:<name>`)**: If the AI already knows the exact tool it wants to use (e.g., from past context), it can bypass the BM25 index entirely.
   - *Example*: `select:github_create_issue` returns the exact tool description instantly.
+  - `select:` uses the same server scoping fields as search. If the connected server is named `Database MCP`, then `query: "select:list_tables", serverName: "database"` can resolve `list_tables` because `serverName` is treated as a case-insensitive fragment.
 - **Required Terms (`+term`)**: By prefixing a word with `+`, the AI strictly forces the index to *only* return tools that contain that word in their name or description.
   - *Example*: `+slack send` guarantees that only tools belonging to Slack are returned, even if another tool uses the word "send" frequently.
-- **Server Scoping**: Pass `serverId` or `serverName` to restrict results to one connected MCP server.
-  - *Example*: `query: "tables", serverName: "supabase"` searches only Supabase tools.
+- **Server Scoping**: Pass `serverId` or `serverName` to restrict results to one connected MCP server. Use `serverId` when you have the exact ID; use `serverName` when you only know a human-readable fragment.
+  - *Example*: `query: "tables", serverName: "database"` searches only servers with names or IDs containing `database`, such as `Database MCP`.
+  - *Example*: `query: "tables", serverId: "database-server"` searches only the exact server ID `database-server`.
 - **Deterministic Server Listing**: Pass `operation: "list"` with `serverId` or `serverName` when the user asks for every tool from a server.
-  - *Example*: `query: "supabase", operation: "list", serverName: "supabase"` returns the server's tools with `totalCount`, `returnedCount`, and `nextCursor` metadata.
+  - *Example*: `query: "database", operation: "list", serverName: "database"` returns the matching server's tools with `totalCount`, `returnedCount`, and `nextCursor` metadata.
 - **Live-Information Fallback**: If a temporal or current-information query has no direct BM25 match, the router retries with generic web/search/browser terms so connected web-search tools can still surface.
 - **Enhanced Scoring Heuristics**: Behind the scenes, the BM25 index automatically grants massive score bonuses (+10 or +5 points) if a search term perfectly matches or is a substring of the MCP `serverName` or the tool `name`. This ensures that tools strictly related to a specific integration (e.g., querying for "neon" or "apify") always float above unrelated tools that merely mention the word in their parameters.
 
@@ -44,13 +46,13 @@ A precision tool for finding specific patterns in tool names or descriptions.
 
 ### `mcp_get_tool_schema`
 Load the technical details for a specific tool.
-- **Input**: `toolName` (string), `serverName` (optional string).
+- **Input**: `toolName` (string), `serverId` (optional string).
 - **Output**: The full JSON `inputSchema` for the requested tool.
 - **Requirement**: The LLM *must* call this after searching to know what arguments a tool accepts.
 
 ### `mcp_execute_tool`
 The proxy executor for all discovered tools.
-- **Input**: `toolName` (string), `args` (object), `serverName` (optional string).
+- **Input**: `toolName` (string), `args` (object), `serverId` (optional string).
 - **Output**: The result of the actual MCP tool call.
 - **Privacy**: The SDK handles the routing to the correct MCP server automatically.
 
@@ -79,4 +81,4 @@ The `mcp-ts` SDK implements the following flow to minimize context usage while m
 
 1. **Context Density**: You can give an LLM access to 1,000 tools without using more than a few hundred tokens of "resting" context.
 2. **Reduced Hallucinations**: Because the LLM "finds" the tool definition right before using it, it is less likely to hallucinate parameters or use the wrong tool.
-3. **Multi-Server Conflict Resolution**: If two servers provide a tool named `search`, the Meta-Tools return the `serverName` as a namespace, allowing the LLM to specify which one to use.
+3. **Multi-Server Conflict Resolution**: If two servers provide a tool named `search`, the Meta-Tools return `serverName` and `serverId`. Use `serverName` fragments for discovery and `serverId` for exact schema lookup/execution.

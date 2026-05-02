@@ -37,7 +37,7 @@ const router = new ToolRouter(client: MCPClient | MultiSessionClient, {
 
 **Methods:**
 - `getFilteredTools()` - Get tools based on current strategy
-- `searchTools(query, topK?, options?)` - Search via BM25 + embeddings, optionally scoped by `serverId` or `serverName`
+- `searchTools(query, topK?, options?)` - Search via BM25 + embeddings, optionally scoped by exact `serverId` or fragment-based `serverName`
 - `searchToolsRegex(pattern, topK?)` - Search via regex pattern
 - `listServers(options?)` - List connected indexed servers with tool counts
 - `listTools(options?)` - Deterministically list indexed tools, optionally scoped by server and paginated with `cursor`
@@ -73,14 +73,20 @@ const results = await index.search("query", 5);
 // Regex search
 const regexResults = index.searchRegex("get_.*_data", 5);
 
-// Search only one server
-const supabaseResults = await index.search("tables", 5, {
-  serverName: "supabase",
+// Search one server by human-readable name fragment.
+// This matches a server named "Database MCP".
+const databaseResults = await index.search("tables", 5, {
+  serverName: "database",
 });
 
-// List every tool from one server with pagination metadata
+// Search one server by exact stable ID.
+const exactServerResults = await index.search("tables", 5, {
+  serverId: "database-server",
+});
+
+// List every tool from one server with pagination metadata.
 const listed = index.listTools({
-  serverName: "supabase",
+  serverName: "database",
   limit: 100,
 });
 console.log(listed.totalCount, listed.tools);
