@@ -1,0 +1,7 @@
+[build]
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/healthz"
+healthcheckTimeout = 30
+

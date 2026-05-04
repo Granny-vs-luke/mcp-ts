@@ -12,6 +12,18 @@ set REQUEST_TIMEOUT_SECONDS=20
 uv run remote-proxy
 ```
 
+## Deploy on Railway
+
+Recommended: create a Railway service rooted at `packages/mcp-remote-server` and deploy using the included `Dockerfile`.
+
+Set environment variables in Railway (minimum):
+- `JWT_SECRET` (required for issuing/validating JWTs)
+- `JWT_ALGORITHM` (example: `HS256`)
+- `REQUEST_TIMEOUT_SECONDS` (example: `20`)
+- `ALLOW_UNAUTH_MCP_TRANSPORT` (optional, default `true`)
+
+Railway provides `PORT`; the server binds `HOST=0.0.0.0` and uses `PORT` automatically.
+
 The server exposes:
 - `GET /healthz`
 - `GET /agents`
