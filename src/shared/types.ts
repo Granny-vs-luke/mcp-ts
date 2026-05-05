@@ -204,6 +204,7 @@ export interface ConnectParams {
   serverUrl: string;
   callbackUrl: string;
   transportType?: TransportType;
+  headers?: Record<string, string>;
 }
 
 export interface DisconnectParams {

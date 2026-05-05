@@ -238,9 +238,11 @@ export class MCPClient {
     }
 
     const baseUrl = new URL(this.serverUrl);
+    const hasAuthorizationHeader = Object.keys(this.headers || {})
+      .some((key) => key.toLowerCase() === 'authorization');
     const transportOptions = {
-      authProvider: this.oauthProvider!,
-      ...(this.headers && { headers: this.headers }),
+      ...(!hasAuthorizationHeader && { authProvider: this.oauthProvider! }),
+      ...(this.headers && { requestInit: { headers: this.headers } }),
       /**
        * Custom fetch implementation to handle connection timeouts.
        * Observation: SDK 1.24.0+ connections may hang indefinitely in some environments.
@@ -359,6 +361,7 @@ export class MCPClient {
         serverUrl: this.serverUrl,
         callbackUrl: this.callbackUrl,
         transportType: this.transportType || 'streamable_http',
+        headers: this.headers,
         createdAt: this.createdAt,
         active: false,
       }, Math.floor(STATE_EXPIRATION_MS / 1000)); // Short TTL until connection succeeds
@@ -388,6 +391,7 @@ export class MCPClient {
       serverUrl: this.serverUrl,
       callbackUrl: this.callbackUrl,
       transportType: (this.transportType || 'streamable_http') as TransportType,
+      headers: this.headers,
       createdAt: this.createdAt || Date.now(),
       active,
     };
