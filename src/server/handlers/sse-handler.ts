@@ -73,6 +73,16 @@ export interface SSEHandlerOptions {
 
 const DEFAULT_HEARTBEAT_INTERVAL = 30000;
 
+function normalizeHeaders(headers?: Record<string, string>): Record<string, string> | undefined {
+  if (!headers || typeof headers !== 'object') return undefined;
+
+  const entries = Object.entries(headers)
+    .map(([key, value]) => [key.trim(), String(value).trim()] as const)
+    .filter(([key, value]) => key.length > 0 && value.length > 0);
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
 // ============================================
 // SSEConnectionManager Class
 // ============================================
@@ -238,6 +248,7 @@ export class SSEConnectionManager {
    */
   private async connect(params: ConnectParams): Promise<ConnectResult> {
     const { serverName, serverUrl, callbackUrl, transportType } = params;
+    const headers = normalizeHeaders(params.headers);
 
     // Normalize serverId to max 12 chars to keep tool names under 64 chars (DeepSeek/OpenAI limits)
     // Tool name format: tool_<serverId>_<toolName> - with 12 char serverId leaves 46 chars for tool name
@@ -280,6 +291,7 @@ export class SSEConnectionManager {
         serverUrl,
         callbackUrl,
         transportType,
+        headers,
         ...clientMetadata, // Spread client metadata (clientName, clientUri, logoUri, policyUri)
       });
 

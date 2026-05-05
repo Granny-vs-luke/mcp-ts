@@ -168,5 +168,54 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
       manager.dispose();
     }
   });
+
+  test('passes custom headers from connect params into the MCP client', async () => {
+    const storage = new MemoryStorageBackend();
+    _setStorageInstanceForTesting(storage);
+
+    const manager = new SSEConnectionManager(
+      { identity: 'user-4' },
+      () => { }
+    );
+
+    const originalConnect = (MCPClient.prototype as any).connect;
+    const originalListTools = (MCPClient.prototype as any).listTools;
+
+    let seenHeaders: Record<string, string> | undefined;
+
+    (MCPClient.prototype as any).connect = async function () {
+      seenHeaders = (this as any).headers;
+    };
+
+    (MCPClient.prototype as any).listTools = async function () {
+      return { tools: [] };
+    };
+
+    try {
+      const response = await manager.handleRequest({
+        id: '4',
+        method: 'connect',
+        params: {
+          serverId: 'srv-4',
+          serverName: 'Server Four',
+          serverUrl: 'https://example.com/mcp-headers',
+          callbackUrl: 'https://app.local/oauth/callback',
+          headers: {
+            Authorization: 'Bearer github_pat_test',
+            'X-Empty': '',
+          },
+        },
+      } as any);
+
+      expect((response as any).error).toBeUndefined();
+      expect(seenHeaders).toEqual({
+        Authorization: 'Bearer github_pat_test',
+      });
+    } finally {
+      (MCPClient.prototype as any).connect = originalConnect;
+      (MCPClient.prototype as any).listTools = originalListTools;
+      manager.dispose();
+    }
+  });
 });
 
