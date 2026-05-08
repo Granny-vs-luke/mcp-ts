@@ -28,8 +28,6 @@ export interface ToolSummary {
   serverId: string;
   /** Session the tool belongs to */
   sessionId: string;
-  /** Estimated token cost of the full inputSchema */
-  estimatedTokens: number;
 }
 
 /** Server-level summary derived from indexed tools. */
@@ -170,9 +168,6 @@ export class ToolIndex {
   /** BM25: average document length across the entire index. */
   private avgDocLength = 0;
 
-  /** Cached total estimated token cost across all indexed tools. */
-  private totalTokenCost = 0;
-
   private options: Required<ToolIndexOptions>;
 
   constructor(options: ToolIndexOptions = {}) {
@@ -199,7 +194,6 @@ export class ToolIndex {
     this.embeddings.clear();
     this.docLengths.clear();
     this.avgDocLength = 0;
-    this.totalTokenCost = 0;
 
     // 1. Populate tool map + search text
     const allTokenSets: Map<string, Set<string>> = new Map();
@@ -212,16 +206,13 @@ export class ToolIndex {
         this.tools.set(tool.name, []);
       }
       this.tools.get(tool.name)!.push(tool);
-      const estimatedTokens = ToolIndex.estimateTokens(tool);
       this.toolSummaries.set(docKey, {
         name: tool.name,
         description: tool.description ?? '',
         serverName: tool.serverName,
         serverId: tool.serverId,
         sessionId: tool.sessionId,
-        estimatedTokens,
       });
-      this.totalTokenCost += estimatedTokens;
 
       const text = this.buildSearchableText(tool).toLowerCase();
       this.searchTexts.set(docKey, text);
@@ -578,11 +569,6 @@ export class ToolIndex {
     return count;
   }
 
-  /** Total estimated token cost of all indexed tool schemas. */
-  getTotalTokenCost(): number {
-    return this.totalTokenCost;
-  }
-
   // -----------------------------------------------------------------------
   // Static Helpers
   // -----------------------------------------------------------------------
@@ -596,7 +582,7 @@ export class ToolIndex {
   static estimateTokens(tool: Tool): number {
     const parts: string[] = [tool.name];
     if (tool.description) parts.push(tool.description);
-    if (tool.inputSchema) parts.push(JSON.stringify(tool.inputSchema));
+    if (tool.inputSchema) parts.push(ToolIndex.safeStringify(tool.inputSchema));
 
     const text = parts.join(' ');
     let weightedLen = 0;
@@ -606,6 +592,26 @@ export class ToolIndex {
     }
 
     return Math.ceil(weightedLen / (1 / CALIBRATION_DIVISOR));
+  }
+
+  private static safeStringify(value: unknown): string {
+    const seen = new WeakSet<object>();
+    const json = JSON.stringify(value, (_key, nestedValue) => {
+      if (typeof nestedValue === 'bigint') {
+        return nestedValue.toString();
+      }
+
+      if (nestedValue && typeof nestedValue === 'object') {
+        if (seen.has(nestedValue)) {
+          return '[Circular]';
+        }
+        seen.add(nestedValue);
+      }
+
+      return nestedValue;
+    });
+
+    return json ?? '';
   }
 
   // -----------------------------------------------------------------------

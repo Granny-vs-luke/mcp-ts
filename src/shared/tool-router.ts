@@ -294,11 +294,6 @@ export class ToolRouter {
   // Stats & Introspection
   // -----------------------------------------------------------------------
 
-  /** Total token cost of all tools if loaded without filtering. */
-  getTotalTokenCost(): number {
-    return this.index.getTotalTokenCost();
-  }
-
   /** Estimate token cost of the currently filtered tool set. */
   async getFilteredTokenCost(): Promise<number> {
     const tools = await this.getFilteredTools();

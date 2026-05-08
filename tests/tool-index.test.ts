@@ -62,10 +62,6 @@ test.describe('ToolIndex', () => {
         expect(slackResults[0].serverName).toBe('Slack');
         expect(slackResults[0].serverId).toBe('slack-server');
         expect(index.getTool('search')).toHaveLength(2);
-        expect(githubResults[0].estimatedTokens).toBeGreaterThan(0);
-        expect(index.getTotalTokenCost()).toBe(
-            githubResults[0].estimatedTokens + slackResults[0].estimatedTokens
-        );
     });
 
     test('should prefer exact namespace matches before fuzzy server names', async () => {
@@ -233,5 +229,37 @@ test.describe('ToolIndex', () => {
 
         expect(results).toHaveLength(1);
         expect(results[0].name).toBe('create_invoice');
+    });
+
+    test('should build an index for cyclic JSON schemas', async () => {
+        const index = new ToolIndex();
+        const inputSchema: Record<string, unknown> = {
+            type: 'object',
+            properties: {
+                query: {
+                    type: 'string',
+                    description: 'Search query text',
+                },
+            },
+        };
+        inputSchema.self = inputSchema;
+
+        const tools: IndexedTool[] = [
+            {
+                name: 'cyclic_search',
+                description: 'Search with a cyclic schema',
+                inputSchema,
+                serverName: 'Search',
+                sessionId: 'search-session',
+                serverId: 'search-server',
+            },
+        ];
+
+        await expect(index.buildIndex(tools)).resolves.toBeUndefined();
+
+        const results = await index.search('query text', 5);
+
+        expect(results).toHaveLength(1);
+        expect(results[0].name).toBe('cyclic_search');
     });
 });
