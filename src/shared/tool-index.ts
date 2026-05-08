@@ -179,10 +179,11 @@ export class ToolIndex {
         sessionId: tool.sessionId,
       });
 
-      const text = this.buildSearchableText(tool).toLowerCase();
+      const rawText = this.buildSearchableText(tool);
+      const text = rawText.toLowerCase();
       this.searchTexts.set(docKey, text);
 
-      const tokens = this.tokenize(text);
+      const tokens = this.tokenize(rawText);
       const tf = new Map<string, number>();
       const uniqueTokens = new Set<string>();
 
@@ -665,6 +666,7 @@ export class ToolIndex {
       .replace(/([a-z])([A-Z])/g, '$1 $2')
       // Split snake_case / kebab-case
       .replace(/[_-]/g, ' ')
+      .toLowerCase()
       // Remove non-alphanumeric (except spaces)
       .replace(/[^a-z0-9\s]/g, '')
       // Split on whitespace
