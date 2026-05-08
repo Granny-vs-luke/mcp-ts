@@ -222,7 +222,6 @@ test.describe('executeMetaTool', () => {
 
         expect(result?.isError).toBe(false);
         expect((result?.content[0] as any).text).toContain('web_search');
-        expect((result?.content[0] as any).text).not.toContain('Estimated tokens');
     });
 
     test('should resolve select queries using serverName fragments', async () => {

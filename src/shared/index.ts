@@ -98,7 +98,6 @@ export {
 export {
   SchemaCompressor,
   type CompactTool,
-  type CompressionStats,
 } from './schema-compressor.js';
 
 export {

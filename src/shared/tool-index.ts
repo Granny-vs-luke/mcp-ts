@@ -105,41 +105,6 @@ export interface ToolIndexOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Token Estimation
-// ---------------------------------------------------------------------------
-
-/**
- * Character-class weights for accurate-ish token estimation without a real
- * tokenizer.  Empirically calibrated against cl100k_base on typical JSON
- * Schema payloads.
- *
- * | Char class        | Approx chars per token |
- * |--------------------|------------------------|
- * | Whitespace / punct | 1–2                    |
- * | English words      | ~4                     |
- * | JSON keys/values   | ~3.5                   |
- *
- * We walk the string once and accumulate a weighted character count, then
- * divide by a calibrated divisor.
- */
-const CALIBRATION_DIVISOR = 3.6;
-
-function classifyChar(ch: string): number {
-  const code = ch.charCodeAt(0);
-  // whitespace / common JSON structural chars  →  high token density
-  if (code <= 0x20 || ch === '{' || ch === '}' || ch === '[' || ch === ']' || ch === ':' || ch === ',') return 1.0;
-  // digits and symbols
-  if (code >= 0x21 && code <= 0x2f) return 1.5;
-  if (code >= 0x30 && code <= 0x39) return 2.0;
-  // uppercase (often JSON keys)
-  if (code >= 0x41 && code <= 0x5a) return 3.5;
-  // lowercase (natural language in descriptions)
-  if (code >= 0x61 && code <= 0x7a) return 4.0;
-  // everything else (unicode, emojis, etc.)
-  return 2.5;
-}
-
-// ---------------------------------------------------------------------------
 // ToolIndex
 // ---------------------------------------------------------------------------
 
@@ -567,51 +532,6 @@ export class ToolIndex {
       count += list.length;
     }
     return count;
-  }
-
-  // -----------------------------------------------------------------------
-  // Static Helpers
-  // -----------------------------------------------------------------------
-
-  /**
-   * Estimate token count of a tool's full schema (name + description + inputSchema).
-   *
-   * Uses character-class weighted counting calibrated against cl100k_base.
-   * Accuracy is typically within ±10% for JSON Schema payloads.
-   */
-  static estimateTokens(tool: Tool): number {
-    const parts: string[] = [tool.name];
-    if (tool.description) parts.push(tool.description);
-    if (tool.inputSchema) parts.push(ToolIndex.safeStringify(tool.inputSchema));
-
-    const text = parts.join(' ');
-    let weightedLen = 0;
-
-    for (let i = 0; i < text.length; i++) {
-      weightedLen += 1 / classifyChar(text[i]);
-    }
-
-    return Math.ceil(weightedLen / (1 / CALIBRATION_DIVISOR));
-  }
-
-  private static safeStringify(value: unknown): string {
-    const seen = new WeakSet<object>();
-    const json = JSON.stringify(value, (_key, nestedValue) => {
-      if (typeof nestedValue === 'bigint') {
-        return nestedValue.toString();
-      }
-
-      if (nestedValue && typeof nestedValue === 'object') {
-        if (seen.has(nestedValue)) {
-          return '[Circular]';
-        }
-        seen.add(nestedValue);
-      }
-
-      return nestedValue;
-    });
-
-    return json ?? '';
   }
 
   // -----------------------------------------------------------------------

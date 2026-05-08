@@ -1,14 +1,13 @@
 /**
- * SchemaCompressor — Utilities for reducing tool schema token overhead.
+ * SchemaCompressor — Utilities for compact tool representations.
  *
  * Provides compact representations of tools (name + description only,
- * no inputSchema) and token savings estimation.
+ * no inputSchema).
  *
  * @packageDocumentation
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { ToolIndex } from './tool-index.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,17 +25,6 @@ export interface CompactTool {
    * e.g. "(location: string, unit?: 'celsius' | 'fahrenheit')"
    */
   parameterHint?: string;
-}
-
-export interface CompressionStats {
-  /** Estimated tokens for the *full* tool list. */
-  fullTokens: number;
-  /** Estimated tokens for the *compact* tool list. */
-  compactTokens: number;
-  /** Absolute token savings. */
-  savedTokens: number;
-  /** Percentage savings as a human-readable string, e.g. "82.3%". */
-  savingsPercent: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,33 +80,5 @@ export class SchemaCompressor {
   static compactAll(tools: Tool[], options?: { maxTools?: number }): CompactTool[] {
     const limited = options?.maxTools ? tools.slice(0, options.maxTools) : tools;
     return limited.map((t) => SchemaCompressor.toCompact(t));
-  }
-
-  /**
-   * Estimate token savings from using compact vs full tool schemas.
-   */
-  static estimateSavings(tools: Tool[]): CompressionStats {
-    let fullTokens = 0;
-    let compactTokens = 0;
-
-    for (const tool of tools) {
-      fullTokens += ToolIndex.estimateTokens(tool);
-
-      // Compact form: name + description + parameterHint
-      const compact = SchemaCompressor.toCompact(tool);
-      const text = [compact.name, compact.description ?? '', compact.parameterHint ?? ''].join(' ');
-      // Simple estimation for compact: ~4 chars per token for plain text
-      compactTokens += Math.ceil(text.length / 4);
-    }
-
-    const saved = fullTokens - compactTokens;
-    const pct = fullTokens > 0 ? ((saved / fullTokens) * 100).toFixed(1) : '0.0';
-
-    return {
-      fullTokens,
-      compactTokens,
-      savedTokens: saved,
-      savingsPercent: `${pct}%`,
-    };
   }
 }
