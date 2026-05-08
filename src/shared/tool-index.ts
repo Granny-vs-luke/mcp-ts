@@ -617,21 +617,98 @@ export class ToolIndex {
     const parts: string[] = [tool.name];
     if (tool.description) parts.push(tool.description);
 
-    // Include property names and descriptions from schema
     if (tool.inputSchema && typeof tool.inputSchema === 'object') {
-      const schema = tool.inputSchema as Record<string, unknown>;
-      const props = schema.properties as Record<string, { description?: string }> | undefined;
-      if (props) {
-        for (const [key, val] of Object.entries(props)) {
-          parts.push(key);
-          if (val && typeof val === 'object' && val.description) {
-            parts.push(val.description);
-          }
-        }
-      }
+      this.collectSchemaSearchText(tool.inputSchema, parts);
     }
 
     return parts.join(' ');
+  }
+
+  /** Recursively collect JSON Schema argument names and descriptions. */
+  private collectSchemaSearchText(
+    schema: unknown,
+    parts: string[],
+    seen = new WeakSet<object>()
+  ): void {
+    if (!schema || typeof schema !== 'object') return;
+    if (seen.has(schema)) return;
+    seen.add(schema);
+
+    if (Array.isArray(schema)) {
+      for (const item of schema) {
+        this.collectSchemaSearchText(item, parts, seen);
+      }
+      return;
+    }
+
+    const schemaObject = schema as Record<string, unknown>;
+    this.pushStringValue(schemaObject.description, parts);
+    this.pushStringValue(schemaObject.title, parts);
+
+    const properties = schemaObject.properties;
+    if (properties && typeof properties === 'object' && !Array.isArray(properties)) {
+      for (const [propertyName, propertySchema] of Object.entries(properties)) {
+        parts.push(propertyName);
+        this.collectSchemaSearchText(propertySchema, parts, seen);
+      }
+    }
+
+    const patternProperties = schemaObject.patternProperties;
+    if (
+      patternProperties &&
+      typeof patternProperties === 'object' &&
+      !Array.isArray(patternProperties)
+    ) {
+      for (const [propertyPattern, propertySchema] of Object.entries(patternProperties)) {
+        parts.push(propertyPattern);
+        this.collectSchemaSearchText(propertySchema, parts, seen);
+      }
+    }
+
+    const dependentSchemas = schemaObject.dependentSchemas;
+    if (
+      dependentSchemas &&
+      typeof dependentSchemas === 'object' &&
+      !Array.isArray(dependentSchemas)
+    ) {
+      for (const [propertyName, dependentSchema] of Object.entries(dependentSchemas)) {
+        parts.push(propertyName);
+        this.collectSchemaSearchText(dependentSchema, parts, seen);
+      }
+    }
+
+    for (const key of [
+      'items',
+      'additionalProperties',
+      'contains',
+      'propertyNames',
+      'if',
+      'then',
+      'else',
+      'not',
+    ]) {
+      this.collectSchemaSearchText(schemaObject[key], parts, seen);
+    }
+
+    for (const key of ['allOf', 'anyOf', 'oneOf', 'prefixItems']) {
+      this.collectSchemaSearchText(schemaObject[key], parts, seen);
+    }
+
+    for (const key of ['$defs', 'definitions']) {
+      const definitions = schemaObject[key];
+      if (definitions && typeof definitions === 'object' && !Array.isArray(definitions)) {
+        for (const [definitionName, definitionSchema] of Object.entries(definitions)) {
+          parts.push(definitionName);
+          this.collectSchemaSearchText(definitionSchema, parts, seen);
+        }
+      }
+    }
+  }
+
+  private pushStringValue(value: unknown, parts: string[]): void {
+    if (typeof value === 'string' && value.trim()) {
+      parts.push(value);
+    }
   }
 
   private getDocumentKey(tool: IndexedTool): string {

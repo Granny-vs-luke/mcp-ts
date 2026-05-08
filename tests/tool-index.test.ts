@@ -156,4 +156,82 @@ test.describe('ToolIndex', () => {
         expect(embeddingQueryText).toBe('slack send');
         expect(results[0].serverId).toBe('slack-server');
     });
+
+    test('should search nested argument descriptions in JSON schemas', async () => {
+        const index = new ToolIndex();
+        const tools: IndexedTool[] = [
+            {
+                name: 'create_report',
+                description: 'Create a report',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        options: {
+                            type: 'object',
+                            properties: {
+                                schedule: {
+                                    type: 'object',
+                                    properties: {
+                                        timezone: {
+                                            type: 'string',
+                                            description: 'IANA timezone for delivery windows',
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                serverName: 'Reports',
+                sessionId: 'reports-session',
+                serverId: 'reports-server',
+            },
+        ];
+
+        await index.buildIndex(tools);
+
+        const results = await index.search('IANA timezone delivery', 5);
+
+        expect(results).toHaveLength(1);
+        expect(results[0].name).toBe('create_report');
+    });
+
+    test('should regex search nested argument names in JSON schemas', async () => {
+        const index = new ToolIndex();
+        const tools: IndexedTool[] = [
+            {
+                name: 'create_invoice',
+                description: 'Create an invoice',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        customer: {
+                            type: 'object',
+                            properties: {
+                                billingAddress: {
+                                    type: 'object',
+                                    properties: {
+                                        postalCode: {
+                                            type: 'string',
+                                            description: 'Postal code for tax calculation',
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                serverName: 'Billing',
+                sessionId: 'billing-session',
+                serverId: 'billing-server',
+            },
+        ];
+
+        await index.buildIndex(tools);
+
+        const results = index.searchRegex('postalcode', 5);
+
+        expect(results).toHaveLength(1);
+        expect(results[0].name).toBe('create_invoice');
+    });
 });
