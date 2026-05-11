@@ -3,39 +3,35 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
-import { useMcp } from "@mcp-ts/sdk/client/react";
 
 const AUTH_CODE_MESSAGE = "MCP_AUTH_CODE";
 const AUTH_RESULT_MESSAGE = "MCP_AUTH_RESULT";
+const AUTH_CHANNEL_NAME = "mcp-auth-channel";
+
+function createAuthBroadcastChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === "undefined") {
+    return null;
+  }
+
+  try {
+    return new BroadcastChannel(AUTH_CHANNEL_NAME);
+  } catch {
+    return null;
+  }
+}
 
 function PopupCallbackContent() {
   const searchParams = useSearchParams();
   const code = searchParams.get("code");
   const sessionId = searchParams.get("state");
 
-  const { connections, finishAuth } = useMcp({
-    url: "/api/mcp",
-    identity: process.env.NEXT_PUBLIC_MCP_IDENTITY!,
-    autoConnect: true,
-  });
-
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
 
   const resolvedSessionId = sessionId || searchParams.get("sessionId");
 
-  // 1. Success Monitor: If the main window succeeds, this popup should just close.
   useEffect(() => {
-    if (!resolvedSessionId) return;
-    const conn = connections.find(c => c.sessionId === resolvedSessionId);
-    if (conn?.state === 'CONNECTED' || conn?.state === 'READY') {
-      setStatus("success");
-      window.setTimeout(() => window.close(), 1200);
-    }
-  }, [connections, resolvedSessionId]);
-
-  useEffect(() => {
-    if (!code || !resolvedSessionId || status !== "loading") {
+    if (!code || !resolvedSessionId) {
       if (!code || !resolvedSessionId) {
         setStatus("error");
         setErrorMessage("Missing required OAuth parameters.");
@@ -60,51 +56,36 @@ function PopupCallbackContent() {
       }
     };
 
-    const channel = new BroadcastChannel("mcp-auth-channel");
-    channel.addEventListener("message", handleResult);
+    const channel = createAuthBroadcastChannel();
+    channel?.addEventListener("message", handleResult);
     window.addEventListener("message", handleResult);
 
     const payload = { type: AUTH_CODE_MESSAGE, code, sessionId: resolvedSessionId, state: resolvedSessionId };
 
-    // Send via all available paths
     if (window.opener) {
       try {
         window.opener.postMessage(payload, window.location.origin);
-      } catch (err) {
-        console.warn('[PopupCallback] postMessage failed:', err);
+      } catch {
+        setStatus("error");
+        setErrorMessage("Could not communicate with main window.");
       }
     }
-    channel.postMessage(payload);
 
-    // Fallback if the main window is gone or unresponsive
-    const fallbackTimeout = window.setTimeout(() => {
-      if (!closed && status === "loading") {
-        console.log('[PopupCallback] No response from main window, attempting direct fallback...');
-        void completeAuthInPopup();
+    channel?.postMessage(payload);
+
+    const timeout = window.setTimeout(() => {
+      if (!closed) {
+        setStatus("error");
+        setErrorMessage("Could not confirm authorization. Please return to the main window and try again.");
       }
     }, 30000);
 
-    async function completeAuthInPopup() {
-      if (closed) return;
-      try {
-        await finishAuth(resolvedSessionId as string, code as string);
-        setStatus("success");
-        closed = true;
-        window.setTimeout(() => window.close(), 1200);
-      } catch (error) {
-        if (closed) return;
-        setStatus("error");
-        setErrorMessage(error instanceof Error ? error.message : "Failed to complete authorization.");
-      }
-    }
-
     return () => {
-      window.clearTimeout(fallbackTimeout);
+      window.clearTimeout(timeout);
       window.removeEventListener("message", handleResult);
-      channel.close();
+      channel?.close();
     };
-  }, [code, resolvedSessionId, finishAuth]);
-
+  }, [code, resolvedSessionId]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50/50 text-gray-900 font-sans p-4">

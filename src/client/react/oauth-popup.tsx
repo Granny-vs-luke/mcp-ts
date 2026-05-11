@@ -42,6 +42,19 @@ export interface McpOAuthCallbackContentProps {
 
 const AUTH_CODE_MESSAGE = 'MCP_AUTH_CODE';
 const AUTH_RESULT_MESSAGE = 'MCP_AUTH_RESULT';
+const AUTH_CHANNEL_NAME = 'mcp-auth-channel';
+
+function createAuthBroadcastChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === 'undefined') {
+    return null;
+  }
+
+  try {
+    return new BroadcastChannel(AUTH_CHANNEL_NAME);
+  } catch {
+    return null;
+  }
+}
 
 function postPopupResult(
   popupWindow: WindowProxy | null,
@@ -56,17 +69,12 @@ function postPopupResult(
     ...result,
   };
 
-  // 1. Direct postMessage to the specific window if known
   popupWindow?.postMessage(payload, window.location.origin);
 
-  // 2. Broadcast to all listening windows (e.g. if opener reference was lost)
-  try {
-    const channel = new BroadcastChannel('mcp-auth-channel');
+  const channel = createAuthBroadcastChannel();
+  if (channel) {
     channel.postMessage(payload);
     channel.close();
-  } catch (err) {
-    // BroadcastChannel might not be supported in very old environments, but that's okay as postMessage is the primary path
-    console.warn('[useMcpOAuthPopup] Failed to broadcast result:', err);
   }
 }
 
@@ -135,26 +143,21 @@ export function createOAuthPopupRedirectHandler(
  *
  * If you are not using a popup flow, you do not need this hook.
  */
-const processedCodesGlobal = new Set<string>();
-
 export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
   connections: TConnection[],
   finishAuth: (sessionId: string, code: string) => Promise<unknown>
 ): void {
   const pendingPopupsRef = useRef<Map<string, WindowProxy>>(new Map());
-
+  const processingCodesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
-      console.log('[useMcpOAuthPopup] Message received:', event.data);
-      // 1. Verify origin for security (ignore for BroadcastChannel messages which don't have origin or have same origin)
       if (event.origin && event.origin !== window.location.origin) {
-        console.warn('[useMcpOAuthPopup] Origin mismatch:', event.origin, 'expected:', window.location.origin);
         return;
       }
 
-
-      if (event.data?.type !== AUTH_CODE_MESSAGE || !event.data.code) {
+      const code = typeof event.data?.code === 'string' ? event.data.code : '';
+      if (event.data?.type !== AUTH_CODE_MESSAGE || !code) {
         return;
       }
 
@@ -163,29 +166,9 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
         : null;
       const targetSessionId = typeof event.data.sessionId === 'string' ? event.data.sessionId : '';
 
-      // Capture the popup window reference if we have it, so we can notify it later
-      // even if this specific message is a duplicate code signal.
       if (popupWindow && targetSessionId) {
         pendingPopupsRef.current.set(targetSessionId, popupWindow);
       }
-
-      // Deduplicate: Don't process the same code twice
-      if (processedCodesGlobal.has(event.data.code)) {
-        console.log('[useMcpOAuthPopup] Code already processed (global), ignoring:', event.data.code);
-        
-        // If the session is already authenticated or ready, notify the popup immediately
-        // (This handles cases where the popup sends multiple signals or a late signal)
-        const existingConn = connections.find(c => c.sessionId === targetSessionId);
-        if (existingConn?.state === 'AUTHENTICATED' || existingConn?.state === 'READY') {
-          postPopupResult(popupWindow, {
-            sessionId: targetSessionId,
-            success: true,
-          });
-          pendingPopupsRef.current.delete(targetSessionId);
-        }
-        return;
-      }
-      processedCodesGlobal.add(event.data.code);
 
       if (!targetSessionId) {
         if (popupWindow) {
@@ -209,9 +192,16 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
         return;
       }
 
+      const codeKey = `${targetSession.sessionId}:${code}`;
+      if (processingCodesRef.current.has(codeKey)) {
+        return;
+      }
+      processingCodesRef.current.add(codeKey);
+
       try {
-        await finishAuth(targetSession.sessionId, event.data.code);
+        await finishAuth(targetSession.sessionId, code);
       } catch (error) {
+        processingCodesRef.current.delete(codeKey);
         pendingPopupsRef.current.delete(targetSession.sessionId);
         if (popupWindow) {
           postPopupResult(popupWindow, {
@@ -223,8 +213,7 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
       }
     };
 
-    // Listen on both postMessage and BroadcastChannel
-    const channel = new BroadcastChannel('mcp-auth-channel');
+    const channel = createAuthBroadcastChannel();
     const handleChannelMessage = (event: MessageEvent) => {
       if (event.data?.type === AUTH_CODE_MESSAGE) {
         void handleMessage(event);
@@ -232,14 +221,13 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
     };
 
     window.addEventListener('message', handleMessage);
-    channel.addEventListener('message', handleChannelMessage);
+    channel?.addEventListener('message', handleChannelMessage);
     
     return () => {
       window.removeEventListener('message', handleMessage);
-      channel.removeEventListener('message', handleChannelMessage);
-      channel.close();
+      channel?.removeEventListener('message', handleChannelMessage);
+      channel?.close();
     };
-
   }, [connections, finishAuth]);
 
   useEffect(() => {
@@ -251,6 +239,11 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
           sessionId: connection.sessionId,
           success: true,
         });
+        for (const codeKey of processingCodesRef.current) {
+          if (codeKey.startsWith(`${connection.sessionId}:`)) {
+            processingCodesRef.current.delete(codeKey);
+          }
+        }
         pendingPopupsRef.current.delete(connection.sessionId);
         continue;
       }
@@ -261,6 +254,11 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
           success: false,
           error: connection.error || 'Failed to complete authorization',
         });
+        for (const codeKey of processingCodesRef.current) {
+          if (codeKey.startsWith(`${connection.sessionId}:`)) {
+            processingCodesRef.current.delete(codeKey);
+          }
+        }
         pendingPopupsRef.current.delete(connection.sessionId);
       }
     }
@@ -317,7 +315,8 @@ export function McpOAuthCallbackContent({
       return;
     }
 
-    const channel = new BroadcastChannel('mcp-auth-channel');
+    let closed = false;
+    const channel = createAuthBroadcastChannel();
     const handleResult = (event: MessageEvent) => {
       if (event.origin && event.origin !== window.location.origin) {
         return;
@@ -334,7 +333,7 @@ export function McpOAuthCallbackContent({
       if (event.data.success) {
         setPhase('success');
         window.removeEventListener('message', handleResult);
-        channel.close();
+        channel?.close();
         closed = true;
         window.setTimeout(() => window.close(), 1200);
         return;
@@ -349,33 +348,29 @@ export function McpOAuthCallbackContent({
     };
 
     window.addEventListener('message', handleResult);
-    channel.addEventListener('message', handleResult);
+    channel?.addEventListener('message', handleResult);
 
     const payload = { type: AUTH_CODE_MESSAGE, code, sessionId };
 
-    // 1. Try postMessage to opener
     if (window.opener) {
       try {
         window.opener.postMessage(payload, window.location.origin);
-      } catch (error) {
-        console.warn('Failed to postMessage to opener:', error);
+      } catch {
+        setPhase('error');
+        setErrorMessage('Error: Could not communicate with main window.');
       }
     }
 
-    // 2. Also try BroadcastChannel
-    try {
+    if (channel) {
       channel.postMessage(payload);
-    } catch (error) {
-      console.warn('Failed to post to BroadcastChannel:', error);
     }
 
     return () => {
       if (!closed) {
         window.removeEventListener('message', handleResult);
-        channel.close();
+        channel?.close();
       }
     };
-
   }, [blockingError, code, sessionId, debugPhase]);
 
   const loadingBubbles = (
