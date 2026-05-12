@@ -42,6 +42,19 @@ export interface McpOAuthCallbackContentProps {
 
 const AUTH_CODE_MESSAGE = 'MCP_AUTH_CODE';
 const AUTH_RESULT_MESSAGE = 'MCP_AUTH_RESULT';
+const AUTH_CHANNEL_NAME = 'mcp-auth-channel';
+
+function createAuthBroadcastChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === 'undefined') {
+    return null;
+  }
+
+  try {
+    return new BroadcastChannel(AUTH_CHANNEL_NAME);
+  } catch {
+    return null;
+  }
+}
 
 function postPopupResult(
   popupWindow: WindowProxy | null,
@@ -51,13 +64,23 @@ function postPopupResult(
     error?: string;
   }
 ): void {
-  popupWindow?.postMessage(
-    {
-      type: AUTH_RESULT_MESSAGE,
-      ...result,
-    },
-    window.location.origin
-  );
+  const payload = {
+    type: AUTH_RESULT_MESSAGE,
+    ...result,
+  };
+
+  try {
+    popupWindow?.postMessage(payload, window.location.origin);
+  } catch {
+    // COOP can leave a WindowProxy reference that is no longer usable.
+    // The BroadcastChannel path below is the reliable fallback.
+  }
+
+  const channel = createAuthBroadcastChannel();
+  if (channel) {
+    channel.postMessage(payload);
+    channel.close();
+  }
 }
 
 /**
@@ -130,14 +153,16 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
   finishAuth: (sessionId: string, code: string) => Promise<unknown>
 ): void {
   const pendingPopupsRef = useRef<Map<string, WindowProxy>>(new Map());
+  const processingCodesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) {
+      if (event.origin && event.origin !== window.location.origin) {
         return;
       }
 
-      if (event.data?.type !== AUTH_CODE_MESSAGE || !event.data.code) {
+      const code = typeof event.data?.code === 'string' ? event.data.code : '';
+      if (event.data?.type !== AUTH_CODE_MESSAGE || !code) {
         return;
       }
 
@@ -146,56 +171,84 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
         : null;
       const targetSessionId = typeof event.data.sessionId === 'string' ? event.data.sessionId : '';
 
+      if (popupWindow && targetSessionId) {
+        pendingPopupsRef.current.set(targetSessionId, popupWindow);
+      }
+
       if (!targetSessionId) {
-        postPopupResult(popupWindow, {
-          success: false,
-          error: 'Missing OAuth session identifier',
-        });
+        if (popupWindow) {
+          postPopupResult(popupWindow, {
+            success: false,
+            error: 'Missing OAuth session identifier',
+          });
+        }
         return;
       }
 
       const targetSession = connections.find((connection) => connection.sessionId === targetSessionId);
       if (!targetSession) {
-        postPopupResult(popupWindow, {
-          sessionId: targetSessionId,
-          success: false,
-          error: 'OAuth session not found in the current client state',
-        });
+        if (popupWindow) {
+          postPopupResult(popupWindow, {
+            sessionId: targetSessionId,
+            success: false,
+            error: 'OAuth session not found in the current client state',
+          });
+        }
         return;
       }
 
-      if (popupWindow) {
-        pendingPopupsRef.current.set(targetSession.sessionId, popupWindow);
+      const codeKey = `${targetSession.sessionId}:${code}`;
+      if (processingCodesRef.current.has(codeKey)) {
+        return;
       }
+      processingCodesRef.current.add(codeKey);
 
       try {
-        await finishAuth(targetSession.sessionId, event.data.code);
+        await finishAuth(targetSession.sessionId, code);
       } catch (error) {
+        processingCodesRef.current.delete(codeKey);
         pendingPopupsRef.current.delete(targetSession.sessionId);
-        postPopupResult(popupWindow, {
-          sessionId: targetSession.sessionId,
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to finish auth',
-        });
+        if (popupWindow) {
+          postPopupResult(popupWindow, {
+            sessionId: targetSession.sessionId,
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to finish auth',
+          });
+        }
+      }
+    };
+
+    const channel = createAuthBroadcastChannel();
+    const handleChannelMessage = (event: MessageEvent) => {
+      if (event.data?.type === AUTH_CODE_MESSAGE) {
+        void handleMessage(event);
       }
     };
 
     window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+    channel?.addEventListener('message', handleChannelMessage);
+    
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      channel?.removeEventListener('message', handleChannelMessage);
+      channel?.close();
+    };
   }, [connections, finishAuth]);
 
   useEffect(() => {
     for (const connection of connections) {
-      const popupWindow = pendingPopupsRef.current.get(connection.sessionId);
-      if (!popupWindow) {
-        continue;
-      }
+      const popupWindow = pendingPopupsRef.current.get(connection.sessionId) || null;
 
-      if (connection.state === 'AUTHENTICATED') {
+      if (connection.state === 'AUTHENTICATED' || connection.state === 'READY' || connection.state === 'CONNECTED') {
         postPopupResult(popupWindow, {
           sessionId: connection.sessionId,
           success: true,
         });
+        for (const codeKey of processingCodesRef.current) {
+          if (codeKey.startsWith(`${connection.sessionId}:`)) {
+            processingCodesRef.current.delete(codeKey);
+          }
+        }
         pendingPopupsRef.current.delete(connection.sessionId);
         continue;
       }
@@ -206,6 +259,11 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
           success: false,
           error: connection.error || 'Failed to complete authorization',
         });
+        for (const codeKey of processingCodesRef.current) {
+          if (codeKey.startsWith(`${connection.sessionId}:`)) {
+            processingCodesRef.current.delete(codeKey);
+          }
+        }
         pendingPopupsRef.current.delete(connection.sessionId);
       }
     }
@@ -238,16 +296,13 @@ export function McpOAuthCallbackContent({
   const [phase, setPhase] = useState<'loading' | 'success' | 'error'>(debugPhase || 'loading');
   const [errorMessage, setErrorMessage] = useState('');
 
-  const openerMissing = typeof window !== 'undefined' ? !window.opener : false;
   const missingCode = !code;
   const missingSessionId = !sessionId;
-  const blockingError = openerMissing
-    ? 'Error: No opener window found. This window should be opened from the app.'
-    : missingCode
-      ? 'Error: No authorization code received.'
-      : missingSessionId
-        ? 'Error: No OAuth state received.'
-        : null;
+  const blockingError = missingCode
+    ? 'Error: No authorization code received.'
+    : missingSessionId
+      ? 'Error: No OAuth state received.'
+      : null;
 
   useEffect(() => {
     if (debugPhase) {
@@ -263,9 +318,9 @@ export function McpOAuthCallbackContent({
     }
 
     let closed = false;
-
+    const channel = createAuthBroadcastChannel();
     const handleResult = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) {
+      if (event.origin && event.origin !== window.location.origin) {
         return;
       }
 
@@ -280,6 +335,7 @@ export function McpOAuthCallbackContent({
       if (event.data.success) {
         setPhase('success');
         window.removeEventListener('message', handleResult);
+        channel?.close();
         closed = true;
         window.setTimeout(() => window.close(), 1200);
         return;
@@ -294,23 +350,27 @@ export function McpOAuthCallbackContent({
     };
 
     window.addEventListener('message', handleResult);
+    channel?.addEventListener('message', handleResult);
 
-    try {
-      window.opener.postMessage(
-        { type: AUTH_CODE_MESSAGE, code, sessionId },
-        window.location.origin
-      );
-    } catch (error) {
-      console.error('Failed to communicate with opener:', error);
-      window.setTimeout(() => {
+    const payload = { type: AUTH_CODE_MESSAGE, code, sessionId };
+
+    if (window.opener) {
+      try {
+        window.opener.postMessage(payload, window.location.origin);
+      } catch {
         setPhase('error');
         setErrorMessage('Error: Could not communicate with main window.');
-      }, 0);
+      }
+    }
+
+    if (channel) {
+      channel.postMessage(payload);
     }
 
     return () => {
       if (!closed) {
         window.removeEventListener('message', handleResult);
+        channel?.close();
       }
     };
   }, [blockingError, code, sessionId, debugPhase]);
