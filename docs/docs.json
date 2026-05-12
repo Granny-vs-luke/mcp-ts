@@ -91,6 +91,7 @@
                   "storage-backends/overview",
                   "storage-backends/redis",
                   "storage-backends/supabase",
+                  "storage-backends/sqlite",
                   "storage-backends/file-system",
                   "storage-backends/in-memory"
                 ]
