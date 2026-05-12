@@ -69,7 +69,12 @@ function postPopupResult(
     ...result,
   };
 
-  popupWindow?.postMessage(payload, window.location.origin);
+  try {
+    popupWindow?.postMessage(payload, window.location.origin);
+  } catch {
+    // COOP can leave a WindowProxy reference that is no longer usable.
+    // The BroadcastChannel path below is the reliable fallback.
+  }
 
   const channel = createAuthBroadcastChannel();
   if (channel) {
@@ -291,16 +296,13 @@ export function McpOAuthCallbackContent({
   const [phase, setPhase] = useState<'loading' | 'success' | 'error'>(debugPhase || 'loading');
   const [errorMessage, setErrorMessage] = useState('');
 
-  const openerMissing = typeof window !== 'undefined' ? !window.opener : false;
   const missingCode = !code;
   const missingSessionId = !sessionId;
-  const blockingError = openerMissing
-    ? 'Error: No opener window found. This window should be opened from the app.'
-    : missingCode
-      ? 'Error: No authorization code received.'
-      : missingSessionId
-        ? 'Error: No OAuth state received.'
-        : null;
+  const blockingError = missingCode
+    ? 'Error: No authorization code received.'
+    : missingSessionId
+      ? 'Error: No OAuth state received.'
+      : null;
 
   useEffect(() => {
     if (debugPhase) {

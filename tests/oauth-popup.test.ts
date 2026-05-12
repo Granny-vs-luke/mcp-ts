@@ -19,7 +19,7 @@ async function loadHarness(page: Page): Promise<void> {
     `
       import React, { useEffect, useState } from 'react';
       import { createRoot } from 'react-dom/client';
-      import { useMcpOAuthPopup } from ${JSON.stringify(popupSource)};
+      import { McpOAuthCallbackContent, useMcpOAuthPopup } from ${JSON.stringify(popupSource)};
 
       function Harness() {
         const [connections, setConnections] = useState(window.__initialConnections || []);
@@ -43,6 +43,11 @@ async function loadHarness(page: Page): Promise<void> {
       window.__renderOAuthHarness = (connections = []) => {
         window.__initialConnections = connections;
         createRoot(document.getElementById('root')).render(React.createElement(Harness));
+      };
+      window.__renderOAuthCallback = ({ code, sessionId }) => {
+        createRoot(document.getElementById('root')).render(
+          React.createElement(McpOAuthCallbackContent, { code, sessionId })
+        );
       };
     `
   );
@@ -168,9 +173,27 @@ async function captureAuthResults(page: Page): Promise<void> {
   );
 }
 
+async function captureAuthCodeMessages(page: Page): Promise<void> {
+  await page.evaluate(
+    ({ channelName }) => {
+      window.__authCodeMessages = [];
+
+      const channel = new BroadcastChannel(channelName);
+      channel.addEventListener('message', (event) => {
+        if (event.data?.type === 'MCP_AUTH_CODE') {
+          window.__authCodeMessages.push(event.data);
+        }
+      });
+      window.__authCodeChannel = channel;
+    },
+    { channelName: authChannelName }
+  );
+}
+
 test.describe('useMcpOAuthPopup', () => {
   test.afterEach(async ({ page }) => {
     await page.evaluate(() => {
+      window.__authCodeChannel?.close();
       window.__authResultChannel?.close();
     }).catch(() => undefined);
   });
@@ -289,13 +312,43 @@ test.describe('useMcpOAuthPopup', () => {
   });
 });
 
+test.describe('McpOAuthCallbackContent', () => {
+  test.afterEach(async ({ page }) => {
+    await page.evaluate(() => {
+      window.__authCodeChannel?.close();
+      window.__authResultChannel?.close();
+    }).catch(() => undefined);
+  });
+
+  test('broadcasts the auth code when COOP removes the opener reference', async ({ page }) => {
+    await loadHarness(page);
+    await captureAuthCodeMessages(page);
+
+    await page.evaluate(() => {
+      window.__renderOAuthCallback({ code: 'code-without-opener', sessionId: 'session-without-opener' });
+    });
+
+    await expect.poll(() => page.evaluate(() => window.__authCodeMessages.length)).toBe(1);
+    await expect(page.evaluate(() => window.__authCodeMessages)).resolves.toEqual([
+      {
+        type: 'MCP_AUTH_CODE',
+        code: 'code-without-opener',
+        sessionId: 'session-without-opener',
+      },
+    ]);
+  });
+});
+
 declare global {
   interface Window {
+    __authCodeChannel?: BroadcastChannel;
+    __authCodeMessages: Array<{ type: string; sessionId?: string; code?: string }>;
     __authResultChannel?: BroadcastChannel;
     __authResults: Array<{ type: string; sessionId?: string; success: boolean; error?: string }>;
     __finishAuthErrorMessage?: string;
     __finishAuthCalls: Array<{ sessionId: string; code: string }>;
     __initialConnections?: Array<{ sessionId: string; state: string }>;
+    __renderOAuthCallback: (props: { code?: string | null; sessionId?: string | null }) => void;
     __renderOAuthHarness: (connections?: Array<{ sessionId: string; state: string }>) => void;
     __setConnections: (connections: Array<{ sessionId: string; state: string }>) => void;
   }
