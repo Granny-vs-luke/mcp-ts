@@ -6,6 +6,19 @@ import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 
 const AUTH_CODE_MESSAGE = "MCP_AUTH_CODE";
 const AUTH_RESULT_MESSAGE = "MCP_AUTH_RESULT";
+const AUTH_CHANNEL_NAME = "mcp-auth-channel";
+
+function createAuthBroadcastChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === "undefined") {
+    return null;
+  }
+
+  try {
+    return new BroadcastChannel(AUTH_CHANNEL_NAME);
+  } catch {
+    return null;
+  }
+}
 
 function PopupCallbackContent() {
   const searchParams = useSearchParams();
@@ -15,67 +28,64 @@ function PopupCallbackContent() {
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const openerMissing = typeof window !== "undefined" ? !window.opener : false;
-  const missingCode = !code;
-  const missingSessionId = !sessionId;
-  const blockingError = openerMissing
-    ? "No opener window found. This window should be opened from the app."
-    : missingCode
-    ? "No authorization code received."
-    : missingSessionId
-    ? "No OAuth state received."
-    : null;
+  const resolvedSessionId = sessionId || searchParams.get("sessionId");
 
   useEffect(() => {
-    if (blockingError) {
-      setStatus("error");
-      setErrorMessage(blockingError);
+    if (!code || !resolvedSessionId) {
+      if (!code || !resolvedSessionId) {
+        setStatus("error");
+        setErrorMessage("Missing required OAuth parameters.");
+      }
       return;
     }
 
     let closed = false;
 
     const handleResult = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
+      if (event.origin && event.origin !== window.location.origin) return;
       if (event.data?.type !== AUTH_RESULT_MESSAGE) return;
-      if (event.data.sessionId !== sessionId) return;
+      if (event.data.sessionId !== resolvedSessionId) return;
 
       if (event.data.success) {
         setStatus("success");
-        window.removeEventListener("message", handleResult);
         closed = true;
         window.setTimeout(() => window.close(), 1200);
-        return;
+      } else if (!closed) {
+        setStatus("error");
+        setErrorMessage(event.data.error || "Authentication failed");
       }
-
-      setStatus("error");
-      setErrorMessage(
-        typeof event.data.error === "string" && event.data.error.length > 0
-          ? event.data.error
-          : "Failed to complete authorization."
-      );
     };
 
+    const channel = createAuthBroadcastChannel();
+    channel?.addEventListener("message", handleResult);
     window.addEventListener("message", handleResult);
 
-    try {
-      window.opener.postMessage(
-        { type: AUTH_CODE_MESSAGE, code, sessionId },
-        window.location.origin
-      );
-    } catch {
-      window.setTimeout(() => {
+    const payload = { type: AUTH_CODE_MESSAGE, code, sessionId: resolvedSessionId, state: resolvedSessionId };
+
+    if (window.opener) {
+      try {
+        window.opener.postMessage(payload, window.location.origin);
+      } catch {
         setStatus("error");
-        setErrorMessage("Could not communicate with main window. Please close this window and try again.");
-      }, 0);
+        setErrorMessage("Could not communicate with main window.");
+      }
     }
 
-    return () => {
+    channel?.postMessage(payload);
+
+    const timeout = window.setTimeout(() => {
       if (!closed) {
-        window.removeEventListener("message", handleResult);
+        setStatus("error");
+        setErrorMessage("Could not confirm authorization. Please return to the main window and try again.");
       }
+    }, 30000);
+
+    return () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener("message", handleResult);
+      channel?.close();
     };
-  }, [blockingError, code, sessionId]);
+  }, [code, resolvedSessionId]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50/50 text-gray-900 font-sans p-4">
