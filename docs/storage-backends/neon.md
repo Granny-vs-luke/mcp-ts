@@ -46,6 +46,19 @@ GRANT USAGE ON SEQUENCES TO mcp_service_role;
 
 For strongest transport security, prefer `sslmode=verify-full`. Add `channel_binding=require` when supported by your runtime and connection path. Do not log or commit Neon connection strings; store them in your deployment environment variables.
 
+### Optional RLS configuration
+
+The install migration includes an optional RLS block at the bottom. The base schema does not require RLS. If you want to enforce access through Row Level Security for the dedicated app role, create `mcp_service_role`, then uncomment and run the RLS block from the migration.
+
+The optional block:
+
+- Revokes public access to `public.mcp_sessions`.
+- Grants read/write access to `mcp_service_role`.
+- Enables Row Level Security on the table.
+- Adds a policy that allows the server-side `mcp_service_role` to perform storage operations.
+
+This optional block limits table access to the dedicated backend role. The Neon storage backend is intended for server-side use, and session access is scoped by `identity` in application queries.
+
 ## Schema
 
 The canonical Neon migration is available at `migrations/neon/20260513010000_install_mcp_sessions.sql`.
@@ -54,8 +67,6 @@ Run it with an owner/admin role, then connect the application using the least-pr
 Create the `mcp_sessions` table in your Neon database:
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id TEXT NOT NULL UNIQUE,
@@ -90,6 +101,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_mcp_sessions_updated_at ON public.mcp_sessions;
+
 CREATE TRIGGER trg_mcp_sessions_updated_at
 BEFORE UPDATE ON public.mcp_sessions
 FOR EACH ROW
@@ -119,4 +131,11 @@ await storage.init();
 
 ## Cleanup
 
-Expired sessions are removed when `storage.cleanupExpiredSessions()` runs. Schedule that call from your application or platform cron if you want automatic cleanup.
+Expired sessions are removed when `storage.cleanupExpiredSessions()` runs. Schedule that call from your application or platform cron if you want cleanup without database cron support.
+
+If your Neon project has `pg_cron` enabled, you can also run the optional migration at `migrations/neon/20260513020000_add_session_cleanup_cron.sql`. Neon requires endpoint-level `cron.database_name` configuration before `pg_cron` can be installed and used. After that setup, the migration schedules:
+
+- `mcp-cleanup-transient-sessions`: every 5 minutes, removes inactive expired sessions.
+- `mcp-cleanup-dormant-sessions`: daily at midnight UTC, removes active sessions untouched for 30+ days.
+
+If `pg_cron` is not enabled for your Neon project, skip the optional migration and use application/platform scheduling instead.

@@ -2,7 +2,9 @@
 -- This is idempotent and safe to run multiple times.
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Stage 1: Short-term Transient Purge (every 5 minutes)
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Targets sessions that are NOT active (failed connections, abandoned OAuth
 -- flows, mid-flow errors) whose TTL has expired. Active sessions are explicitly
 -- excluded from this sweep to preserve automation credentials.
@@ -14,7 +16,9 @@ SELECT cron.schedule(
     $$DELETE FROM public.mcp_sessions WHERE expires_at < now() AND active IS NOT TRUE;$$
 );
 
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Stage 2: Long-term Dormancy Eviction (daily at midnight UTC)
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Safety net for sessions that were successfully established (active = true)
 -- but have been completely untouched for 30+ days. This prevents "active"
 -- records from persisting indefinitely if they are genuinely abandoned.

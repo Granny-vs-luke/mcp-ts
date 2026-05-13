@@ -56,6 +56,12 @@ You can easily "eject" the required migration SQL into your own project using th
 ### Option B: SQL Editor (Manual)
 If you prefer manual setup, copy the SQL from the [migration file](https://github.com/zonlabs/mcp-ts/blob/main/migrations/supabase/20260330195700_install_mcp_sessions.sql) and run it in the Supabase Dashboard SQL Editor.
 
+### Why RLS ?
+
+`mcp-ts` uses the `service_role` key for server-side Supabase storage, and that key bypasses RLS. Session access is still scoped by `identity` in application queries.
+
+The migration also defines RLS policies for Supabase's authenticated client path. If the `mcp_sessions` table is queried through that path, the policies use `auth.uid()` to ensure users can only access rows where `user_id` or `identity` matches their Supabase user ID.
+
 ## Features
 
 - **PostgreSQL persistence** with JSONB support

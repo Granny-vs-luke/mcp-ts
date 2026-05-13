@@ -1,6 +1,5 @@
 -- Create the mcp_sessions table for Neon Postgres.
 -- Run this with an owner/admin role, then grant app access with the least-privilege SQL below.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -36,12 +35,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_mcp_sessions_updated_at ON public.mcp_sessions;
+
 CREATE TRIGGER trg_mcp_sessions_updated_at
 BEFORE UPDATE ON public.mcp_sessions
 FOR EACH ROW
 EXECUTE FUNCTION public.set_current_timestamp_updated_at();
 
--- Optional production hardening:
+-- Optional production configuration:
 -- Create a dedicated app role and use its credentials in NEON_DATABASE_URL.
 -- Replace neondb and the password before running.
 --
@@ -50,3 +50,22 @@ EXECUTE FUNCTION public.set_current_timestamp_updated_at();
 -- GRANT USAGE ON SCHEMA public TO mcp_service_role;
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON public.mcp_sessions TO mcp_service_role;
 -- GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO mcp_service_role;
+
+-- Optional RLS configuration:
+-- Uncomment and run this block after creating mcp_service_role if you want
+-- to enforce access through Row Level Security for the dedicated app role.
+--
+-- REVOKE ALL ON public.mcp_sessions FROM PUBLIC;
+-- REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC;
+--
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON public.mcp_sessions TO mcp_service_role;
+-- GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO mcp_service_role;
+--
+-- ALTER TABLE public.mcp_sessions ENABLE ROW LEVEL SECURITY;
+--
+-- CREATE POLICY mcp_service_role_full_access
+-- ON public.mcp_sessions
+-- FOR ALL
+-- TO mcp_service_role
+-- USING (true)
+-- WITH CHECK (true);
