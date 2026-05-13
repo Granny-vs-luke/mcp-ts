@@ -18,12 +18,15 @@ graph TD
     D -->|Yes| E[Use Redis]
     D -->|No| F{SUPABASE_URL present?}
     F -->|Yes| G[Use Supabase]
-    F -->|No| H{MCP_TS_STORAGE_FILE present?}
+    F -->|No| N{NEON_DATABASE_URL present?}
     
     C --> L[Storage Ready]
     E --> L
     G --> L
+    N -->|Yes| O[Use Neon]
+    O --> L
     
+    N -->|No| H{MCP_TS_STORAGE_FILE present?}
     H -->|Yes| I[Use File System]
     H -->|No| J{MCP_TS_STORAGE_SQLITE_PATH present?}
     
@@ -40,21 +43,22 @@ graph TD
 1. **Explicit**: If `MCP_TS_STORAGE_TYPE` is set, use that backend
 2. **Auto-detect Redis**: If `REDIS_URL` is present, use Redis
 3. **Auto-detect Supabase**: If `SUPABASE_URL` is present, use Supabase
-4. **Auto-detect File**: If `MCP_TS_STORAGE_FILE` is present, use File
-5. **Auto-detect SQLite**: If `MCP_TS_STORAGE_SQLITE_PATH` is present, use SQLite
-6. **Default**: Fall back to In-Memory storage
+4. **Auto-detect Neon**: If `NEON_DATABASE_URL` is present, use Neon
+5. **Auto-detect File**: If `MCP_TS_STORAGE_FILE` is present, use File
+6. **Auto-detect SQLite**: If `MCP_TS_STORAGE_SQLITE_PATH` is present, use SQLite
+7. **Default**: Fall back to In-Memory storage
 
 ## Backend Comparison
 
-| Feature | Redis | Supabase | SQLite | File System | In-Memory |
-|---------|----------|----------|----------|----------------|--------------|
-| **Persistence** | Yes | Yes | Yes | Yes | No |
-| **Distributed** | Yes | Yes | No | No | No |
-| **Auto-Expiry** | Yes (TTL) | Yes (Manual) | Yes (Manual) | No | No |
-| **Performance** | Fast | Fast | Very Fast | Medium | Fastest |
-| **Setup** | External | Cloud | Native | Built-in | Built-in |
-| **Serverless** | Yes | Recommended | Limited | No | Yes |
-| **Production** | Recommended | Recommended | Single-instance | Not recommended | Not recommended |
+| Feature | Redis | Supabase | Neon | SQLite | File System | In-Memory |
+|---------|----------|----------|----------|----------|----------------|--------------|
+| **Persistence** | Yes | Yes | Yes | Yes | Yes | No |
+| **Distributed** | Yes | Yes | Yes | No | No | No |
+| **Auto-Expiry** | Yes (TTL) | Yes (Manual) | Yes (Manual) | Yes (Manual) | No | No |
+| **Performance** | Fast | Fast | Fast | Very Fast | Medium | Fastest |
+| **Setup** | External | Cloud | Cloud | Native | Built-in | Built-in |
+| **Serverless** | Yes | Recommended | Recommended | Limited | No | Yes |
+| **Production** | Recommended | Recommended | Recommended | Single-instance | Not recommended | Not recommended |
 
 ## Custom Backend Implementation
 
@@ -64,9 +68,11 @@ You can use specific storage backends directly:
 import { 
   RedisStorageBackend,
   MemoryStorageBackend,
-  FileStorageBackend 
+  FileStorageBackend,
+  NeonStorageBackend
 } from '@mcp-ts/sdk/server';
 import { Redis } from 'ioredis';
+import { neon } from '@neondatabase/serverless';
 
 // Custom Redis instance
 const redis = new Redis({
@@ -81,6 +87,11 @@ const fileStorage = new FileStorageBackend({
   path: '/var/data/sessions.json' 
 });
 await fileStorage.init();
+
+// Custom Neon query function
+const sql = neon(process.env.NEON_DATABASE_URL!);
+const neonStorage = new NeonStorageBackend(sql);
+await neonStorage.init();
 
 // In-memory for testing
 const memoryStorage = new MemoryStorageBackend();

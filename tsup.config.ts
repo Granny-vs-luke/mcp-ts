@@ -32,6 +32,7 @@ export default defineConfig({
     'vue',
     'ioredis',
     '@modelcontextprotocol/sdk',
+    '@neondatabase/serverless',
     'fs',
     'path',
     'rxjs',

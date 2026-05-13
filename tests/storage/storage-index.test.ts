@@ -9,6 +9,7 @@ test.describe('storage index bootstrap', () => {
         MCP_TS_STORAGE_TYPE: process.env.MCP_TS_STORAGE_TYPE,
         MCP_TS_STORAGE_SQLITE_PATH: process.env.MCP_TS_STORAGE_SQLITE_PATH,
         MCP_TS_STORAGE_FILE: process.env.MCP_TS_STORAGE_FILE,
+        NEON_DATABASE_URL: process.env.NEON_DATABASE_URL,
         REDIS_URL: process.env.REDIS_URL,
     };
 
@@ -19,6 +20,7 @@ test.describe('storage index bootstrap', () => {
         _setStorageInstanceForTesting(null);
         delete process.env.REDIS_URL;
         delete process.env.MCP_TS_STORAGE_FILE;
+        delete process.env.NEON_DATABASE_URL;
     });
 
     test.afterEach(async () => {
@@ -32,6 +34,7 @@ test.describe('storage index bootstrap', () => {
         process.env.MCP_TS_STORAGE_TYPE = originalEnv.MCP_TS_STORAGE_TYPE;
         process.env.MCP_TS_STORAGE_SQLITE_PATH = originalEnv.MCP_TS_STORAGE_SQLITE_PATH;
         process.env.MCP_TS_STORAGE_FILE = originalEnv.MCP_TS_STORAGE_FILE;
+        process.env.NEON_DATABASE_URL = originalEnv.NEON_DATABASE_URL;
         process.env.REDIS_URL = originalEnv.REDIS_URL;
 
         for (const suffix of ['', '-journal', '-shm', '-wal']) {
@@ -48,6 +51,21 @@ test.describe('storage index bootstrap', () => {
 
         const session = createMockSession({
             sessionId: 'sqlite-bootstrap-session',
+            transportType: 'streamable_http',
+        });
+
+        await storage.createSession(session);
+
+        const retrieved = await storage.getSession(session.identity, session.sessionId);
+        expect(retrieved?.sessionId).toBe(session.sessionId);
+        expect(retrieved?.transportType).toBe('streamable_http');
+    });
+
+    test('falls back to memory when explicit neon selection has no connection string', async () => {
+        process.env.MCP_TS_STORAGE_TYPE = 'neon';
+
+        const session = createMockSession({
+            sessionId: 'neon-fallback-session',
             transportType: 'streamable_http',
         });
 
