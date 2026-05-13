@@ -71,7 +71,7 @@
   "files": [
     "dist",
     "src",
-    "supabase",
+    "migrations",
     "README.md",
     "LICENSE"
   ],

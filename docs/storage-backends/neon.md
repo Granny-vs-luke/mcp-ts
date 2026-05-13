@@ -30,23 +30,26 @@ Use a pooled Neon connection string for serverless deployments when your app may
 Create a dedicated application role instead of using the Neon owner/admin role in production. The role only needs to connect to the database and read/write the `mcp_sessions` table.
 
 ```sql
-CREATE ROLE mcp_ts_app LOGIN PASSWORD 'replace-with-a-strong-password';
+CREATE ROLE mcp_service_role LOGIN PASSWORD 'replace-with-a-strong-password';
 
-GRANT CONNECT ON DATABASE neondb TO mcp_ts_app;
-GRANT USAGE ON SCHEMA public TO mcp_ts_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.mcp_sessions TO mcp_ts_app;
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO mcp_ts_app;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO mcp_ts_app;
+GRANT CONNECT ON DATABASE neondb TO mcp_service_role;
+GRANT USAGE ON SCHEMA public TO mcp_service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.mcp_sessions TO mcp_service_role;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO mcp_service_role;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT USAGE ON SEQUENCES TO mcp_ts_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO mcp_service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT USAGE ON SEQUENCES TO mcp_service_role;
 ```
 
 For strongest transport security, prefer `sslmode=verify-full`. Add `channel_binding=require` when supported by your runtime and connection path. Do not log or commit Neon connection strings; store them in your deployment environment variables.
 
 ## Schema
+
+The canonical Neon migration is available at `migrations/neon/20260513010000_install_mcp_sessions.sql`.
+Run it with an owner/admin role, then connect the application using the least-privilege role from the Security section.
 
 Create the `mcp_sessions` table in your Neon database:
 

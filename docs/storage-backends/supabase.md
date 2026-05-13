@@ -45,7 +45,7 @@ You can easily "eject" the required migration SQL into your own project using th
    ```bash
    npx mcp-ts supabase-init
    ```
-   This will copy the migration files to your local `./supabase/migrations/` folder.
+   This copies the provider migrations from `migrations/supabase/` in the package to your local `./supabase/migrations/` folder.
 
 2. Link your project & push:
    ```bash
@@ -54,7 +54,7 @@ You can easily "eject" the required migration SQL into your own project using th
    ```
 
 ### Option B: SQL Editor (Manual)
-If you prefer manual setup, copy the SQL from the [migration file](https://github.com/zonlabs/mcp-ts/blob/main/supabase/migrations/20260330195700_install_mcp_sessions.sql) and run it in the Supabase Dashboard SQL Editor.
+If you prefer manual setup, copy the SQL from the [migration file](https://github.com/zonlabs/mcp-ts/blob/main/migrations/supabase/20260330195700_install_mcp_sessions.sql) and run it in the Supabase Dashboard SQL Editor.
 
 ## Features
 
