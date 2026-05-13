@@ -20,6 +20,26 @@ export function createNeonStorageBackend(sql: any, options?: NeonStorageOptions)
     return new NeonStorageBackend(sql, options);
 }
 
+function warnIfNeonConnectionStringIsInsecure(connectionString: string): void {
+    try {
+        const url = new URL(connectionString);
+        const sslMode = url.searchParams.get('sslmode');
+        const channelBinding = url.searchParams.get('channel_binding');
+
+        if (!sslMode) {
+            console.warn('[mcp-ts][Storage] Neon connection string does not include sslmode. Neon recommends sslmode=verify-full for the strongest certificate verification.');
+        } else if (!['verify-full', 'require'].includes(sslMode)) {
+            console.warn(`[mcp-ts][Storage] Neon connection string uses sslmode=${sslMode}. Use sslmode=verify-full or sslmode=require for secure connections.`);
+        }
+
+        if (!channelBinding) {
+            console.warn('[mcp-ts][Storage] Neon connection string does not include channel_binding=require. Add it when supported by your runtime and connection path.');
+        }
+    } catch {
+        console.warn('[mcp-ts][Storage] Neon connection string could not be parsed for SSL checks.');
+    }
+}
+
 let storageInstance: StorageBackend | null = null;
 let storagePromise: Promise<StorageBackend> | null = null;
 
@@ -93,6 +113,7 @@ async function createStorage(): Promise<StorageBackend> {
         } else {
             try {
                 const { neon } = await import('@neondatabase/serverless');
+                warnIfNeonConnectionStringIsInsecure(connectionString);
                 const sql = neon(connectionString);
                 console.log('[mcp-ts][Storage] Explicit selection: "neon"');
                 return await initializeStorage(new NeonStorageBackend(sql));
@@ -153,6 +174,7 @@ async function createStorage(): Promise<StorageBackend> {
     if (process.env.NEON_DATABASE_URL) {
         try {
             const { neon } = await import('@neondatabase/serverless');
+            warnIfNeonConnectionStringIsInsecure(process.env.NEON_DATABASE_URL);
             const sql = neon(process.env.NEON_DATABASE_URL);
             console.log('[mcp-ts][Storage] Auto-detection: "neon" (via NEON_DATABASE_URL)');
             return await initializeStorage(new NeonStorageBackend(sql));

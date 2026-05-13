@@ -18,16 +18,41 @@ npm install @neondatabase/serverless
 
 ```bash
 MCP_TS_STORAGE_TYPE=neon
-NEON_DATABASE_URL=postgresql://user:password@host.neon.tech/dbname?sslmode=require
+NEON_DATABASE_URL=postgresql://user:password@host.neon.tech/dbname?sslmode=verify-full&channel_binding=require
 ```
 
 `DATABASE_URL` is also supported when `MCP_TS_STORAGE_TYPE=neon` is set. Auto-detection only uses `NEON_DATABASE_URL` so a generic `DATABASE_URL` does not unexpectedly change the selected storage backend.
+
+Use a pooled Neon connection string for serverless deployments when your app may create many concurrent function instances. Neon integrations commonly expose pooled URLs through `DATABASE_URL`; direct/unpooled URLs are better reserved for migrations and long-running administrative work.
+
+## Security
+
+Create a dedicated application role instead of using the Neon owner/admin role in production. The role only needs to connect to the database and read/write the `mcp_sessions` table.
+
+```sql
+CREATE ROLE mcp_ts_app LOGIN PASSWORD 'replace-with-a-strong-password';
+
+GRANT CONNECT ON DATABASE neondb TO mcp_ts_app;
+GRANT USAGE ON SCHEMA public TO mcp_ts_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.mcp_sessions TO mcp_ts_app;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO mcp_ts_app;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO mcp_ts_app;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT USAGE ON SEQUENCES TO mcp_ts_app;
+```
+
+For strongest transport security, prefer `sslmode=verify-full`. Add `channel_binding=require` when supported by your runtime and connection path. Do not log or commit Neon connection strings; store them in your deployment environment variables.
 
 ## Schema
 
 Create the `mcp_sessions` table in your Neon database:
 
 ```sql
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id TEXT NOT NULL UNIQUE,

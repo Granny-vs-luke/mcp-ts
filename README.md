@@ -351,7 +351,7 @@ The library supports multiple storage backends. You can explicitly select one us
 3.  **Neon** (Serverless Postgres)
     ```bash
     MCP_TS_STORAGE_TYPE=neon
-    NEON_DATABASE_URL=postgresql://user:password@host.neon.tech/dbname?sslmode=require
+    NEON_DATABASE_URL=postgresql://user:password@host.neon.tech/dbname?sslmode=verify-full&channel_binding=require
     ```
 
 4.  **<img src="docs/images/storage-backend/filesystem.svg" width="20" height="20" align="center" /> File System** (Great for local dev)
