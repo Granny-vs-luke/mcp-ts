@@ -331,7 +331,7 @@ Full documentation is available at: **[Docs](https://docs.mcp-assistant.in/)**
 
 The library supports multiple storage backends. You can explicitly select one using `MCP_TS_STORAGE_TYPE` or rely on automatic detection.
 
-**Supported Types:** `redis`, `sqlite`, `file`, `memory`.
+**Supported Types:** `redis`, `supabase`, `neon`, `sqlite`, `file`, `memory`.
 
 ### 🧷 Configuration Examples
 
@@ -348,13 +348,19 @@ The library supports multiple storage backends. You can explicitly select one us
     MCP_TS_STORAGE_SQLITE_PATH=./sessions.db
     ```
 
-3.  **<img src="docs/images/storage-backend/filesystem.svg" width="20" height="20" align="center" /> File System** (Great for local dev)
+3.  **Neon** (Serverless Postgres)
+    ```bash
+    MCP_TS_STORAGE_TYPE=neon
+    NEON_DATABASE_URL=postgresql://user:password@host.neon.tech/dbname?sslmode=verify-full&channel_binding=require
+    ```
+
+4.  **<img src="docs/images/storage-backend/filesystem.svg" width="20" height="20" align="center" /> File System** (Great for local dev)
     ```bash
     MCP_TS_STORAGE_TYPE=file
     MCP_TS_STORAGE_FILE=./sessions.json
     ```
 
-4.  **<img src="docs/images/storage-backend/memory.svg" width="20" height="20" align="center" /> In-Memory** (Default for testing)
+5.  **<img src="docs/images/storage-backend/memory.svg" width="20" height="20" align="center" /> In-Memory** (Default for testing)
     ```bash
     MCP_TS_STORAGE_TYPE=memory
     ```

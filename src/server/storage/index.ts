@@ -4,15 +4,40 @@ import { MemoryStorageBackend } from './memory-backend';
 import { FileStorageBackend } from './file-backend';
 import { SqliteStorage } from './sqlite-backend.js';
 import { SupabaseStorageBackend } from './supabase-backend.js';
+import { NeonStorageBackend, type NeonStorageOptions } from './neon-backend.js';
 import type { StorageBackend } from './types.js';
 
 // Re-export types
 export * from './types.js';
 export { generateSessionId } from '../../shared/utils.js';
-export { RedisStorageBackend, MemoryStorageBackend, FileStorageBackend, SqliteStorage, SupabaseStorageBackend };
+export { RedisStorageBackend, MemoryStorageBackend, FileStorageBackend, SqliteStorage, SupabaseStorageBackend, NeonStorageBackend };
 
 export function createSupabaseStorageBackend(client: any): SupabaseStorageBackend {
     return new SupabaseStorageBackend(client);
+}
+
+export function createNeonStorageBackend(sql: any, options?: NeonStorageOptions): NeonStorageBackend {
+    return new NeonStorageBackend(sql, options);
+}
+
+function warnIfNeonConnectionStringIsInsecure(connectionString: string): void {
+    try {
+        const url = new URL(connectionString);
+        const sslMode = url.searchParams.get('sslmode');
+        const channelBinding = url.searchParams.get('channel_binding');
+
+        if (!sslMode) {
+            console.warn('[mcp-ts][Storage] Neon connection string does not include sslmode. Neon recommends sslmode=verify-full for the strongest certificate verification.');
+        } else if (!['verify-full', 'require'].includes(sslMode)) {
+            console.warn(`[mcp-ts][Storage] Neon connection string uses sslmode=${sslMode}. Use sslmode=verify-full or sslmode=require for secure connections.`);
+        }
+
+        if (!channelBinding) {
+            console.warn('[mcp-ts][Storage] Neon connection string does not include channel_binding=require. Add it when supported by your runtime and connection path.');
+        }
+    } catch {
+        console.warn('[mcp-ts][Storage] Neon connection string could not be parsed for SSL checks.');
+    }
 }
 
 let storageInstance: StorageBackend | null = null;
@@ -80,6 +105,26 @@ async function createStorage(): Promise<StorageBackend> {
         }
     }
 
+    if (type === 'neon') {
+        const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL;
+
+        if (!connectionString) {
+            console.warn('[mcp-ts][Storage] Explicit selection "neon" requires NEON_DATABASE_URL or DATABASE_URL.');
+        } else {
+            try {
+                const { neon } = await import('@neondatabase/serverless');
+                warnIfNeonConnectionStringIsInsecure(connectionString);
+                const sql = neon(connectionString);
+                console.log('[mcp-ts][Storage] Explicit selection: "neon"');
+                return await initializeStorage(new NeonStorageBackend(sql));
+            } catch (error: any) {
+                console.error('[mcp-ts][Storage] Failed to initialize Neon:', error.message);
+                console.log('[mcp-ts][Storage] Falling back to In-Memory storage');
+                return await initializeStorage(new MemoryStorageBackend());
+            }
+        }
+    }
+
     if (type === 'memory') {
         console.log('[mcp-ts][Storage] Explicit selection: "memory"');
         return await initializeStorage(new MemoryStorageBackend());
@@ -123,6 +168,18 @@ async function createStorage(): Promise<StorageBackend> {
             return await initializeStorage(new SupabaseStorageBackend(client as any));
         } catch (error: any) {
             console.error('[mcp-ts][Storage] Supabase auto-detection failed:', error.message);
+        }
+    }
+
+    if (process.env.NEON_DATABASE_URL) {
+        try {
+            const { neon } = await import('@neondatabase/serverless');
+            warnIfNeonConnectionStringIsInsecure(process.env.NEON_DATABASE_URL);
+            const sql = neon(process.env.NEON_DATABASE_URL);
+            console.log('[mcp-ts][Storage] Auto-detection: "neon" (via NEON_DATABASE_URL)');
+            return await initializeStorage(new NeonStorageBackend(sql));
+        } catch (error: any) {
+            console.error('[mcp-ts][Storage] Neon auto-detection failed:', error.message);
         }
     }
 

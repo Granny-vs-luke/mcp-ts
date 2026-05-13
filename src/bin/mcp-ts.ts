@@ -35,7 +35,10 @@ async function initSupabase() {
     // The supabase/ migrations are at the root of the package.
     // We need to look up two levels to find 'supabase' folder in the package.
     const pkgRoot = path.resolve(__dirname, '../..');
-    const sourceDir = path.join(pkgRoot, 'supabase', 'migrations');
+    const sourceDir = resolveFirstExistingPath([
+        path.join(pkgRoot, 'migrations', 'supabase'),
+        path.join(pkgRoot, 'supabase', 'migrations'),
+    ]);
     
     if (!fs.existsSync(sourceDir)) {
         console.error(`❌ Error: Could not find migration files in package at: ${sourceDir}`);
@@ -94,6 +97,10 @@ async function initSupabase() {
         console.error(`❌ Error initializing Supabase: ${error.message}`);
         process.exit(1);
     }
+}
+
+function resolveFirstExistingPath(paths: string[]): string {
+    return paths.find(candidate => fs.existsSync(candidate)) || paths[0];
 }
 
 run().catch(err => {
