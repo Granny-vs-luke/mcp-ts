@@ -115,12 +115,12 @@ export class FileStorageBackend implements StorageBackend {
         return this.memoryCache!.get(sessionKey) || null;
     }
 
-    async getIdentitySessionsData(identity: string): Promise<SessionData[]> {
+    async getUserSession(identity: string): Promise<SessionData[]> {
         await this.ensureInitialized();
         return Array.from(this.memoryCache!.values()).filter(s => s.identity === identity);
     }
 
-    async getIdentityMcpSessions(identity: string): Promise<string[]> {
+    async getUserSessionIds(identity: string): Promise<string[]> {
         await this.ensureInitialized();
         return Array.from(this.memoryCache!.values())
             .filter(s => s.identity === identity)

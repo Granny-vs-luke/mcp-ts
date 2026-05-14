@@ -54,7 +54,7 @@ test.describe('MCPClient.getMcpServerConfig', () => {
 
         // Mock storage
         const mockStorage = new MemoryStorageBackend();
-        mockStorage.getIdentitySessionsData = async (id: string) => {
+        mockStorage.getUserSession = async (id: string) => {
             if (id === identity) return [session1, session2] as any;
             return [];
         };
@@ -90,7 +90,7 @@ test.describe('MCPClient.getMcpServerConfig', () => {
 
         // Mock storage
         const mockStorage = new MemoryStorageBackend();
-        mockStorage.getIdentitySessionsData = async (id: string) => {
+        mockStorage.getUserSession = async (id: string) => {
             return [session1] as any;
         };
         mockStorage.removeSession = async (id: string, sId: string) => {

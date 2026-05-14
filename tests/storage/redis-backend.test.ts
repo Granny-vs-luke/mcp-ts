@@ -123,7 +123,7 @@ test.describe('RedisStorageBackend', () => {
         });
     });
 
-    test.describe('getIdentitySessionsData', () => {
+    test.describe('getUserSession', () => {
         test('should return all sessions for an identity', async () => {
             const identity = 'test-user';
             const session1 = createMockSession({ sessionId: 'session-1', identity });
@@ -132,7 +132,7 @@ test.describe('RedisStorageBackend', () => {
             await storage.createSession(session1);
             await storage.createSession(session2);
 
-            const sessions = await storage.getIdentitySessionsData(identity);
+            const sessions = await storage.getUserSession(identity);
 
             expect(sessions.length).toBe(2);
             expect(sessions.map(s => s.sessionId)).toContain('session-1');
@@ -140,7 +140,7 @@ test.describe('RedisStorageBackend', () => {
         });
 
         test('should return empty array for identity with no sessions', async () => {
-            const sessions = await storage.getIdentitySessionsData('unknown-identity');
+            const sessions = await storage.getUserSession('unknown-identity');
             expect(sessions).toEqual([]);
         });
 
@@ -150,7 +150,7 @@ test.describe('RedisStorageBackend', () => {
 
             await redis.del(`mcp:session:${session.identity}:${session.sessionId}`);
 
-            const sessions = await storage.getIdentitySessionsData(session.identity);
+            const sessions = await storage.getUserSession(session.identity);
             const indexedSessionIds = await redis.smembers(`mcp:identity:${session.identity}:sessions`);
 
             expect(sessions).toEqual([]);
@@ -177,7 +177,7 @@ test.describe('RedisStorageBackend', () => {
 
             await storage.clearAll();
 
-            const sessionIds = await storage.getIdentityMcpSessions(session.identity);
+            const sessionIds = await storage.getUserSessionIds(session.identity);
             const indexedSessionIds = await redis.smembers(`mcp:identity:${session.identity}:sessions`);
 
             expect(sessionIds).toEqual([]);

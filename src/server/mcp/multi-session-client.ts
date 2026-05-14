@@ -74,7 +74,7 @@ export class MultiSessionClient {
      * for backwards compatibility.
      */
     private async getActiveSessions(): Promise<SessionData[]> {
-        const sessions = await storage.getIdentitySessionsData(this.identity);
+        const sessions = await storage.getUserSession(this.identity);
         const valid = sessions.filter(s =>
             s.serverId &&
             s.serverUrl &&

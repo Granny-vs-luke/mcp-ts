@@ -305,13 +305,13 @@ test.describe('SupabaseStorageBackend', () => {
 
             await storage.removeSession(identity, 's1');
 
-            const remaining = await storage.getIdentityMcpSessions(identity);
+            const remaining = await storage.getUserSessionIds(identity);
             expect(remaining).toEqual(['s2']);
         });
     });
 
-    // ── getIdentitySessionsData ──────────────────────────────────────────────
-    test.describe('getIdentitySessionsData', () => {
+    // ── getUserSession ──────────────────────────────────────────────
+    test.describe('getUserSession', () => {
         test('returns all full SessionData objects for the identity', async () => {
             const identity = 'owner';
             await storage.createSession(createMockSession({ sessionId: 'x1', identity }));
@@ -319,25 +319,25 @@ test.describe('SupabaseStorageBackend', () => {
             // Another user — must NOT appear
             await storage.createSession(createMockSession({ sessionId: 'x3', identity: 'intruder' }));
 
-            const sessions = await storage.getIdentitySessionsData(identity);
+            const sessions = await storage.getUserSession(identity);
             expect(sessions.length).toBe(2);
             expect(sessions.map(s => s.sessionId)).toContain('x1');
             expect(sessions.map(s => s.sessionId)).toContain('x2');
         });
 
         test('returns empty array for identity with no sessions', async () => {
-            expect(await storage.getIdentitySessionsData('nobody')).toEqual([]);
+            expect(await storage.getUserSession('nobody')).toEqual([]);
         });
     });
 
-    // ── getIdentityMcpSessions ───────────────────────────────────────────────
-    test.describe('getIdentityMcpSessions', () => {
+    // ── getUserSessionIds ───────────────────────────────────────────────
+    test.describe('getUserSessionIds', () => {
         test('returns only session IDs (not full objects)', async () => {
             const identity = 'slim-user';
             await storage.createSession(createMockSession({ sessionId: 'id-a', identity }));
             await storage.createSession(createMockSession({ sessionId: 'id-b', identity }));
 
-            const ids = await storage.getIdentityMcpSessions(identity);
+            const ids = await storage.getUserSessionIds(identity);
             expect(ids.sort()).toEqual(['id-a', 'id-b']);
         });
     });

@@ -70,12 +70,12 @@ export class MemoryStorageBackend implements StorageBackend {
         return this.sessions.get(sessionKey) || null;
     }
 
-    async getIdentityMcpSessions(identity: string): Promise<string[]> {
+    async getUserSessionIds(identity: string): Promise<string[]> {
         const set = this.identitySessions.get(identity);
         return set ? Array.from(set) : [];
     }
 
-    async getIdentitySessionsData(identity: string): Promise<SessionData[]> {
+    async getUserSession(identity: string): Promise<SessionData[]> {
         const set = this.identitySessions.get(identity);
         if (!set) return [];
 

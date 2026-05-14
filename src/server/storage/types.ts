@@ -13,7 +13,7 @@ export interface SessionData {
     transportType: 'sse' | 'streamable-http';
     callbackUrl: string;
     createdAt: number;
-    identity: string;
+    userId: string;
     headers?: Record<string, string>;
     /**
      * Session status marker used for TTL transitions:
@@ -37,7 +37,7 @@ export interface SetClientOptions {
     serverUrl?: string;
     callbackUrl?: string;
     transportType?: 'sse' | 'streamable-http';
-    identity?: string;
+    userId?: string;
     headers?: Record<string, string>;
 }
 
@@ -67,32 +67,32 @@ export interface StorageBackend {
 
     /**
      * Updates an existing session with partial data. Throws if session does not exist.
-     * @param identity - User identity
+     * @param userId - User userId
      * @param sessionId - Session identifier
      * @param data - Partial session data to update
      * @param ttl - Optional TTL in seconds (defaults to backend's default)
      */
-    updateSession(identity: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void>;
+    updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void>;
 
     /**
      * Retrieves a session
      */
-    getSession(identity: string, sessionId: string): Promise<SessionData | null>;
+    getSession(userId: string, sessionId: string): Promise<SessionData | null>;
 
     /**
-     * Gets full session data for all of an identity's sessions
+     * Gets full session data for all of an userId's sessions
      */
-    getIdentitySessionsData(identity: string): Promise<SessionData[]>;
+    getUserSession(userId: string): Promise<SessionData[]>;
 
     /**
      * Removes a session
      */
-    removeSession(identity: string, sessionId: string): Promise<void>;
+    removeSession(userId: string, sessionId: string): Promise<void>;
 
     /**
-     * Gets all sessions IDs of an identity
+     * Gets all sessions IDs of an userId
      */
-    getIdentityMcpSessions(identity: string): Promise<string[]>;
+    getUserSessionIds(userId: string): Promise<string[]>;
 
     /**
      * Gets all session IDs across all users (Admin)

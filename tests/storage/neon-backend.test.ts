@@ -242,7 +242,7 @@ test.describe('NeonStorageBackend', () => {
         await storage.createSession(createMockSession({ sessionId: 'b', identity: 'user-a' }), -1);
         await storage.createSession(createMockSession({ sessionId: 'c', identity: 'user-b' }), 3600);
 
-        expect((await storage.getIdentityMcpSessions('user-a')).sort()).toEqual(['a', 'b']);
+        expect((await storage.getUserSessionIds('user-a')).sort()).toEqual(['a', 'b']);
         expect((await storage.getAllSessionIds()).sort()).toEqual(['a', 'b', 'c']);
 
         await storage.cleanupExpiredSessions();
@@ -252,7 +252,7 @@ test.describe('NeonStorageBackend', () => {
         expect(await storage.getSession('user-a', 'a')).toBeNull();
 
         await storage.clearAll();
-        expect(await storage.getIdentitySessionsData('user-b')).toEqual([]);
+        expect(await storage.getUserSession('user-b')).toEqual([]);
         expect(mockNeon.getSessions()).toEqual([]);
     });
 });

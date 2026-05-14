@@ -90,22 +90,22 @@ const session = await storage.getSession('user-123', 'abc123');
 
 ---
 
-**`getIdentitySessionsData(identity: string): Promise<SessionData[]>`**
+**`getUserSession(identity: string): Promise<SessionData[]>`**
 
 Get all session data for an identity.
 
 ```typescript
-const sessions = await storage.getIdentitySessionsData('user-123');
+const sessions = await storage.getUserSession('user-123');
 ```
 
 ---
 
-**`getIdentityMcpSessions(identity: string): Promise<string[]>`**
+**`getUserSessionIds(identity: string): Promise<string[]>`**
 
 Get all session IDs for an identity.
 
 ```typescript
-const sessionIds = await storage.getIdentityMcpSessions('user-123');
+const sessionIds = await storage.getUserSessionIds('user-123');
 ```
 
 ---

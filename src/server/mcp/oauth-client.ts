@@ -1162,7 +1162,7 @@ export class MCPClient {
    */
   static async getMcpServerConfig(identity: string): Promise<Record<string, any>> {
     const mcpConfig: Record<string, any> = {};
-    const sessions = await storage.getIdentitySessionsData(identity);
+    const sessions = await storage.getUserSession(identity);
 
     await Promise.all(
       sessions.map(async (sessionData) => {

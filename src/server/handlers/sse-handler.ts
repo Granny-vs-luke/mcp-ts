@@ -228,7 +228,7 @@ export class SSEConnectionManager {
    * Get all sessions for the current identity
    */
   private async getSessions(): Promise<SessionListResult> {
-    const sessions = await storage.getIdentitySessionsData(this.identity);
+    const sessions = await storage.getUserSession(this.identity);
 
     return {
       sessions: sessions.map((s) => ({
@@ -257,7 +257,7 @@ export class SSEConnectionManager {
       : await storage.generateSessionId();
 
     // Check for existing connections
-    const existingSessions = await storage.getIdentitySessionsData(this.identity);
+    const existingSessions = await storage.getUserSession(this.identity);
     const duplicate = existingSessions.find(s =>
       s.serverId === serverId || s.serverUrl === serverUrl
     );

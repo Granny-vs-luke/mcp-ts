@@ -122,7 +122,7 @@ export class SqliteStorage implements StorageBackend {
         return JSON.parse(row.data) as SessionData;
     }
 
-    async getIdentitySessionsData(identity: string): Promise<SessionData[]> {
+    async getUserSession(identity: string): Promise<SessionData[]> {
         this.ensureInitialized();
 
         const stmt = this.db!.prepare(
@@ -133,7 +133,7 @@ export class SqliteStorage implements StorageBackend {
         return rows.map(row => JSON.parse(row.data) as SessionData);
     }
 
-    async getIdentityMcpSessions(identity: string): Promise<string[]> {
+    async getUserSessionIds(identity: string): Promise<string[]> {
         this.ensureInitialized();
 
         const stmt = this.db!.prepare(

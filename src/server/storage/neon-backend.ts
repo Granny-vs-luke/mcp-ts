@@ -209,7 +209,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async getIdentitySessionsData(identity: string): Promise<SessionData[]> {
+    async getUserSession(identity: string): Promise<SessionData[]> {
         try {
             const rows = await this.sql.query(
                 `SELECT * FROM ${this.tableName} WHERE identity = $1`,
@@ -233,7 +233,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async getIdentityMcpSessions(identity: string): Promise<string[]> {
+    async getUserSessionIds(identity: string): Promise<string[]> {
         try {
             const rows = await this.sql.query(
                 `SELECT session_id FROM ${this.tableName} WHERE identity = $1`,

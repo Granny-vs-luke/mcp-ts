@@ -49,7 +49,7 @@ import { storage } from '@mcp-ts/sdk/server';
 
 // Storage automatically uses SQLite when configured with
 // MCP_TS_STORAGE_TYPE=sqlite or MCP_TS_STORAGE_SQLITE_PATH.
-const sessions = await storage.getIdentitySessionsData('user-123');
+const sessions = await storage.getUserSession('user-123');
 console.log('Stored sessions:', sessions);
 ```
 

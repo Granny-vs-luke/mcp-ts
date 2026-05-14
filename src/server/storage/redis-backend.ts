@@ -153,12 +153,12 @@ export class RedisStorageBackend implements StorageBackend {
         }
     }
 
-    async getIdentityMcpSessions(identity: string): Promise<string[]> {
-        const sessions = await this.getIdentitySessionsData(identity);
+    async getUserSessionIds(identity: string): Promise<string[]> {
+        const sessions = await this.getUserSession(identity);
         return sessions.map((session) => session.sessionId);
     }
 
-    async getIdentitySessionsData(identity: string): Promise<SessionData[]> {
+    async getUserSession(identity: string): Promise<SessionData[]> {
         try {
             const identityKey = this.getIdentityKey(identity);
             const sessionIds = await this.redis.smembers(identityKey);

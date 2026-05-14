@@ -115,7 +115,7 @@ import { storage } from '@mcp-ts/sdk/server';
 
 // Storage automatically uses Neon when configured with:
 // MCP_TS_STORAGE_TYPE=neon
-const sessions = await storage.getIdentitySessionsData('user-123');
+const sessions = await storage.getUserSession('user-123');
 ```
 
 You can also create the backend directly:

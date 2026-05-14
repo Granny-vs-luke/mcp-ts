@@ -54,7 +54,7 @@ test.describe('MultiSessionClient', () => {
             active: true   // mark as fully established sessions
         }));
         
-        mockStorage.getIdentitySessionsData = async () => mockSessions as any;
+        mockStorage.getUserSession = async () => mockSessions as any;
         _setStorageInstanceForTesting(mockStorage);
 
         const multiClient = new MultiSessionClient(identity);

@@ -146,7 +146,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         return this.mapRowToSessionData(data);
     }
 
-    async getIdentitySessionsData(identity: string): Promise<SessionData[]> {
+    async getUserSession(identity: string): Promise<SessionData[]> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('*')
@@ -172,7 +172,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         }
     }
 
-    async getIdentityMcpSessions(identity: string): Promise<string[]> {
+    async getUserSessionIds(identity: string): Promise<string[]> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('session_id')
