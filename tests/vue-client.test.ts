@@ -196,7 +196,7 @@ test.describe('Vue Client useMcp', () => {
                     setup() {
                         const { connections, status } = useMcp({
                             url: '/sse',
-                            identity: 'test-user',
+                            userId: 'test-user',
                             autoConnect: true
                         });
 

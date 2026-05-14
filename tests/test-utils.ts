@@ -25,7 +25,7 @@ export async function clearMockRedis(redis: Redis): Promise<void> {
 export function createMockSession(overrides: Partial<MockSession> = {}): MockSession {
     return {
         sessionId: 'test-session-123',
-        identity: 'test-user-456',
+        userId: 'test-user-456',
         serverId: 'test-server',
         serverName: 'Test MCP Server',
         serverUrl: 'https://mcp.example.com',
@@ -39,7 +39,7 @@ export function createMockSession(overrides: Partial<MockSession> = {}): MockSes
 
 export interface MockSession {
     sessionId: string;
-    identity: string;
+    userId: string;
     serverId: string;
     serverName: string;
     serverUrl: string;

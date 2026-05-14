@@ -56,7 +56,7 @@ test.describe('storage index bootstrap', () => {
 
         await storage.createSession(session);
 
-        const retrieved = await storage.getSession(session.identity, session.sessionId);
+        const retrieved = await storage.getSession(session.userId, session.sessionId);
         expect(retrieved?.sessionId).toBe(session.sessionId);
         expect(retrieved?.transportType).toBe('streamable-http');
     });
@@ -71,7 +71,7 @@ test.describe('storage index bootstrap', () => {
 
         await storage.createSession(session);
 
-        const retrieved = await storage.getSession(session.identity, session.sessionId);
+        const retrieved = await storage.getSession(session.userId, session.sessionId);
         expect(retrieved?.sessionId).toBe(session.sessionId);
         expect(retrieved?.transportType).toBe('streamable-http');
     });

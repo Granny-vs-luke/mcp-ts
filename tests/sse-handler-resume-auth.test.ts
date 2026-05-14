@@ -15,7 +15,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
 
     await storage.createSession({
       sessionId: 'existing-session',
-      identity: 'user-1',
+      userId: 'user-1',
       serverId: 'srv-1',
       serverName: 'Server One',
       serverUrl: 'https://example.com/mcp',
@@ -26,7 +26,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     });
 
     const manager = new SSEConnectionManager(
-      { identity: 'user-1' },
+      { userId: 'user-1' },
       () => { }
     );
 
@@ -63,7 +63,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
 
     await storage.createSession({
       sessionId: 'existing-active',
-      identity: 'user-2',
+      userId: 'user-2',
       serverId: 'srv-2',
       serverName: 'Server Two',
       serverUrl: 'https://example.com/mcp-active',
@@ -74,7 +74,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     });
 
     const manager = new SSEConnectionManager(
-      { identity: 'user-2' },
+      { userId: 'user-2' },
       () => { }
     );
 
@@ -101,7 +101,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
 
     await storage.createSession({
       sessionId: 'resource-session',
-      identity: 'user-3',
+      userId: 'user-3',
       serverId: 'srv-3',
       serverName: 'Server Three',
       serverUrl: 'https://example.com/mcp-resource',
@@ -112,7 +112,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     });
 
     const manager = new SSEConnectionManager(
-      { identity: 'user-3' },
+      { userId: 'user-3' },
       () => { }
     );
 
@@ -174,7 +174,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     _setStorageInstanceForTesting(storage);
 
     const manager = new SSEConnectionManager(
-      { identity: 'user-4' },
+      { userId: 'user-4' },
       () => { }
     );
 

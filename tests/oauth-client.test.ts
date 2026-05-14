@@ -4,7 +4,7 @@ import { storage, _setStorageInstanceForTesting } from '../src/server/storage';
 import { MemoryStorageBackend } from '../src/server/storage/memory-backend';
 
 test.describe('MCPClient.getMcpServerConfig', () => {
-    const identity = 'test-user';
+    const userId = 'test-user';
 
     const originalInitialize = (MCPClient.prototype as any).initialize;
     const originalGetValidTokens = (MCPClient.prototype as any).getValidTokens;
@@ -55,12 +55,12 @@ test.describe('MCPClient.getMcpServerConfig', () => {
         // Mock storage
         const mockStorage = new MemoryStorageBackend();
         mockStorage.getUserSession = async (id: string) => {
-            if (id === identity) return [session1, session2] as any;
+            if (id === userId) return [session1, session2] as any;
             return [];
         };
         _setStorageInstanceForTesting(mockStorage);
 
-        const config = await MCPClient.getMcpServerConfig(identity);
+        const config = await MCPClient.getMcpServerConfig(userId);
 
         expect(initCallCount).toBe(2);
         expect(getTokensCallCount).toBe(2);
@@ -98,9 +98,9 @@ test.describe('MCPClient.getMcpServerConfig', () => {
         };
         _setStorageInstanceForTesting(mockStorage);
 
-        const config = await MCPClient.getMcpServerConfig(identity);
+        const config = await MCPClient.getMcpServerConfig(userId);
 
-        expect(removeSessionCalledWith).toEqual([identity, 's1']);
+        expect(removeSessionCalledWith).toEqual([userId, 's1']);
         expect(config).toEqual({});
     });
 });
@@ -114,7 +114,7 @@ test.describe('MCPClient static Authorization headers', () => {
         _setStorageInstanceForTesting(new MemoryStorageBackend());
 
         const client = new MCPClient({
-            identity: 'test-user',
+            userId: 'test-user',
             sessionId: 'static-auth-session',
             serverId: 'static-auth-server',
             serverName: 'Static Auth Server',

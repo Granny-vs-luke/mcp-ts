@@ -9,16 +9,16 @@ import { UnauthorizedError } from '../src/shared/errors';
 
 class TrackingMemoryStorage extends MemoryStorageBackend {
   public createCalls: Array<{ session: SessionData; ttl?: number }> = [];
-  public updateCalls: Array<{ identity: string; sessionId: string; data: Partial<SessionData>; ttl?: number }> = [];
+  public updateCalls: Array<{ userId: string; sessionId: string; data: Partial<SessionData>; ttl?: number }> = [];
 
   async createSession(session: SessionData, ttl?: number): Promise<void> {
     this.createCalls.push({ session, ttl });
     return super.createSession(session, ttl);
   }
 
-  async updateSession(identity: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
-    this.updateCalls.push({ identity, sessionId, data, ttl });
-    return super.updateSession(identity, sessionId, data, ttl);
+  async updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
+    this.updateCalls.push({ userId, sessionId, data, ttl });
+    return super.updateSession(userId, sessionId, data, ttl);
   }
 }
 
@@ -46,14 +46,14 @@ test.describe('MCPClient session TTL lifecycle', () => {
       (this as any).client = {} as any;
       (this as any).oauthProvider = { authUrl: '' };
 
-      const identity = (this as any).identity;
+      const userId = (this as any).userId;
       const sessionId = (this as any).sessionId;
-      const existing = await storage.getSession(identity, sessionId);
+      const existing = await storage.getSession(userId, sessionId);
 
       if (!existing) {
         await storage.createSession({
           sessionId,
-          identity,
+          userId,
           serverId: (this as any).serverId,
           serverName: (this as any).serverName,
           serverUrl: (this as any).serverUrl,
@@ -68,7 +68,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
     (MCPClient.prototype as any).tryConnect = async () => ({ transportType: 'streamable-http' });
 
     const client = new MCPClient({
-      identity: 'user-1',
+      userId: 'user-1',
       sessionId: 's-1',
       serverId: 'srv-1',
       serverName: 'Server One',
@@ -99,14 +99,14 @@ test.describe('MCPClient session TTL lifecycle', () => {
       (this as any).client = {} as any;
       (this as any).oauthProvider = { authUrl: 'https://auth.example.com' };
 
-      const identity = (this as any).identity;
+      const userId = (this as any).userId;
       const sessionId = (this as any).sessionId;
-      const existing = await storage.getSession(identity, sessionId);
+      const existing = await storage.getSession(userId, sessionId);
 
       if (!existing) {
         await storage.createSession({
           sessionId,
-          identity,
+          userId,
           serverId: (this as any).serverId,
           serverName: (this as any).serverName,
           serverUrl: (this as any).serverUrl,
@@ -123,7 +123,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
     };
 
     const client = new MCPClient({
-      identity: 'user-2',
+      userId: 'user-2',
       sessionId: 's-2',
       serverId: 'srv-2',
       serverName: 'Server Two',
@@ -149,14 +149,14 @@ test.describe('MCPClient session TTL lifecycle', () => {
     (MCPClient.prototype as any).initialize = async function () {
       (this as any).oauthProvider = { authUrl: 'https://auth.example.com' };
 
-      const identity = (this as any).identity;
+      const userId = (this as any).userId;
       const sessionId = (this as any).sessionId;
-      const existing = await storage.getSession(identity, sessionId);
+      const existing = await storage.getSession(userId, sessionId);
 
       if (!existing) {
         await storage.createSession({
           sessionId,
-          identity,
+          userId,
           serverId: (this as any).serverId,
           serverName: (this as any).serverName,
           serverUrl: (this as any).serverUrl,
@@ -177,7 +177,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
     (Client.prototype as any).connect = async () => { };
 
     const client = new MCPClient({
-      identity: 'user-3',
+      userId: 'user-3',
       sessionId: 's-3',
       serverId: 'srv-3',
       serverName: 'Server Three',
@@ -202,14 +202,14 @@ test.describe('MCPClient session TTL lifecycle', () => {
     (MCPClient.prototype as any).initialize = async function () {
       (this as any).oauthProvider = { authUrl: 'https://auth.example.com' };
 
-      const identity = (this as any).identity;
+      const userId = (this as any).userId;
       const sessionId = (this as any).sessionId;
-      const existing = await storage.getSession(identity, sessionId);
+      const existing = await storage.getSession(userId, sessionId);
 
       if (!existing) {
         await storage.createSession({
           sessionId,
-          identity,
+          userId,
           serverId: (this as any).serverId,
           serverName: (this as any).serverName,
           serverUrl: (this as any).serverUrl,
@@ -244,7 +244,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
     };
 
     const client = new MCPClient({
-      identity: 'user-4',
+      userId: 'user-4',
       sessionId: 's-4',
       serverId: 'srv-4',
       serverName: 'Server Four',

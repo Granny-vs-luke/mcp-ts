@@ -41,7 +41,7 @@ test.describe('SqliteStorage', () => {
             const session = createMockSession();
             await storage.createSession(session);
 
-            const retrieved = await storage.getSession(session.identity, session.sessionId);
+            const retrieved = await storage.getSession(session.userId, session.sessionId);
             expect(retrieved).toBeDefined();
             expect(retrieved?.serverId).toBe(session.serverId);
         });
@@ -59,12 +59,12 @@ test.describe('SqliteStorage', () => {
             const session = createMockSession();
             await storage.createSession(session);
 
-            await storage.updateSession(session.identity, session.sessionId, {
+            await storage.updateSession(session.userId, session.sessionId, {
                 active: true,
                 tokens: createMockTokens()
             });
 
-            const retrieved = await storage.getSession(session.identity, session.sessionId);
+            const retrieved = await storage.getSession(session.userId, session.sessionId);
             expect(retrieved?.active).toBe(true);
             expect(retrieved?.tokens).toBeDefined();
             expect(retrieved?.serverId).toBe(session.serverId);
@@ -78,15 +78,15 @@ test.describe('SqliteStorage', () => {
     });
 
     test.describe('getUserSession', () => {
-        test('should return all sessions for an identity', async () => {
-            const identity = 'test-user';
-            const session1 = createMockSession({ sessionId: 'session-1', identity });
-            const session2 = createMockSession({ sessionId: 'session-2', identity });
+        test('should return all sessions for an userId', async () => {
+            const userId = 'test-user';
+            const session1 = createMockSession({ sessionId: 'session-1', userId });
+            const session2 = createMockSession({ sessionId: 'session-2', userId });
 
             await storage.createSession(session1);
             await storage.createSession(session2);
 
-            const sessions = await storage.getUserSession(identity);
+            const sessions = await storage.getUserSession(userId);
             expect(sessions.length).toBe(2);
         });
     });
@@ -97,7 +97,7 @@ test.describe('SqliteStorage', () => {
             await storage.createSession(session, -1); // Expired immediately (ttl -1)
             await storage.cleanupExpiredSessions();
 
-            const retrieved = await storage.getSession(session.identity, session.sessionId);
+            const retrieved = await storage.getSession(session.userId, session.sessionId);
             expect(retrieved).toBeNull();
         });
 
@@ -107,7 +107,7 @@ test.describe('SqliteStorage', () => {
 
             await storage.cleanupExpiredSessions();
 
-            const retrieved = await storage.getSession(session.identity, session.sessionId);
+            const retrieved = await storage.getSession(session.userId, session.sessionId);
             expect(retrieved).toBeDefined();
         });
     });
