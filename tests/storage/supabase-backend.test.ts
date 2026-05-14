@@ -205,14 +205,14 @@ test.describe('SupabaseStorageBackend', () => {
             await storage.updateSession(session.identity, session.sessionId, {
                 active: true,
                 tokens: newTokens,
-                transportType: 'streamable_http',
+                transportType: 'streamable-http',
             });
 
             const retrieved = await storage.getSession(session.identity, session.sessionId);
             // Updated
             expect(retrieved?.active).toBe(true);
             expect(retrieved?.tokens).toEqual(newTokens);
-            expect(retrieved?.transportType).toBe('streamable_http');
+            expect(retrieved?.transportType).toBe('streamable-http');
             // Preserved
             expect(retrieved?.serverId).toBe(session.serverId);
             expect(retrieved?.serverUrl).toBe(session.serverUrl);

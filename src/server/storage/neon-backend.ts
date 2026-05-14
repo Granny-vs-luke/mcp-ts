@@ -17,7 +17,7 @@ type NeonSessionRow = {
     server_id?: string | null;
     server_name?: string | null;
     server_url: string;
-    transport_type: 'sse' | 'streamable_http';
+    transport_type: 'sse' | 'streamable-http';
     callback_url: string;
     created_at: string | Date;
     identity: string;

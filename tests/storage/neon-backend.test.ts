@@ -9,7 +9,7 @@ type NeonRow = {
     server_id?: string;
     server_name?: string;
     server_url: string;
-    transport_type: 'sse' | 'streamable_http';
+    transport_type: 'sse' | 'streamable-http';
     callback_url: string;
     created_at: string;
     updated_at: string;
@@ -67,7 +67,7 @@ function createMockNeonSql() {
                 server_id: serverId as string | undefined,
                 server_name: serverName as string | undefined,
                 server_url: serverUrl as string,
-                transport_type: transportType as 'sse' | 'streamable_http',
+                transport_type: transportType as 'sse' | 'streamable-http',
                 callback_url: callbackUrl as string,
                 created_at: createdAt as string,
                 updated_at: new Date().toISOString(),
@@ -108,7 +108,7 @@ function createMockNeonSql() {
             row.server_id = serverId as string | undefined;
             row.server_name = serverName as string | undefined;
             row.server_url = serverUrl as string;
-            row.transport_type = transportType as 'sse' | 'streamable_http';
+            row.transport_type = transportType as 'sse' | 'streamable-http';
             row.callback_url = callbackUrl as string;
             row.active = active as boolean;
             row.headers = headers as Record<string, string> | undefined;
@@ -221,13 +221,13 @@ test.describe('NeonStorageBackend', () => {
         await storage.updateSession(session.identity, session.sessionId, {
             active: false,
             tokens,
-            transportType: 'streamable_http',
+            transportType: 'streamable-http',
         });
 
         const retrieved = await storage.getSession(session.identity, session.sessionId);
         expect(retrieved?.active).toBe(false);
         expect(retrieved?.tokens).toEqual(tokens);
-        expect(retrieved?.transportType).toBe('streamable_http');
+        expect(retrieved?.transportType).toBe('streamable-http');
         expect(retrieved?.serverUrl).toBe(session.serverUrl);
     });
 

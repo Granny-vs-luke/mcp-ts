@@ -51,14 +51,14 @@ test.describe('storage index bootstrap', () => {
 
         const session = createMockSession({
             sessionId: 'sqlite-bootstrap-session',
-            transportType: 'streamable_http',
+            transportType: 'streamable-http',
         });
 
         await storage.createSession(session);
 
         const retrieved = await storage.getSession(session.identity, session.sessionId);
         expect(retrieved?.sessionId).toBe(session.sessionId);
-        expect(retrieved?.transportType).toBe('streamable_http');
+        expect(retrieved?.transportType).toBe('streamable-http');
     });
 
     test('falls back to memory when explicit neon selection has no connection string', async () => {
@@ -66,13 +66,13 @@ test.describe('storage index bootstrap', () => {
 
         const session = createMockSession({
             sessionId: 'neon-fallback-session',
-            transportType: 'streamable_http',
+            transportType: 'streamable-http',
         });
 
         await storage.createSession(session);
 
         const retrieved = await storage.getSession(session.identity, session.sessionId);
         expect(retrieved?.sessionId).toBe(session.sessionId);
-        expect(retrieved?.transportType).toBe('streamable_http');
+        expect(retrieved?.transportType).toBe('streamable-http');
     });
 });

@@ -44,7 +44,7 @@ export interface MockSession {
     serverName: string;
     serverUrl: string;
     callbackUrl: string;
-    transportType: 'sse' | 'streamable_http';
+    transportType: 'sse' | 'streamable-http';
     active: boolean;
     createdAt: number;
     clientInformation?: {

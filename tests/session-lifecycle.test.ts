@@ -80,7 +80,7 @@ test.describe('Session Lifecycle Management', () => {
             serverId,
             serverUrl,
             callbackUrl,
-            transportType: 'streamable_http',
+            transportType: 'streamable-http',
             createdAt: Date.now(),
             active: false,
         });
@@ -122,7 +122,7 @@ test.describe('Session Lifecycle Management', () => {
             serverId,
             serverUrl,
             callbackUrl,
-            transportType: 'streamable_http',
+            transportType: 'streamable-http',
             createdAt: Date.now(),
             active: true,
         });

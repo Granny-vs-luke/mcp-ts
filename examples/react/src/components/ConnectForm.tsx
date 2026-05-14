@@ -7,7 +7,7 @@ interface ConnectFormProps {
     serverName: string;
     serverUrl: string;
     callbackUrl: string;
-    transportType?: 'sse' | 'streamable_http';
+    transportType?: 'sse' | 'streamable-http';
   }) => Promise<string>;
   isConnected: boolean;
 }

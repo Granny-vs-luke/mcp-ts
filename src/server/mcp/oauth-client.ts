@@ -44,7 +44,7 @@ import {
 /**
  * Supported MCP transport types
  */
-export type TransportType = 'sse' | 'streamable_http';
+export type TransportType = 'sse' | 'streamable-http';
 
 /**
  * Extended capabilities including MCP App support
@@ -360,7 +360,7 @@ export class MCPClient {
         serverName: this.serverName,
         serverUrl: this.serverUrl,
         callbackUrl: this.callbackUrl,
-        transportType: this.transportType || 'streamable_http',
+        transportType: this.transportType || 'streamable-http',
         headers: this.headers,
         createdAt: this.createdAt,
         active: false,
@@ -390,7 +390,7 @@ export class MCPClient {
       serverName: this.serverName,
       serverUrl: this.serverUrl,
       callbackUrl: this.callbackUrl,
-      transportType: (this.transportType || 'streamable_http') as TransportType,
+      transportType: (this.transportType || 'streamable-http') as TransportType,
       headers: this.headers,
       createdAt: this.createdAt || Date.now(),
       active,
@@ -417,7 +417,7 @@ export class MCPClient {
      */
     const transportsToTry: TransportType[] = this.transportType
       ? [this.transportType]
-      : ['streamable_http', 'sse'];
+      : ['streamable-http', 'sse'];
 
     let lastError: unknown;
 
@@ -619,7 +619,7 @@ export class MCPClient {
      */
     const transportsToTry: TransportType[] = this.transportType
       ? [this.transportType]
-      : ['streamable_http', 'sse'];
+      : ['streamable-http', 'sse'];
 
     let lastError: unknown;
     let tokensExchanged = false;
@@ -1020,7 +1020,7 @@ export class MCPClient {
     );
 
     // Use default logic to get transport, defaulting to what's stored or auto
-    const tt = this.transportType || 'streamable_http';
+    const tt = this.transportType || 'streamable-http';
     this.transport = this.getTransport(tt);
 
     await this.client.connect(this.transport);
@@ -1119,10 +1119,10 @@ export class MCPClient {
 
   /**
    * Gets the transport type being used
-   * @returns Transport type (defaults to 'streamable_http')
+   * @returns Transport type (defaults to 'streamable-http')
    */
   getTransportType(): TransportType {
-    return this.transportType || 'streamable_http';
+    return this.transportType || 'streamable-http';
   }
 
   /**

@@ -524,7 +524,7 @@ export class SSEConnectionManager {
         serverUrl: session.serverUrl,
         callbackUrl: session.callbackUrl,
         // NOTE: transportType is intentionally omitted here.
-        // The session's stored transportType is a placeholder ('streamable_http')
+        // The session's stored transportType is a placeholder ('streamable-http')
         // set before transport negotiation. Omitting it lets MCPClient auto-negotiate
         // (try streamable_http → SSE fallback), which is critical for servers like
         // Neon that only support SSE transport.

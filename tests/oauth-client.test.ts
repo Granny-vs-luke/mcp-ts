@@ -48,7 +48,7 @@ test.describe('MCPClient.getMcpServerConfig', () => {
             serverId: 'server2',
             serverName: 'Server Two',
             serverUrl: 'http://server2',
-            transportType: 'streamable_http' as const,
+            transportType: 'streamable-http' as const,
             callbackUrl: 'http://callback2',
         };
 
@@ -71,7 +71,7 @@ test.describe('MCPClient.getMcpServerConfig', () => {
                 url: 'http://server1',
             }),
             'server_two': expect.objectContaining({
-                transport: 'streamable_http',
+                transport: 'streamable-http',
                 url: 'http://server2',
             }),
         });
@@ -120,14 +120,14 @@ test.describe('MCPClient static Authorization headers', () => {
             serverName: 'Static Auth Server',
             serverUrl: 'https://example.com/mcp',
             callbackUrl: 'https://app.local/auth/callback',
-            transportType: 'streamable_http',
+            transportType: 'streamable-http',
             headers: {
                 Authorization: 'Bearer static-token',
             },
         });
 
         await (client as any).initialize();
-        const transport = (client as any).getTransport('streamable_http');
+        const transport = (client as any).getTransport('streamable-http');
 
         expect((transport as any)._requestInit?.headers).toEqual({
             Authorization: 'Bearer static-token',

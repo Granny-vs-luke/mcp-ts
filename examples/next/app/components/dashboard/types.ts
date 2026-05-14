@@ -19,5 +19,5 @@ export interface ConnectConfig {
     serverName: string;
     serverUrl: string;
     callbackUrl: string;
-    transportType: 'sse' | 'streamable_http' | 'auto';
+    transportType: 'sse' | 'streamable-http' | 'auto';
 }

@@ -166,7 +166,7 @@ export type ToolInfo = {
 };
 
 // Transport type
-export type TransportType = 'sse' | 'streamable_http';
+export type TransportType = 'sse' | 'streamable-http';
 
 // SSE/RPC types
 export type McpRpcMethod =

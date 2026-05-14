@@ -109,7 +109,7 @@ export interface McpClient {
         serverName: string;
         serverUrl: string;
         callbackUrl: string;
-        transportType?: 'sse' | 'streamable_http';
+        transportType?: 'sse' | 'streamable-http';
     }) => Promise<string>;
 
     /**
@@ -125,7 +125,7 @@ export interface McpClient {
         serverName: string;
         serverUrl: string;
         callbackUrl: string;
-        transportType?: 'sse' | 'streamable_http';
+        transportType?: 'sse' | 'streamable-http';
     }) => Promise<string>;
 
     /**
@@ -493,7 +493,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
         serverName: string;
         serverUrl: string;
         callbackUrl: string;
-        transportType?: 'sse' | 'streamable_http';
+        transportType?: 'sse' | 'streamable-http';
     }): Promise<string> => {
         if (!clientRef.value) {
             throw new Error('SSE client not initialized');
@@ -511,7 +511,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
         serverName: string;
         serverUrl: string;
         callbackUrl: string;
-        transportType?: 'sse' | 'streamable_http';
+        transportType?: 'sse' | 'streamable-http';
     }): Promise<string> => {
         if (!clientRef.value) {
             throw new Error('SSE client not initialized');

@@ -10,7 +10,7 @@ export interface SessionData {
     serverId?: string; // Database server ID for mapping
     serverName?: string;
     serverUrl: string;
-    transportType: 'sse' | 'streamable_http';
+    transportType: 'sse' | 'streamable-http';
     callbackUrl: string;
     createdAt: number;
     identity: string;
@@ -36,7 +36,7 @@ export interface SetClientOptions {
     client?: MCPClient;
     serverUrl?: string;
     callbackUrl?: string;
-    transportType?: 'sse' | 'streamable_http';
+    transportType?: 'sse' | 'streamable-http';
     identity?: string;
     headers?: Record<string, string>;
 }

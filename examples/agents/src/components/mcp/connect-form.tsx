@@ -19,7 +19,7 @@ export function ConnectForm({ onConnect, connecting, status, error }: ConnectFor
     }
     return 'http://localhost:3000/oauth/callback-popup';
   });
-  const [transportType, setTransportType] = useState<'sse' | 'streamable_http' | 'auto'>('auto');
+  const [transportType, setTransportType] = useState<'sse' | 'streamable-http' | 'auto'>('auto');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,7 +74,7 @@ export function ConnectForm({ onConnect, connecting, status, error }: ConnectFor
           <select
             id="transportType"
             value={transportType}
-            onChange={(e) => setTransportType(e.target.value as 'sse' | 'streamable_http' | 'auto')}
+            onChange={(e) => setTransportType(e.target.value as 'sse' | 'streamable-http' | 'auto')}
             disabled={connecting}
             className={inputClass}
           >

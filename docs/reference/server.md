@@ -70,7 +70,7 @@ const client = new MCPClient({
   serverId?: string,
   serverUrl?: string,
   callbackUrl?: string,
-  transportType?: 'sse' | 'streamable_http',
+  transportType?: 'sse' | 'streamable-http',
   onRedirect?: (authUrl: string) => void,
   // OAuth Metadata
   clientName?: string,

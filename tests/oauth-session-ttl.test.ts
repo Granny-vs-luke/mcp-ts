@@ -58,14 +58,14 @@ test.describe('MCPClient session TTL lifecycle', () => {
           serverName: (this as any).serverName,
           serverUrl: (this as any).serverUrl,
           callbackUrl: (this as any).callbackUrl,
-          transportType: (this as any).transportType || 'streamable_http',
+          transportType: (this as any).transportType || 'streamable-http',
           createdAt: Date.now(),
           active: false,
         }, Math.floor(STATE_EXPIRATION_MS / 1000));
       }
     };
     (MCPClient.prototype as any).getValidTokens = async () => true;
-    (MCPClient.prototype as any).tryConnect = async () => ({ transportType: 'streamable_http' });
+    (MCPClient.prototype as any).tryConnect = async () => ({ transportType: 'streamable-http' });
 
     const client = new MCPClient({
       identity: 'user-1',
@@ -74,7 +74,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
       serverName: 'Server One',
       serverUrl: 'https://example.com/mcp',
       callbackUrl: 'https://app.example.com/callback',
-      transportType: 'streamable_http',
+      transportType: 'streamable-http',
     });
 
     await client.connect();
@@ -111,7 +111,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
           serverName: (this as any).serverName,
           serverUrl: (this as any).serverUrl,
           callbackUrl: (this as any).callbackUrl,
-          transportType: (this as any).transportType || 'streamable_http',
+          transportType: (this as any).transportType || 'streamable-http',
           createdAt: Date.now(),
           active: false,
         }, Math.floor(STATE_EXPIRATION_MS / 1000));
@@ -129,7 +129,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
       serverName: 'Server Two',
       serverUrl: 'https://example.com/mcp',
       callbackUrl: 'https://app.example.com/callback',
-      transportType: 'streamable_http',
+      transportType: 'streamable-http',
     });
 
     await expect(client.connect()).rejects.toBeInstanceOf(UnauthorizedError);
@@ -161,7 +161,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
           serverName: (this as any).serverName,
           serverUrl: (this as any).serverUrl,
           callbackUrl: (this as any).callbackUrl,
-          transportType: (this as any).transportType || 'streamable_http',
+          transportType: (this as any).transportType || 'streamable-http',
           createdAt: Date.now(),
           active: false,
         }, Math.floor(STATE_EXPIRATION_MS / 1000));
@@ -183,7 +183,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
       serverName: 'Server Three',
       serverUrl: 'https://example.com/mcp',
       callbackUrl: 'https://app.example.com/callback',
-      transportType: 'streamable_http',
+      transportType: 'streamable-http',
     });
 
     await client.finishAuth('auth-code');
@@ -214,7 +214,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
           serverName: (this as any).serverName,
           serverUrl: (this as any).serverUrl,
           callbackUrl: (this as any).callbackUrl,
-          transportType: (this as any).transportType || 'streamable_http',
+          transportType: (this as any).transportType || 'streamable-http',
           createdAt: Date.now(),
           active: false,
         }, Math.floor(STATE_EXPIRATION_MS / 1000));
@@ -233,10 +233,10 @@ test.describe('MCPClient session TTL lifecycle', () => {
     };
 
     (Client.prototype as any).connect = async function (transport: any) {
-      const attemptType = connectAttempts.length === 0 ? 'streamable_http' : 'sse';
+      const attemptType = connectAttempts.length === 0 ? 'streamable-http' : 'sse';
       connectAttempts.push(attemptType);
 
-      if (attemptType === 'streamable_http') {
+      if (attemptType === 'streamable-http') {
         throw new Error('Method Not Allowed');
       }
 
@@ -261,8 +261,8 @@ test.describe('MCPClient session TTL lifecycle', () => {
 
     await client.finishAuth('auth-code');
 
-    expect(finishAuthAttempts).toEqual(['streamable_http']);
-    expect(connectAttempts).toEqual(['streamable_http', 'sse']);
+    expect(finishAuthAttempts).toEqual(['streamable-http']);
+    expect(connectAttempts).toEqual(['streamable-http', 'sse']);
     expect(states.filter((state) => state === 'AUTHENTICATED')).toHaveLength(1);
   });
 });
