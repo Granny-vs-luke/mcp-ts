@@ -24,7 +24,7 @@ benchmarks/results/live-report.md
 
 Live benchmark runs use actual connected MCP servers from `examples/next`.
 
-The measured token counts are estimated with `ToolIndex.estimateTokens`, the same estimator used by the SDK benchmark harness. Latency values are measured locally with Node.js `performance.now()` and reported as average, p50, p95, and p99 search latency.
+The measured token counts are estimated by the benchmark harness in `benchmarks/token-estimator.mjs`. Latency values are measured locally with Node.js `performance.now()` and reported as average, p50, p95, and p99 search latency.
 
 The benchmark measures:
 
@@ -111,5 +111,4 @@ While these results highlight dramatic improvements in schema context management
 1. **End-to-End Latency**: Overall agent performance also depends on model reasoning, network round-trips to MCP servers, and tool execution time.
 2. **Cost Savings**: Reduction in input tokens directly translates to lower operational costs when using usage-based LLM APIs.
 3. **Model Focus**: Smaller context windows often lead to improved model performance and fewer "lost in the middle" errors.
-
 

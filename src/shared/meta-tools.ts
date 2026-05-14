@@ -518,14 +518,12 @@ function formatToolSummaries(
     description: string;
     serverName: string;
     serverId: string;
-    estimatedTokens: number;
   }>
 ): string[] {
   return tools.map(
     (t, i) =>
       `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n` +
-      `   ${t.description}\n` +
-      `   Estimated tokens: ${t.estimatedTokens}`
+      `   ${t.description}`
   );
 }
 

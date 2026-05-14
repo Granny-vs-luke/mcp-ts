@@ -12,6 +12,7 @@ import {
   createRegexSearchToolDefinition,
   createSearchToolDefinition,
 } from '../dist/shared/index.mjs';
+import { estimateToolTokens, estimateToolsTokens } from './token-estimator.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const resultsDir = resolve(__dirname, 'results');
@@ -105,7 +106,7 @@ function getMetaToolTokens() {
     createExecuteToolDefinition(),
   ];
 
-  return metaTools.reduce((sum, tool) => sum + ToolIndex.estimateTokens(tool), 0);
+  return estimateToolsTokens(metaTools);
 }
 
 function formatSearchResultText(results) {
@@ -113,10 +114,27 @@ function formatSearchResultText(results) {
     .map((tool, index) => {
       const serverId = tool.serverId ? `, serverId: ${tool.serverId}` : '';
       return `${index + 1}. ${tool.name} (server: ${tool.serverName}${serverId})\n` +
-        `   ${tool.description}\n` +
-        `   Estimated tokens: ${tool.estimatedTokens}`;
+        `   ${tool.description}`;
     })
     .join('\n');
+}
+
+function getToolKey(tool) {
+  return `${tool.sessionId ?? ''}::${tool.serverId ?? ''}::${tool.name}`;
+}
+
+function buildToolTokenIndex(tools) {
+  const tokenIndex = new Map();
+
+  for (const tool of tools) {
+    tokenIndex.set(getToolKey(tool), estimateToolTokens(tool));
+  }
+
+  return tokenIndex;
+}
+
+function getSummaryTokenCost(summary, tokenIndex) {
+  return tokenIndex.get(getToolKey(summary)) ?? 0;
 }
 
 export async function runScenario(options) {
@@ -142,6 +160,7 @@ export async function runToolCatalogScenario(options) {
   const buildStart = performance.now();
   await index.buildIndex(tools);
   const buildMs = performance.now() - buildStart;
+  const toolTokenIndex = buildToolTokenIndex(tools);
 
   for (let i = 0; i < warmupIterations; i++) {
     await index.search(SEARCH_QUERIES[i % SEARCH_QUERIES.length], 5);
@@ -161,14 +180,16 @@ export async function runToolCatalogScenario(options) {
     }
   }
 
-  const fullUpfrontTokens = index.getTotalTokenCost();
+  const fullUpfrontTokens = estimateToolsTokens(tools);
   const toolRouterInitialTokens = getMetaToolTokens();
   const discoveryTokens =
     toolRouterInitialTokens + estimatePlainTextTokens(formatSearchResultText(firstResults));
-  const selectedOneToolTokens = firstResults[0]?.estimatedTokens ?? 0;
+  const selectedOneToolTokens = firstResults[0]
+    ? getSummaryTokenCost(firstResults[0], toolTokenIndex)
+    : 0;
   const selectedThreeToolTokens = firstResults
     .slice(0, 3)
-    .reduce((sum, tool) => sum + (tool.estimatedTokens ?? 0), 0);
+    .reduce((sum, tool) => sum + getSummaryTokenCost(tool, toolTokenIndex), 0);
   const oneToolTaskTokens = discoveryTokens + selectedOneToolTokens;
   const threeToolTaskTokens = discoveryTokens + selectedThreeToolTokens;
 
