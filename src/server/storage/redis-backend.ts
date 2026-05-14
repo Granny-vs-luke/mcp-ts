@@ -9,8 +9,8 @@ import { generateSessionId } from '../../shared/utils.js';
 export class RedisStorageBackend implements StorageBackend {
     private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
     private readonly KEY_PREFIX = 'mcp:session:';
-    private readonly IDENTITY_KEY_PREFIX = 'mcp:identity:';
-    private readonly IDENTITY_KEY_SUFFIX = ':sessions';
+    private readonly USER_ID_KEY_PREFIX = 'mcp:userId:';
+    private readonly USER_ID_KEY_SUFFIX = ':sessions';
 
     constructor(private redis: Redis) { }
     
@@ -27,22 +27,22 @@ export class RedisStorageBackend implements StorageBackend {
      * Generates Redis key for a specific session
      * @private
      */
-    private getSessionKey(identity: string, sessionId: string): string {
-        return `${this.KEY_PREFIX}${identity}:${sessionId}`;
+    private getSessionKey(userId: string, sessionId: string): string {
+        return `${this.KEY_PREFIX}${userId}:${sessionId}`;
     }
 
     /**
-     * Generates Redis key for tracking all sessions for an identity
+     * Generates Redis key for tracking all sessions for an userId
      * @private
      */
-    private getIdentityKey(identity: string): string {
-        return `${this.IDENTITY_KEY_PREFIX}${identity}${this.IDENTITY_KEY_SUFFIX}`;
+    private getUserIdKey(userId: string): string {
+        return `${this.USER_ID_KEY_PREFIX}${userId}${this.USER_ID_KEY_SUFFIX}`;
     }
 
-    private parseIdentityFromKey(identityKey: string): string {
-        return identityKey.slice(
-            this.IDENTITY_KEY_PREFIX.length,
-            identityKey.length - this.IDENTITY_KEY_SUFFIX.length
+    private parseUserIdFromKey(userIdKey: string): string {
+        return userIdKey.slice(
+            this.USER_ID_KEY_PREFIX.length,
+            userIdKey.length - this.USER_ID_KEY_SUFFIX.length
         );
     }
 
@@ -79,11 +79,11 @@ export class RedisStorageBackend implements StorageBackend {
     }
 
     async createSession(session: SessionData, ttl?: number): Promise<void> {
-        const { sessionId, identity } = session;
-        if (!sessionId || !identity) throw new Error('identity and sessionId required');
+        const { sessionId, userId } = session;
+        if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
-        const sessionKey = this.getSessionKey(identity, sessionId);
-        const identityKey = this.getIdentityKey(identity);
+        const sessionKey = this.getSessionKey(userId, sessionId);
+        const userIdKey = this.getUserIdKey(userId);
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
 
         /** ioredis syntax: set(key, val, 'EX', ttl, 'NX') */
@@ -99,10 +99,10 @@ export class RedisStorageBackend implements StorageBackend {
             throw new Error(`Session ${sessionId} already exists`);
         }
 
-        await this.redis.sadd(identityKey, sessionId);
+        await this.redis.sadd(userIdKey, sessionId);
     }
-    async updateSession(identity: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
-        const sessionKey = this.getSessionKey(identity, sessionId);
+    async updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
+        const sessionKey = this.getSessionKey(userId, sessionId);
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
 
         /** Lua script for atomic parsing, merging, and saving */
@@ -132,13 +132,13 @@ export class RedisStorageBackend implements StorageBackend {
         );
 
         if (result === 0) {
-            throw new Error(`Session ${sessionId} not found for identity ${identity}`);
+            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
     }
 
-    async getSession(identity: string, sessionId: string): Promise<SessionData | null> {
+    async getSession(userId: string, sessionId: string): Promise<SessionData | null> {
         try {
-            const sessionKey = this.getSessionKey(identity, sessionId);
+            const sessionKey = this.getSessionKey(userId, sessionId);
             const sessionDataStr = await this.redis.get(sessionKey);
 
             if (!sessionDataStr) {
@@ -153,42 +153,42 @@ export class RedisStorageBackend implements StorageBackend {
         }
     }
 
-    async getUserSessionIds(identity: string): Promise<string[]> {
-        const sessions = await this.getUserSession(identity);
+    async getUserSessionIds(userId: string): Promise<string[]> {
+        const sessions = await this.getUserSession(userId);
         return sessions.map((session) => session.sessionId);
     }
 
-    async getUserSession(identity: string): Promise<SessionData[]> {
+    async getUserSession(userId: string): Promise<SessionData[]> {
         try {
-            const identityKey = this.getIdentityKey(identity);
-            const sessionIds = await this.redis.smembers(identityKey);
+            const userIdKey = this.getUserIdKey(userId);
+            const sessionIds = await this.redis.smembers(userIdKey);
             if (sessionIds.length === 0) return [];
 
             const results = await Promise.all(
                 sessionIds.map(async (sessionId) => {
-                    const data = await this.redis.get(this.getSessionKey(identity, sessionId));
+                    const data = await this.redis.get(this.getSessionKey(userId, sessionId));
                     return data ? (JSON.parse(data) as SessionData) : null;
                 })
             );
 
             const staleSessionIds = sessionIds.filter((_, index) => results[index] === null);
             if (staleSessionIds.length > 0) {
-                await this.redis.srem(identityKey, ...staleSessionIds);
+                await this.redis.srem(userIdKey, ...staleSessionIds);
             }
 
             return results.filter((session): session is SessionData => session !== null);
         } catch (error) {
-            console.error(`[RedisStorage] Failed to get session data for ${identity}:`, error);
+            console.error(`[RedisStorage] Failed to get session data for ${userId}:`, error);
             return [];
         }
     }
 
-    async removeSession(identity: string, sessionId: string): Promise<void> {
+    async removeSession(userId: string, sessionId: string): Promise<void> {
         try {
-            const sessionKey = this.getSessionKey(identity, sessionId);
-            const identityKey = this.getIdentityKey(identity);
+            const sessionKey = this.getSessionKey(userId, sessionId);
+            const userIdKey = this.getUserIdKey(userId);
 
-            await this.redis.srem(identityKey, sessionId);
+            await this.redis.srem(userIdKey, sessionId);
             await this.redis.del(sessionKey);
         } catch (error) {
             console.error('[RedisStorage] Failed to remove session:', error);
@@ -224,8 +224,8 @@ export class RedisStorageBackend implements StorageBackend {
     async clearAll(): Promise<void> {
         try {
             const keys = await this.scanKeys(`${this.KEY_PREFIX}*`);
-            const identityKeys = await this.scanKeys(`${this.IDENTITY_KEY_PREFIX}*${this.IDENTITY_KEY_SUFFIX}`);
-            const allKeys = [...keys, ...identityKeys];
+            const userIdKeys = await this.scanKeys(`${this.USER_ID_KEY_PREFIX}*${this.USER_ID_KEY_SUFFIX}`);
+            const allKeys = [...keys, ...userIdKeys];
             if (allKeys.length > 0) {
                 await this.redis.del(...allKeys);
             }
@@ -236,29 +236,29 @@ export class RedisStorageBackend implements StorageBackend {
 
     async cleanupExpiredSessions(): Promise<void> {
         try {
-            const identityKeys = await this.scanKeys(`${this.IDENTITY_KEY_PREFIX}*${this.IDENTITY_KEY_SUFFIX}`);
+            const userIdKeys = await this.scanKeys(`${this.USER_ID_KEY_PREFIX}*${this.USER_ID_KEY_SUFFIX}`);
 
-            for (const identityKey of identityKeys) {
-                const identity = this.parseIdentityFromKey(identityKey);
-                const sessionIds = await this.redis.smembers(identityKey);
+            for (const userIdKey of userIdKeys) {
+                const userId = this.parseUserIdFromKey(userIdKey);
+                const sessionIds = await this.redis.smembers(userIdKey);
 
                 if (sessionIds.length === 0) {
-                    await this.redis.del(identityKey);
+                    await this.redis.del(userIdKey);
                     continue;
                 }
 
                 const existenceChecks = await Promise.all(
-                    sessionIds.map((sessionId) => this.redis.exists(this.getSessionKey(identity, sessionId)))
+                    sessionIds.map((sessionId) => this.redis.exists(this.getSessionKey(userId, sessionId)))
                 );
 
                 const staleSessionIds = sessionIds.filter((_, index) => existenceChecks[index] === 0);
                 if (staleSessionIds.length > 0) {
-                    await this.redis.srem(identityKey, ...staleSessionIds);
+                    await this.redis.srem(userIdKey, ...staleSessionIds);
                 }
 
-                const remainingCount = await this.redis.scard(identityKey);
+                const remainingCount = await this.redis.scard(userIdKey);
                 if (remainingCount === 0) {
-                    await this.redis.del(identityKey);
+                    await this.redis.del(userIdKey);
                 }
             }
         } catch (error) {

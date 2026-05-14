@@ -32,7 +32,7 @@ export interface SSEClientOptions {
   url: string;
 
   /** User/Client identifier */
-  identity: string;
+  userId: string;
 
   /** Optional auth token for authenticated requests */
   authToken?: string;
@@ -312,7 +312,7 @@ export class SSEClient {
 
   private buildUrl(): string {
     const url = new URL(this.options.url, globalThis.location?.origin);
-    url.searchParams.set('identity', this.options.identity);
+    url.searchParams.set('userId', this.options.userId);
     if (this.options.authToken) {
       url.searchParams.set('token', this.options.authToken);
     }

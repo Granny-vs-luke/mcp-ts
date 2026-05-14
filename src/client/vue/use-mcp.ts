@@ -25,7 +25,7 @@ export interface UseMcpOptions {
     /**
      * User/Client identifier
      */
-    identity: string;
+    userId: string;
 
     /**
      * Optional auth token
@@ -219,7 +219,7 @@ export interface McpClient {
 export function useMcp(options: UseMcpOptions): McpClient {
     const {
         url,
-        identity,
+        userId,
         authToken,
         autoConnect = true,
         autoInitialize = true,
@@ -443,7 +443,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
 
         const clientOptions: SSEClientOptions = {
             url,
-            identity,
+            userId,
             authToken,
             onConnectionEvent: (event) => {
                 // Update local state based on event

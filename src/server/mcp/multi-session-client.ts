@@ -9,7 +9,7 @@ const DEFAULT_RETRY_DELAY_MS = 1000;
 const CONNECTION_BATCH_SIZE = 5;
 
 /**
- * Manages multiple MCP connections for a single user identity.
+ * Manages multiple MCP connections for a single user userId.
  * Allows aggregating tools from all connected servers.
  */
 export interface MultiSessionOptions {
@@ -31,7 +31,7 @@ export interface MultiSessionOptions {
 }
 
 /**
- * Manages multiple MCP client connections for a single user identity.
+ * Manages multiple MCP client connections for a single user userId.
  *
  * On a traditional long-running server, you can cache this instance per user
  * so the connections stay alive between requests. On serverless, a new instance
@@ -40,18 +40,18 @@ export interface MultiSessionOptions {
  */
 export class MultiSessionClient {
     private clients: MCPClient[] = [];
-    private identity: string;
+    private userId: string;
     private options: MultiSessionOptions;
 
     /**
-     * Creates a new MultiSessionClient for the given user identity.
+     * Creates a new MultiSessionClient for the given user userId.
      *
-     * @param identity - A unique string identifying the user (e.g. user ID or email).
+     * @param userId - A unique string identifying the user (e.g. user ID or email).
      * @param options  - Optional tuning for connection timeout, retry count, and retry delay.
      *                   Falls back to sensible defaults if not provided.
      */
-    constructor(identity: string, options: MultiSessionOptions = {}) {
-        this.identity = identity;
+    constructor(userId: string, options: MultiSessionOptions = {}) {
+        this.userId = userId;
         this.options = {
             timeout: DEFAULT_TIMEOUT_MS,
             maxRetries: DEFAULT_MAX_RETRIES,
@@ -61,7 +61,7 @@ export class MultiSessionClient {
     }
 
     /**
-     * Fetches all sessions for this identity from storage and returns only the
+     * Fetches all sessions for this userId from storage and returns only the
      * ones that are ready to connect.
      *
      * A session is considered connectable when:
@@ -74,7 +74,7 @@ export class MultiSessionClient {
      * for backwards compatibility.
      */
     private async getActiveSessions(): Promise<SessionData[]> {
-        const sessions = await storage.getUserSession(this.identity);
+        const sessions = await storage.getUserSession(this.userId);
         const valid = sessions.filter(s =>
             s.serverId &&
             s.serverUrl &&
@@ -154,7 +154,7 @@ export class MultiSessionClient {
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
                 const client = new MCPClient({
-                    identity: this.identity,
+                    userId: this.userId,
                     sessionId: session.sessionId,
                     serverId: session.serverId,
                     serverUrl: session.serverUrl,
@@ -192,7 +192,7 @@ export class MultiSessionClient {
     }
 
     /**
-     * The main entry point. Fetches all active sessions for this identity from
+     * The main entry point. Fetches all active sessions for this userId from
      * storage and establishes connections to all of them in batches.
      *
      * Call this once after creating the client. On traditional servers, you can

@@ -37,7 +37,7 @@ export class FileStorageBackend implements StorageBackend {
             this.memoryCache = new Map();
             if (Array.isArray(json)) {
                 json.forEach((s: SessionData) => {
-                    this.memoryCache!.set(this.getSessionKey(s.identity || 'unknown', s.sessionId), s);
+                    this.memoryCache!.set(this.getSessionKey(s.userId || 'unknown', s.sessionId), s);
                 });
             }
         } catch (error: any) {
@@ -65,8 +65,8 @@ export class FileStorageBackend implements StorageBackend {
         await fs.writeFile(this.filePath, JSON.stringify(sessions, null, 2), 'utf-8');
     }
 
-    private getSessionKey(identity: string, sessionId: string): string {
-        return `${identity}:${sessionId}`;
+    private getSessionKey(userId: string, sessionId: string): string {
+        return `${userId}:${sessionId}`;
     }
 
     generateSessionId(): string {
@@ -75,10 +75,10 @@ export class FileStorageBackend implements StorageBackend {
 
     async createSession(session: SessionData, ttl?: number): Promise<void> {
         await this.ensureInitialized();
-        const { sessionId, identity } = session;
-        if (!sessionId || !identity) throw new Error('identity and sessionId required');
+        const { sessionId, userId } = session;
+        if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
-        const sessionKey = this.getSessionKey(identity, sessionId);
+        const sessionKey = this.getSessionKey(userId, sessionId);
         if (this.memoryCache!.has(sessionKey)) {
             throw new Error(`Session ${sessionId} already exists`);
         }
@@ -88,11 +88,11 @@ export class FileStorageBackend implements StorageBackend {
         // Note: TTL is ignored in file backend - sessions don't auto-expire
     }
 
-    async updateSession(identity: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
+    async updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
         await this.ensureInitialized();
-        if (!identity || !sessionId) throw new Error('identity and sessionId required');
+        if (!userId || !sessionId) throw new Error('userId and sessionId required');
 
-        const sessionKey = this.getSessionKey(identity, sessionId);
+        const sessionKey = this.getSessionKey(userId, sessionId);
         const current = this.memoryCache!.get(sessionKey);
 
         if (!current) {
@@ -109,27 +109,27 @@ export class FileStorageBackend implements StorageBackend {
         // Note: TTL is ignored in file backend - sessions don't auto-expire
     }
 
-    async getSession(identity: string, sessionId: string): Promise<SessionData | null> {
+    async getSession(userId: string, sessionId: string): Promise<SessionData | null> {
         await this.ensureInitialized();
-        const sessionKey = this.getSessionKey(identity, sessionId);
+        const sessionKey = this.getSessionKey(userId, sessionId);
         return this.memoryCache!.get(sessionKey) || null;
     }
 
-    async getUserSession(identity: string): Promise<SessionData[]> {
+    async getUserSession(userId: string): Promise<SessionData[]> {
         await this.ensureInitialized();
-        return Array.from(this.memoryCache!.values()).filter(s => s.identity === identity);
+        return Array.from(this.memoryCache!.values()).filter(s => s.userId === userId);
     }
 
-    async getUserSessionIds(identity: string): Promise<string[]> {
+    async getUserSessionIds(userId: string): Promise<string[]> {
         await this.ensureInitialized();
         return Array.from(this.memoryCache!.values())
-            .filter(s => s.identity === identity)
+            .filter(s => s.userId === userId)
             .map(s => s.sessionId);
     }
 
-    async removeSession(identity: string, sessionId: string): Promise<void> {
+    async removeSession(userId: string, sessionId: string): Promise<void> {
         await this.ensureInitialized();
-        const sessionKey = this.getSessionKey(identity, sessionId);
+        const sessionKey = this.getSessionKey(userId, sessionId);
         if (this.memoryCache!.delete(sessionKey)) {
             await this.flush();
         }

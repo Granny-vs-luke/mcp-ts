@@ -52,10 +52,10 @@ export interface ClientMetadata {
 
 export interface SSEHandlerOptions {
   /** User/Client identifier */
-  identity: string;
+  userId: string;
 
   /** Optional callback for authentication/authorization */
-  onAuth?: (identity: string) => Promise<boolean>;
+  onAuth?: (userId: string) => Promise<boolean>;
 
   /** Heartbeat interval in milliseconds @default 30000 */
   heartbeatInterval?: number;
@@ -92,7 +92,7 @@ function normalizeHeaders(headers?: Record<string, string>): Record<string, stri
  * Each instance corresponds to one connected browser client.
  */
 export class SSEConnectionManager {
-  private readonly identity: string;
+  private readonly userId: string;
   private readonly clients = new Map<string, MCPClient>();
   private heartbeatTimer?: NodeJS.Timeout;
   private isActive = true;
@@ -101,7 +101,7 @@ export class SSEConnectionManager {
     private readonly options: SSEHandlerOptions,
     private readonly sendEvent: (event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse) => void
   ) {
-    this.identity = options.identity;
+    this.userId = options.userId;
     this.startHeartbeat();
   }
 
@@ -225,10 +225,10 @@ export class SSEConnectionManager {
   }
 
   /**
-   * Get all sessions for the current identity
+   * Get all sessions for the current userId
    */
   private async getSessions(): Promise<SessionListResult> {
-    const sessions = await storage.getUserSession(this.identity);
+    const sessions = await storage.getUserSession(this.userId);
 
     return {
       sessions: sessions.map((s) => ({
@@ -257,7 +257,7 @@ export class SSEConnectionManager {
       : await storage.generateSessionId();
 
     // Check for existing connections
-    const existingSessions = await storage.getUserSession(this.identity);
+    const existingSessions = await storage.getUserSession(this.userId);
     const duplicate = existingSessions.find(s =>
       s.serverId === serverId || s.serverUrl === serverUrl
     );
@@ -284,7 +284,7 @@ export class SSEConnectionManager {
 
       // Create MCP client
       const client = new MCPClient({
-        identity: this.identity,
+        userId: this.userId,
         sessionId,
         serverId,
         serverName,
@@ -360,7 +360,7 @@ export class SSEConnectionManager {
     } else {
       // Handle orphaned sessions (e.g., OAuth flow failed before client was stored)
       // Directly remove from storage since there's no active client
-      await storage.removeSession(this.identity, sessionId);
+      await storage.removeSession(this.userId, sessionId);
     }
 
     return { success: true };
@@ -375,13 +375,13 @@ export class SSEConnectionManager {
       return existing;
     }
 
-    const session = await storage.getSession(this.identity, sessionId);
+    const session = await storage.getSession(this.userId, sessionId);
     if (!session) {
       throw new Error('Session not found');
     }
 
     const client = new MCPClient({
-      identity: this.identity,
+      userId: this.userId,
       sessionId,
       // These fields are optional in MCPClient, but when rehydrating a known
       // stored session on the server we pass them explicitly to preserve the
@@ -442,7 +442,7 @@ export class SSEConnectionManager {
   private async restoreSession(params: SessionParams): Promise<RestoreSessionResult> {
     const { sessionId } = params;
 
-    const session = await storage.getSession(this.identity, sessionId);
+    const session = await storage.getSession(this.userId, sessionId);
     if (!session) {
       throw new Error('Session not found');
     }
@@ -462,7 +462,7 @@ export class SSEConnectionManager {
       const clientMetadata = await this.getResolvedClientMetadata();
 
       const client = new MCPClient({
-        identity: this.identity,
+        userId: this.userId,
         sessionId,
         // These fields are optional in MCPClient, but when rehydrating a known
         // stored session on the server we pass them explicitly to preserve the
@@ -506,14 +506,14 @@ export class SSEConnectionManager {
   private async finishAuth(params: FinishAuthParams): Promise<FinishAuthResult> {
     const { sessionId, code } = params;
 
-    const session = await storage.getSession(this.identity, sessionId);
+    const session = await storage.getSession(this.userId, sessionId);
     if (!session) {
       throw new Error('Session not found');
     }
 
     try {
       const client = new MCPClient({
-        identity: this.identity,
+        userId: this.userId,
         sessionId,
         // These fields are optional in MCPClient, but when rehydrating a known
         // stored session on the server we pass them explicitly to preserve the

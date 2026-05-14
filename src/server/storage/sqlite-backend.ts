@@ -37,11 +37,11 @@ export class SqliteStorage implements StorageBackend {
             this.db.exec(`
                 CREATE TABLE IF NOT EXISTS ${this.table} (
                     sessionId TEXT PRIMARY KEY,
-                    identity TEXT NOT NULL,
+                    userId TEXT NOT NULL,
                     data TEXT NOT NULL,
                     expiresAt INTEGER
                 );
-                CREATE INDEX IF NOT EXISTS idx_${this.table}_identity ON ${this.table}(identity);
+                CREATE INDEX IF NOT EXISTS idx_${this.table}_userId ON ${this.table}(userId);
             `);
 
             this.initialized = true;
@@ -68,19 +68,19 @@ export class SqliteStorage implements StorageBackend {
 
     async createSession(session: SessionData, ttl?: number): Promise<void> {
         this.ensureInitialized();
-        const { sessionId, identity } = session;
+        const { sessionId, userId } = session;
 
-        if (!sessionId || !identity) {
-            throw new Error('identity and sessionId required');
+        if (!sessionId || !userId) {
+            throw new Error('userId and sessionId required');
         }
 
         const expiresAt = ttl ? Date.now() + ttl * 1000 : null;
 
         try {
             const stmt = this.db!.prepare(
-                `INSERT INTO ${this.table} (sessionId, identity, data, expiresAt) VALUES (?, ?, ?, ?)`
+                `INSERT INTO ${this.table} (sessionId, userId, data, expiresAt) VALUES (?, ?, ?, ?)`
             );
-            stmt.run(sessionId, identity, JSON.stringify(session), expiresAt);
+            stmt.run(sessionId, userId, JSON.stringify(session), expiresAt);
         } catch (error: any) {
             if (error.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
                 throw new Error(`Session ${sessionId} already exists`);
@@ -89,67 +89,67 @@ export class SqliteStorage implements StorageBackend {
         }
     }
 
-    async updateSession(identity: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
+    async updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
         this.ensureInitialized();
-        if (!sessionId || !identity) {
-            throw new Error('identity and sessionId required');
+        if (!sessionId || !userId) {
+            throw new Error('userId and sessionId required');
         }
 
-        const currentSession = await this.getSession(identity, sessionId);
+        const currentSession = await this.getSession(userId, sessionId);
         if (!currentSession) {
-            throw new Error(`Session ${sessionId} not found for identity ${identity}`);
+            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
 
         const updatedSession = { ...currentSession, ...data };
         const expiresAt = ttl ? Date.now() + ttl * 1000 : null;
 
         const stmt = this.db!.prepare(
-            `UPDATE ${this.table} SET data = ?, expiresAt = ? WHERE sessionId = ? AND identity = ?`
+            `UPDATE ${this.table} SET data = ?, expiresAt = ? WHERE sessionId = ? AND userId = ?`
         );
 
-        stmt.run(JSON.stringify(updatedSession), expiresAt, sessionId, identity);
+        stmt.run(JSON.stringify(updatedSession), expiresAt, sessionId, userId);
     }
 
-    async getSession(identity: string, sessionId: string): Promise<SessionData | null> {
+    async getSession(userId: string, sessionId: string): Promise<SessionData | null> {
         this.ensureInitialized();
 
         const stmt = this.db!.prepare(
-            `SELECT data FROM ${this.table} WHERE sessionId = ? AND identity = ?`
+            `SELECT data FROM ${this.table} WHERE sessionId = ? AND userId = ?`
         );
-        const row = stmt.get(sessionId, identity) as { data: string } | undefined;
+        const row = stmt.get(sessionId, userId) as { data: string } | undefined;
 
         if (!row) return null;
         return JSON.parse(row.data) as SessionData;
     }
 
-    async getUserSession(identity: string): Promise<SessionData[]> {
+    async getUserSession(userId: string): Promise<SessionData[]> {
         this.ensureInitialized();
 
         const stmt = this.db!.prepare(
-            `SELECT data FROM ${this.table} WHERE identity = ?`
+            `SELECT data FROM ${this.table} WHERE userId = ?`
         );
-        const rows = stmt.all(identity) as { data: string }[];
+        const rows = stmt.all(userId) as { data: string }[];
 
         return rows.map(row => JSON.parse(row.data) as SessionData);
     }
 
-    async getUserSessionIds(identity: string): Promise<string[]> {
+    async getUserSessionIds(userId: string): Promise<string[]> {
         this.ensureInitialized();
 
         const stmt = this.db!.prepare(
-            `SELECT sessionId FROM ${this.table} WHERE identity = ?`
+            `SELECT sessionId FROM ${this.table} WHERE userId = ?`
         );
-        const rows = stmt.all(identity) as { sessionId: string }[];
+        const rows = stmt.all(userId) as { sessionId: string }[];
 
         return rows.map(row => row.sessionId);
     }
 
-    async removeSession(identity: string, sessionId: string): Promise<void> {
+    async removeSession(userId: string, sessionId: string): Promise<void> {
         this.ensureInitialized();
         const stmt = this.db!.prepare(
-            `DELETE FROM ${this.table} WHERE sessionId = ? AND identity = ?`
+            `DELETE FROM ${this.table} WHERE sessionId = ? AND userId = ?`
         );
-        stmt.run(sessionId, identity);
+        stmt.run(sessionId, userId);
     }
 
     async getAllSessionIds(): Promise<string[]> {

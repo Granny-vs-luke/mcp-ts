@@ -34,7 +34,7 @@ export interface AgentsOAuthProvider extends OAuthClientProvider {
 }
 
 export interface StorageOAuthClientProviderOptions {
-    identity: string;
+    userId: string;
     serverId: string;
     sessionId: string;
     redirectUrl: string;
@@ -52,7 +52,7 @@ export interface StorageOAuthClientProviderOptions {
  * Stores OAuth tokens, client information, and PKCE verifiers using the configured StorageBackend
  */
 export class StorageOAuthClientProvider implements AgentsOAuthProvider {
-    public readonly identity: string;
+    public readonly userId: string;
     public readonly serverId: string;
     public readonly sessionId: string;
     public readonly redirectUrl: string;
@@ -73,7 +73,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * @param options - Provider configuration
      */
     constructor(options: StorageOAuthClientProviderOptions) {
-        this.identity = options.identity;
+        this.userId = options.userId;
         this.serverId = options.serverId;
         this.sessionId = options.sessionId;
         this.redirectUrl = options.redirectUrl;
@@ -114,7 +114,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * @private
      */
     private async getSessionData(): Promise<SessionData> {
-        const data = await storage.getSession(this.identity, this.sessionId);
+        const data = await storage.getSession(this.userId, this.sessionId);
         if (!data) {
             return {} as SessionData;
         }
@@ -128,7 +128,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * @throws Error if session doesn't exist (session must be created by controller layer)
      */
     private async saveSessionData(data: Partial<SessionData>): Promise<void> {
-        await storage.updateSession(this.identity, this.sessionId, data);
+        await storage.updateSession(this.userId, this.sessionId, data);
     }
 
     /**
@@ -188,7 +188,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async checkState(_state: string): Promise<{ valid: boolean; serverId?: string; error?: string }> {
-        const data = await storage.getSession(this.identity, this.sessionId);
+        const data = await storage.getSession(this.userId, this.sessionId);
 
         if (!data) {
             return { valid: false, error: "Session not found" };
@@ -212,7 +212,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         scope: "all" | "client" | "tokens" | "verifier"
     ): Promise<void> {
         if (scope === "all") {
-            await storage.removeSession(this.identity, this.sessionId);
+            await storage.removeSession(this.userId, this.sessionId);
         } else {
             const updates: Partial<SessionData> = {};
 
