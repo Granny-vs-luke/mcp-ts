@@ -57,7 +57,7 @@ The optional block:
 - Enables Row Level Security on the table.
 - Adds a policy that allows the server-side `mcp_service_role` to perform storage operations.
 
-This optional block limits table access to the dedicated backend role. The Neon storage backend is intended for server-side use, and session access is scoped by `identity` in application queries.
+This optional block limits table access to the dedicated backend role. The Neon storage backend is intended for server-side use, and session access is scoped by `userId` in application queries.
 
 ## Schema
 
@@ -80,7 +80,6 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL,
     active BOOLEAN DEFAULT false,
-    identity TEXT NOT NULL,
     headers JSONB,
     client_information JSONB,
     tokens JSONB,
@@ -88,7 +87,6 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     client_id TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_mcp_sessions_identity ON public.mcp_sessions(identity);
 CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user_id ON public.mcp_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_sessions_expires_at ON public.mcp_sessions(expires_at);
 

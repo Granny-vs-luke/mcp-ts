@@ -58,9 +58,9 @@ If you prefer manual setup, copy the SQL from the [migration file](https://githu
 
 ### Why RLS ?
 
-`mcp-ts` uses the `service_role` key for server-side Supabase storage, and that key bypasses RLS. Session access is still scoped by `identity` in application queries.
+`mcp-ts` uses the `service_role` key for server-side Supabase storage, and that key bypasses RLS. Session access is still scoped by `userId` in application queries.
 
-The migration also defines RLS policies for Supabase's authenticated client path. If the `mcp_sessions` table is queried through that path, the policies use `auth.uid()` to ensure users can only access rows where `user_id` or `identity` matches their Supabase user ID.
+The migration also defines RLS policies for Supabase's authenticated client path. If the `mcp_sessions` table is queried through that path, the policies use `auth.uid()` to ensure users can only access rows where `user_id` matches their Supabase user ID.
 
 ## Features
 
@@ -149,7 +149,7 @@ const storage = createSupabaseStorageBackend(supabase);
 
 await storage.createSession({
   sessionId: 'sb-123',
-  identity: 'user-789',
+  userId: 'user-789',
   serverUrl: 'https://mcp.example.com',
   callbackUrl: 'https://app.com/callback',
   transportType: 'sse',

@@ -154,8 +154,7 @@ test.describe('SupabaseStorageBackend', () => {
 
             const row = mockSupabase._getSessions()[0];
             expect(row.session_id).toBe(session.sessionId);
-            expect(row.identity).toBe(session.identity);
-            expect(row.user_id).toBe(session.identity);   // RLS mirror
+            expect(row.user_id).toBe(session.userId);
             expect(row.server_id).toBe(session.serverId);
             expect(row.server_name).toBe(session.serverName);
             expect(row.server_url).toBe(session.serverUrl);
@@ -202,13 +201,13 @@ test.describe('SupabaseStorageBackend', () => {
             await storage.createSession(session);
 
             const newTokens = createMockTokens();
-            await storage.updateSession(session.identity, session.sessionId, {
+            await storage.updateSession(session.userId, session.sessionId, {
                 active: true,
                 tokens: newTokens,
                 transportType: 'streamable-http',
             });
 
-            const retrieved = await storage.getSession(session.identity, session.sessionId);
+            const retrieved = await storage.getSession(session.userId, session.sessionId);
             // Updated
             expect(retrieved?.active).toBe(true);
             expect(retrieved?.tokens).toEqual(newTokens);
@@ -216,7 +215,7 @@ test.describe('SupabaseStorageBackend', () => {
             // Preserved
             expect(retrieved?.serverId).toBe(session.serverId);
             expect(retrieved?.serverUrl).toBe(session.serverUrl);
-            expect(retrieved?.identity).toBe(session.identity);
+            expect(retrieved?.userId).toBe(session.userId);
         });
 
         test('handles OAuth token refresh safely', async () => {
@@ -227,9 +226,9 @@ test.describe('SupabaseStorageBackend', () => {
                 access_token:  'new-access-token',
                 refresh_token: 'new-refresh-token',
             });
-            await storage.updateSession(session.identity, session.sessionId, { tokens: refreshed });
+            await storage.updateSession(session.userId, session.sessionId, { tokens: refreshed });
 
-            const retrieved = await storage.getSession(session.identity, session.sessionId);
+            const retrieved = await storage.getSession(session.userId, session.sessionId);
             expect(retrieved?.tokens?.access_token).toBe('new-access-token');
             expect(retrieved?.tokens?.refresh_token).toBe('new-refresh-token');
         });
@@ -239,7 +238,7 @@ test.describe('SupabaseStorageBackend', () => {
             await storage.createSession(session, 10);        // 10s TTL on create
 
             const before = Date.now();
-            await storage.updateSession(session.identity, session.sessionId, { active: true }, 7200);
+            await storage.updateSession(session.userId, session.sessionId, { active: true }, 7200);
 
             const row = mockSupabase._getSessions()[0];
             const expiresMs = new Date(row.expires_at).getTime();
@@ -260,7 +259,7 @@ test.describe('SupabaseStorageBackend', () => {
             const session = createMockSession();
             await storage.createSession(session);
 
-            const result = await storage.getSession(session.identity, session.sessionId);
+            const result = await storage.getSession(session.userId, session.sessionId);
 
             expect(result).not.toBeNull();
             expect(result?.sessionId).toBe(session.sessionId);
@@ -269,7 +268,7 @@ test.describe('SupabaseStorageBackend', () => {
             expect(result?.serverUrl).toBe(session.serverUrl);
             expect(result?.transportType).toBe(session.transportType);
             expect(result?.callbackUrl).toBe(session.callbackUrl);
-            expect(result?.identity).toBe(session.identity);
+            expect(result?.userId).toBe(session.userId);
             expect(result?.active).toBe(session.active);
             expect(typeof result?.createdAt).toBe('number');
         });
@@ -278,9 +277,9 @@ test.describe('SupabaseStorageBackend', () => {
             expect(await storage.getSession('ghost', 'ghost')).toBeNull();
         });
 
-        test('does not leak sessions across identities', async () => {
-            const a = createMockSession({ sessionId: 'a', identity: 'user-a' });
-            const b = createMockSession({ sessionId: 'b', identity: 'user-b' });
+        test('does not leak sessions across userIds', async () => {
+            const a = createMockSession({ sessionId: 'a', userId: 'user-a' });
+            const b = createMockSession({ sessionId: 'b', userId: 'user-b' });
             await storage.createSession(a);
             await storage.createSession(b);
 
@@ -294,38 +293,38 @@ test.describe('SupabaseStorageBackend', () => {
         test('deletes the session so it can no longer be retrieved', async () => {
             const session = createMockSession();
             await storage.createSession(session);
-            await storage.removeSession(session.identity, session.sessionId);
-            expect(await storage.getSession(session.identity, session.sessionId)).toBeNull();
+            await storage.removeSession(session.userId, session.sessionId);
+            expect(await storage.getSession(session.userId, session.sessionId)).toBeNull();
         });
 
-        test('does not remove other sessions belonging to the same identity', async () => {
-            const identity = 'multi-user';
-            await storage.createSession(createMockSession({ sessionId: 's1', identity }));
-            await storage.createSession(createMockSession({ sessionId: 's2', identity }));
+        test('does not remove other sessions belonging to the same userId', async () => {
+            const userId = 'multi-user';
+            await storage.createSession(createMockSession({ sessionId: 's1', userId }));
+            await storage.createSession(createMockSession({ sessionId: 's2', userId }));
 
-            await storage.removeSession(identity, 's1');
+            await storage.removeSession(userId, 's1');
 
-            const remaining = await storage.getUserSessionIds(identity);
+            const remaining = await storage.getUserSessionIds(userId);
             expect(remaining).toEqual(['s2']);
         });
     });
 
     // ── getUserSession ──────────────────────────────────────────────
     test.describe('getUserSession', () => {
-        test('returns all full SessionData objects for the identity', async () => {
-            const identity = 'owner';
-            await storage.createSession(createMockSession({ sessionId: 'x1', identity }));
-            await storage.createSession(createMockSession({ sessionId: 'x2', identity, serverName: 'Alt Server' }));
+        test('returns all full SessionData objects for the userId', async () => {
+            const userId = 'owner';
+            await storage.createSession(createMockSession({ sessionId: 'x1', userId }));
+            await storage.createSession(createMockSession({ sessionId: 'x2', userId, serverName: 'Alt Server' }));
             // Another user — must NOT appear
-            await storage.createSession(createMockSession({ sessionId: 'x3', identity: 'intruder' }));
+            await storage.createSession(createMockSession({ sessionId: 'x3', userId: 'intruder' }));
 
-            const sessions = await storage.getUserSession(identity);
+            const sessions = await storage.getUserSession(userId);
             expect(sessions.length).toBe(2);
             expect(sessions.map(s => s.sessionId)).toContain('x1');
             expect(sessions.map(s => s.sessionId)).toContain('x2');
         });
 
-        test('returns empty array for identity with no sessions', async () => {
+        test('returns empty array for userId with no sessions', async () => {
             expect(await storage.getUserSession('nobody')).toEqual([]);
         });
     });
@@ -333,20 +332,20 @@ test.describe('SupabaseStorageBackend', () => {
     // ── getUserSessionIds ───────────────────────────────────────────────
     test.describe('getUserSessionIds', () => {
         test('returns only session IDs (not full objects)', async () => {
-            const identity = 'slim-user';
-            await storage.createSession(createMockSession({ sessionId: 'id-a', identity }));
-            await storage.createSession(createMockSession({ sessionId: 'id-b', identity }));
+            const userId = 'slim-user';
+            await storage.createSession(createMockSession({ sessionId: 'id-a', userId }));
+            await storage.createSession(createMockSession({ sessionId: 'id-b', userId }));
 
-            const ids = await storage.getUserSessionIds(identity);
+            const ids = await storage.getUserSessionIds(userId);
             expect(ids.sort()).toEqual(['id-a', 'id-b']);
         });
     });
 
     // ── getAllSessionIds ──────────────────────────────────────────────────────
     test.describe('getAllSessionIds', () => {
-        test('returns session IDs across ALL identities', async () => {
-            await storage.createSession(createMockSession({ sessionId: 'g1', identity: 'u1' }));
-            await storage.createSession(createMockSession({ sessionId: 'g2', identity: 'u2' }));
+        test('returns session IDs across ALL users', async () => {
+            await storage.createSession(createMockSession({ sessionId: 'g1', userId: 'u1' }));
+            await storage.createSession(createMockSession({ sessionId: 'g2', userId: 'u2' }));
 
             const ids = await storage.getAllSessionIds();
             expect(ids).toContain('g1');
@@ -357,9 +356,9 @@ test.describe('SupabaseStorageBackend', () => {
 
     // ── clearAll ─────────────────────────────────────────────────────────────
     test.describe('clearAll', () => {
-        test('wipes every session regardless of identity', async () => {
-            await storage.createSession(createMockSession({ sessionId: 'c1', identity: 'u1' }));
-            await storage.createSession(createMockSession({ sessionId: 'c2', identity: 'u2' }));
+        test('wipes every session regardless of userId', async () => {
+            await storage.createSession(createMockSession({ sessionId: 'c1', userId: 'u1' }));
+            await storage.createSession(createMockSession({ sessionId: 'c2', userId: 'u2' }));
 
             await storage.clearAll();
 
@@ -394,3 +393,4 @@ test.describe('SupabaseStorageBackend', () => {
         });
     });
 });
+

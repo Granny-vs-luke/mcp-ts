@@ -15,7 +15,6 @@ type NeonRow = {
     updated_at: string;
     expires_at: string;
     active: boolean;
-    identity: string;
     headers?: Record<string, string>;
     client_information?: unknown;
     tokens?: unknown;
@@ -44,7 +43,6 @@ function createMockNeonSql() {
                 transportType,
                 callbackUrl,
                 createdAt,
-                identity,
                 headers,
                 active,
                 clientInformation,
@@ -73,7 +71,6 @@ function createMockNeonSql() {
                 updated_at: new Date().toISOString(),
                 expires_at: expiresAt as string,
                 active: active as boolean,
-                identity: identity as string,
                 headers: headers as Record<string, string> | undefined,
                 client_information: clientInformation,
                 tokens,
@@ -97,10 +94,10 @@ function createMockNeonSql() {
                 codeVerifier,
                 clientId,
                 expiresAt,
-                identity,
+                userId,
                 sessionId,
             ] = params;
-            const row = sessions.find((item) => item.identity === identity && item.session_id === sessionId);
+            const row = sessions.find((item) => item.user_id === userId && item.session_id === sessionId);
             if (!row) {
                 return [];
             }
@@ -121,20 +118,20 @@ function createMockNeonSql() {
             return [{ id: row.id }];
         }
 
-        if (normalized.startsWith('select * from public.mcp_sessions where identity = $1 and session_id = $2')) {
-            const [identity, sessionId] = params;
-            return sessions.filter((row) => row.identity === identity && row.session_id === sessionId);
+        if (normalized.startsWith('select * from public.mcp_sessions where user_id = $1 and session_id = $2')) {
+            const [userId, sessionId] = params;
+            return sessions.filter((row) => row.user_id === userId && row.session_id === sessionId);
         }
 
-        if (normalized.startsWith('select * from public.mcp_sessions where identity = $1')) {
-            const [identity] = params;
-            return sessions.filter((row) => row.identity === identity);
+        if (normalized.startsWith('select * from public.mcp_sessions where user_id = $1')) {
+            const [userId] = params;
+            return sessions.filter((row) => row.user_id === userId);
         }
 
-        if (normalized.startsWith('select session_id from public.mcp_sessions where identity = $1')) {
-            const [identity] = params;
+        if (normalized.startsWith('select session_id from public.mcp_sessions where user_id = $1')) {
+            const [userId] = params;
             return sessions
-                .filter((row) => row.identity === identity)
+                .filter((row) => row.user_id === userId)
                 .map((row) => ({ session_id: row.session_id }));
         }
 
@@ -142,9 +139,9 @@ function createMockNeonSql() {
             return sessions.map((row) => ({ session_id: row.session_id }));
         }
 
-        if (normalized.startsWith('delete from public.mcp_sessions where identity = $1 and session_id = $2')) {
-            const [identity, sessionId] = params;
-            sessions = sessions.filter((row) => !(row.identity === identity && row.session_id === sessionId));
+        if (normalized.startsWith('delete from public.mcp_sessions where user_id = $1 and session_id = $2')) {
+            const [userId, sessionId] = params;
+            sessions = sessions.filter((row) => !(row.user_id === userId && row.session_id === sessionId));
             return [];
         }
 
@@ -199,9 +196,9 @@ test.describe('NeonStorageBackend', () => {
 
         await storage.createSession(session);
 
-        const retrieved = await storage.getSession(session.identity, session.sessionId);
+        const retrieved = await storage.getSession(session.userId, session.sessionId);
         expect(retrieved?.sessionId).toBe(session.sessionId);
-        expect(retrieved?.identity).toBe(session.identity);
+        expect(retrieved?.userId).toBe(session.userId);
         expect(retrieved?.tokens).toEqual(session.tokens);
         expect(retrieved?.headers).toEqual(session.headers);
     });
@@ -218,13 +215,13 @@ test.describe('NeonStorageBackend', () => {
         await storage.createSession(session);
 
         const tokens = createMockTokens({ access_token: 'refreshed-token' });
-        await storage.updateSession(session.identity, session.sessionId, {
+        await storage.updateSession(session.userId, session.sessionId, {
             active: false,
             tokens,
             transportType: 'streamable-http',
         });
 
-        const retrieved = await storage.getSession(session.identity, session.sessionId);
+        const retrieved = await storage.getSession(session.userId, session.sessionId);
         expect(retrieved?.active).toBe(false);
         expect(retrieved?.tokens).toEqual(tokens);
         expect(retrieved?.transportType).toBe('streamable-http');
@@ -238,9 +235,9 @@ test.describe('NeonStorageBackend', () => {
     });
 
     test('lists, removes, clears, and cleans up sessions', async () => {
-        await storage.createSession(createMockSession({ sessionId: 'a', identity: 'user-a' }), 3600);
-        await storage.createSession(createMockSession({ sessionId: 'b', identity: 'user-a' }), -1);
-        await storage.createSession(createMockSession({ sessionId: 'c', identity: 'user-b' }), 3600);
+        await storage.createSession(createMockSession({ sessionId: 'a', userId: 'user-a' }), 3600);
+        await storage.createSession(createMockSession({ sessionId: 'b', userId: 'user-a' }), -1);
+        await storage.createSession(createMockSession({ sessionId: 'c', userId: 'user-b' }), 3600);
 
         expect((await storage.getUserSessionIds('user-a')).sort()).toEqual(['a', 'b']);
         expect((await storage.getAllSessionIds()).sort()).toEqual(['a', 'b', 'c']);

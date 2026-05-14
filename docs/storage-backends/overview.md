@@ -104,7 +104,7 @@ All backends store the same session data structure:
 ```typescript
 interface SessionData {
   sessionId: string;
-  identity?: string;
+  userId: string;
   serverId?: string;
   serverName?: string;
   serverUrl: string;

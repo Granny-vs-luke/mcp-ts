@@ -45,7 +45,7 @@ console.log('Stored sessions:', sessions);
 [
   {
     "sessionId": "abc123",
-    "identity": "user-123",
+    "userId": "user-123",
     "serverId": "server-1",
     "serverName": "My MCP Server",
     "serverUrl": "https://mcp.example.com",

@@ -29,7 +29,7 @@ import { storage } from '@mcp-ts/sdk/server';
 // Storage uses in-memory by default if no other backend is configured
 await storage.createSession({
   sessionId: 'test-123',
-  identity: 'test-user',
+  userId: 'test-user',
   serverUrl: 'https://test.example.com',
   callbackUrl: 'https://test.com/callback',
   transportType: 'sse',

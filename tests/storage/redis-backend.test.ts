@@ -40,7 +40,7 @@ test.describe('RedisStorageBackend', () => {
 
             await storage.createSession(session);
 
-            const storedData = await redis.get(`mcp:session:${session.identity}:${session.sessionId}`);
+            const storedData = await redis.get(`mcp:session:${session.userId}:${session.sessionId}`);
             expect(storedData).toBeDefined();
 
             const parsed = JSON.parse(storedData!);
@@ -53,7 +53,7 @@ test.describe('RedisStorageBackend', () => {
 
             await storage.createSession(session);
 
-            const ttl = await redis.ttl(`mcp:session:${session.identity}:${session.sessionId}`);
+            const ttl = await redis.ttl(`mcp:session:${session.userId}:${session.sessionId}`);
             expect(ttl).toBeGreaterThan(0);
             expect(ttl).toBeLessThanOrEqual(43200); // 12 hours
         });
@@ -73,12 +73,12 @@ test.describe('RedisStorageBackend', () => {
             const session = createMockSession();
             await storage.createSession(session);
 
-            await storage.updateSession(session.identity, session.sessionId, {
+            await storage.updateSession(session.userId, session.sessionId, {
                 active: true,
                 tokens: createMockTokens()
             });
 
-            const retrieved = await storage.getSession(session.identity, session.sessionId);
+            const retrieved = await storage.getSession(session.userId, session.sessionId);
             expect(retrieved?.active).toBe(true);
             expect(retrieved?.tokens).toBeDefined();
             expect(retrieved?.serverId).toBe(session.serverId); // Original data preserved
@@ -97,7 +97,7 @@ test.describe('RedisStorageBackend', () => {
 
             await storage.createSession(session);
 
-            const retrieved = await storage.getSession(session.identity, session.sessionId);
+            const retrieved = await storage.getSession(session.userId, session.sessionId);
 
             expect(retrieved).toBeDefined();
             expect(retrieved?.serverId).toBe(session.serverId);
@@ -105,7 +105,7 @@ test.describe('RedisStorageBackend', () => {
         });
 
         test('should return null for non-existent session', async () => {
-            const result = await storage.getSession('unknown-identity', 'unknown-session');
+            const result = await storage.getSession('unknown-user', 'unknown-session');
             expect(result).toBeNull();
         });
     });
@@ -116,42 +116,42 @@ test.describe('RedisStorageBackend', () => {
 
             await storage.createSession(session);
 
-            await storage.removeSession(session.identity, session.sessionId);
+            await storage.removeSession(session.userId, session.sessionId);
 
-            const result = await storage.getSession(session.identity, session.sessionId);
+            const result = await storage.getSession(session.userId, session.sessionId);
             expect(result).toBeNull();
         });
     });
 
     test.describe('getUserSession', () => {
-        test('should return all sessions for an identity', async () => {
-            const identity = 'test-user';
-            const session1 = createMockSession({ sessionId: 'session-1', identity });
-            const session2 = createMockSession({ sessionId: 'session-2', identity, serverName: 'Server 2' });
+        test('should return all sessions for a userId', async () => {
+            const userId = 'test-user';
+            const session1 = createMockSession({ sessionId: 'session-1', userId });
+            const session2 = createMockSession({ sessionId: 'session-2', userId, serverName: 'Server 2' });
 
             await storage.createSession(session1);
             await storage.createSession(session2);
 
-            const sessions = await storage.getUserSession(identity);
+            const sessions = await storage.getUserSession(userId);
 
             expect(sessions.length).toBe(2);
             expect(sessions.map(s => s.sessionId)).toContain('session-1');
             expect(sessions.map(s => s.sessionId)).toContain('session-2');
         });
 
-        test('should return empty array for identity with no sessions', async () => {
-            const sessions = await storage.getUserSession('unknown-identity');
+        test('should return empty array for userId with no sessions', async () => {
+            const sessions = await storage.getUserSession('unknown-user');
             expect(sessions).toEqual([]);
         });
 
-        test('should prune stale session ids from the identity index', async () => {
+        test('should prune stale session ids from the userId index', async () => {
             const session = createMockSession({ sessionId: 'stale-session' });
             await storage.createSession(session);
 
-            await redis.del(`mcp:session:${session.identity}:${session.sessionId}`);
+            await redis.del(`mcp:session:${session.userId}:${session.sessionId}`);
 
-            const sessions = await storage.getUserSession(session.identity);
-            const indexedSessionIds = await redis.smembers(`mcp:identity:${session.identity}:sessions`);
+            const sessions = await storage.getUserSession(session.userId);
+            const indexedSessionIds = await redis.smembers(`mcp:userId:${session.userId}:sessions`);
 
             expect(sessions).toEqual([]);
             expect(indexedSessionIds).toEqual([]);
@@ -159,26 +159,26 @@ test.describe('RedisStorageBackend', () => {
     });
 
     test.describe('getAllSessionIds', () => {
-        test('should return plain session ids without identity prefixes', async () => {
+        test('should return plain session ids without userId prefixes', async () => {
             const session = createMockSession({ sessionId: 'session-admin-view' });
             await storage.createSession(session);
 
             const sessionIds = await storage.getAllSessionIds();
 
             expect(sessionIds).toContain('session-admin-view');
-            expect(sessionIds).not.toContain(`${session.identity}:${session.sessionId}`);
+            expect(sessionIds).not.toContain(`${session.userId}:${session.sessionId}`);
         });
     });
 
     test.describe('clearAll', () => {
-        test('should delete both session keys and identity indexes', async () => {
+        test('should delete both session keys and userId indexes', async () => {
             const session = createMockSession({ sessionId: 'clear-all-session' });
             await storage.createSession(session);
 
             await storage.clearAll();
 
-            const sessionIds = await storage.getUserSessionIds(session.identity);
-            const indexedSessionIds = await redis.smembers(`mcp:identity:${session.identity}:sessions`);
+            const sessionIds = await storage.getUserSessionIds(session.userId);
+            const indexedSessionIds = await redis.smembers(`mcp:userId:${session.userId}:sessions`);
 
             expect(sessionIds).toEqual([]);
             expect(indexedSessionIds).toEqual([]);
@@ -186,15 +186,15 @@ test.describe('RedisStorageBackend', () => {
     });
 
     test.describe('cleanupExpiredSessions', () => {
-        test('should remove stale identity indexes for missing session keys', async () => {
+        test('should remove stale userId indexes for missing session keys', async () => {
             const session = createMockSession({ sessionId: 'expired-session' });
             await storage.createSession(session);
 
-            await redis.del(`mcp:session:${session.identity}:${session.sessionId}`);
+            await redis.del(`mcp:session:${session.userId}:${session.sessionId}`);
 
             await storage.cleanupExpiredSessions();
 
-            const indexedSessionIds = await redis.smembers(`mcp:identity:${session.identity}:sessions`);
+            const indexedSessionIds = await redis.smembers(`mcp:userId:${session.userId}:sessions`);
             expect(indexedSessionIds).toEqual([]);
         });
     });

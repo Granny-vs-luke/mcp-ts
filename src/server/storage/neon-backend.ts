@@ -106,7 +106,6 @@ export class NeonStorageBackend implements StorageBackend {
                     transport_type,
                     callback_url,
                     created_at,
-                    user_id,
                     headers,
                     active,
                     client_information,
@@ -116,7 +115,7 @@ export class NeonStorageBackend implements StorageBackend {
                     expires_at
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8,
-                    $9, $10, $11, $12, $13, $14, $15, $16
+                    $9, $10, $11, $12, $13, $14, $15
                 )`,
                 [
                     sessionId,
@@ -127,7 +126,6 @@ export class NeonStorageBackend implements StorageBackend {
                     session.transportType,
                     session.callbackUrl,
                     new Date(session.createdAt || Date.now()).toISOString(),
-                    userId,
                     encryptObject(session.headers),
                     session.active ?? false,
                     session.clientInformation,

@@ -48,7 +48,7 @@ const sessionId = storage.generateSessionId();
 
 await storage.createSession({
   sessionId,
-  identity: 'user-123',
+  userId: 'user-123',
   serverUrl: 'https://mcp.example.com',
   callbackUrl: 'https://app.com/callback',
   transportType: 'sse',
