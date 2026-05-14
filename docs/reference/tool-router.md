@@ -94,15 +94,11 @@ console.log(listed.totalCount, listed.tools);
 
 ### `SchemaCompressor`
 
-Utility for reducing tool schema token overhead by yielding compact representations (name + description + inline parameterHint).
+Utility for yielding compact tool representations (name + description + inline parameterHint) without the full `inputSchema`.
 
 ```typescript
 import { SchemaCompressor } from '@mcp-ts/sdk/shared';
 
 // Get a compact schema omitting full `inputSchema`
 const compact = SchemaCompressor.toCompact(tool);
-
-// Estimate token savings across all tools
-const stats = SchemaCompressor.estimateSavings(tools);
-console.log(stats.savingsPercent); // e.g., "82.3%"
 ```

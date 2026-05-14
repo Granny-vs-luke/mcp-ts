@@ -290,30 +290,6 @@ export class ToolRouter {
     return [...this.activeGroups];
   }
 
-  // -----------------------------------------------------------------------
-  // Stats & Introspection
-  // -----------------------------------------------------------------------
-
-  /** Total token cost of all tools if loaded without filtering. */
-  getTotalTokenCost(): number {
-    return this.index.getTotalTokenCost();
-  }
-
-  /** Estimate token cost of the currently filtered tool set. */
-  async getFilteredTokenCost(): Promise<number> {
-    const tools = await this.getFilteredTools();
-    let total = 0;
-    for (const tool of tools) {
-      total += ToolIndex.estimateTokens(tool);
-    }
-    return total;
-  }
-
-  /** Get compression stats showing savings from current strategy. */
-  getCompressionStats() {
-    return SchemaCompressor.estimateSavings(this.allTools);
-  }
-
   /** Number of total indexed tools. */
   get totalToolCount(): number {
     return this.allTools.length;

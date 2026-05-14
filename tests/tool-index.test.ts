@@ -62,10 +62,6 @@ test.describe('ToolIndex', () => {
         expect(slackResults[0].serverName).toBe('Slack');
         expect(slackResults[0].serverId).toBe('slack-server');
         expect(index.getTool('search')).toHaveLength(2);
-        expect(githubResults[0].estimatedTokens).toBeGreaterThan(0);
-        expect(index.getTotalTokenCost()).toBe(
-            githubResults[0].estimatedTokens + slackResults[0].estimatedTokens
-        );
     });
 
     test('should prefer exact namespace matches before fuzzy server names', async () => {
@@ -155,5 +151,156 @@ test.describe('ToolIndex', () => {
 
         expect(embeddingQueryText).toBe('slack send');
         expect(results[0].serverId).toBe('slack-server');
+    });
+
+    test('should search nested argument descriptions in JSON schemas', async () => {
+        const index = new ToolIndex();
+        const tools: IndexedTool[] = [
+            {
+                name: 'create_report',
+                description: 'Create a report',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        options: {
+                            type: 'object',
+                            properties: {
+                                schedule: {
+                                    type: 'object',
+                                    properties: {
+                                        timezone: {
+                                            type: 'string',
+                                            description: 'IANA timezone for delivery windows',
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                serverName: 'Reports',
+                sessionId: 'reports-session',
+                serverId: 'reports-server',
+            },
+        ];
+
+        await index.buildIndex(tools);
+
+        const results = await index.search('IANA timezone delivery', 5);
+
+        expect(results).toHaveLength(1);
+        expect(results[0].name).toBe('create_report');
+    });
+
+    test('should regex search nested argument names in JSON schemas', async () => {
+        const index = new ToolIndex();
+        const tools: IndexedTool[] = [
+            {
+                name: 'create_invoice',
+                description: 'Create an invoice',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        customer: {
+                            type: 'object',
+                            properties: {
+                                billingAddress: {
+                                    type: 'object',
+                                    properties: {
+                                        postalCode: {
+                                            type: 'string',
+                                            description: 'Postal code for tax calculation',
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                serverName: 'Billing',
+                sessionId: 'billing-session',
+                serverId: 'billing-server',
+            },
+        ];
+
+        await index.buildIndex(tools);
+
+        const results = index.searchRegex('postalcode', 5);
+
+        expect(results).toHaveLength(1);
+        expect(results[0].name).toBe('create_invoice');
+    });
+
+    test('should keyword search split words from nested camelCase argument names', async () => {
+        const index = new ToolIndex();
+        const tools: IndexedTool[] = [
+            {
+                name: 'create_invoice',
+                description: 'Create an invoice',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        customer: {
+                            type: 'object',
+                            properties: {
+                                billingAddress: {
+                                    type: 'object',
+                                    properties: {
+                                        postalCode: {
+                                            type: 'string',
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                serverName: 'Invoices',
+                sessionId: 'invoice-session',
+                serverId: 'invoice-server',
+            },
+        ];
+
+        await index.buildIndex(tools);
+
+        const addressResults = await index.search('address', 5);
+        const postalResults = await index.search('postal code', 5);
+
+        expect(addressResults).toHaveLength(1);
+        expect(addressResults[0].name).toBe('create_invoice');
+        expect(postalResults).toHaveLength(1);
+        expect(postalResults[0].name).toBe('create_invoice');
+    });
+
+    test('should build an index for cyclic JSON schemas', async () => {
+        const index = new ToolIndex();
+        const inputSchema: Record<string, unknown> = {
+            type: 'object',
+            properties: {
+                query: {
+                    type: 'string',
+                    description: 'Search query text',
+                },
+            },
+        };
+        inputSchema.self = inputSchema;
+
+        const tools: IndexedTool[] = [
+            {
+                name: 'cyclic_search',
+                description: 'Search with a cyclic schema',
+                inputSchema,
+                serverName: 'Search',
+                sessionId: 'search-session',
+                serverId: 'search-server',
+            },
+        ];
+
+        await expect(index.buildIndex(tools)).resolves.toBeUndefined();
+
+        const results = await index.search('query text', 5);
+
+        expect(results).toHaveLength(1);
+        expect(results[0].name).toBe('cyclic_search');
     });
 });

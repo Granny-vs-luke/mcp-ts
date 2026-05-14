@@ -28,8 +28,6 @@ export interface ToolSummary {
   serverId: string;
   /** Session the tool belongs to */
   sessionId: string;
-  /** Estimated token cost of the full inputSchema */
-  estimatedTokens: number;
 }
 
 /** Server-level summary derived from indexed tools. */
@@ -107,41 +105,6 @@ export interface ToolIndexOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Token Estimation
-// ---------------------------------------------------------------------------
-
-/**
- * Character-class weights for accurate-ish token estimation without a real
- * tokenizer.  Empirically calibrated against cl100k_base on typical JSON
- * Schema payloads.
- *
- * | Char class        | Approx chars per token |
- * |--------------------|------------------------|
- * | Whitespace / punct | 1–2                    |
- * | English words      | ~4                     |
- * | JSON keys/values   | ~3.5                   |
- *
- * We walk the string once and accumulate a weighted character count, then
- * divide by a calibrated divisor.
- */
-const CALIBRATION_DIVISOR = 3.6;
-
-function classifyChar(ch: string): number {
-  const code = ch.charCodeAt(0);
-  // whitespace / common JSON structural chars  →  high token density
-  if (code <= 0x20 || ch === '{' || ch === '}' || ch === '[' || ch === ']' || ch === ':' || ch === ',') return 1.0;
-  // digits and symbols
-  if (code >= 0x21 && code <= 0x2f) return 1.5;
-  if (code >= 0x30 && code <= 0x39) return 2.0;
-  // uppercase (often JSON keys)
-  if (code >= 0x41 && code <= 0x5a) return 3.5;
-  // lowercase (natural language in descriptions)
-  if (code >= 0x61 && code <= 0x7a) return 4.0;
-  // everything else (unicode, emojis, etc.)
-  return 2.5;
-}
-
-// ---------------------------------------------------------------------------
 // ToolIndex
 // ---------------------------------------------------------------------------
 
@@ -170,9 +133,6 @@ export class ToolIndex {
   /** BM25: average document length across the entire index. */
   private avgDocLength = 0;
 
-  /** Cached total estimated token cost across all indexed tools. */
-  private totalTokenCost = 0;
-
   private options: Required<ToolIndexOptions>;
 
   constructor(options: ToolIndexOptions = {}) {
@@ -199,7 +159,6 @@ export class ToolIndex {
     this.embeddings.clear();
     this.docLengths.clear();
     this.avgDocLength = 0;
-    this.totalTokenCost = 0;
 
     // 1. Populate tool map + search text
     const allTokenSets: Map<string, Set<string>> = new Map();
@@ -212,21 +171,19 @@ export class ToolIndex {
         this.tools.set(tool.name, []);
       }
       this.tools.get(tool.name)!.push(tool);
-      const estimatedTokens = ToolIndex.estimateTokens(tool);
       this.toolSummaries.set(docKey, {
         name: tool.name,
         description: tool.description ?? '',
         serverName: tool.serverName,
         serverId: tool.serverId,
         sessionId: tool.sessionId,
-        estimatedTokens,
       });
-      this.totalTokenCost += estimatedTokens;
 
-      const text = this.buildSearchableText(tool).toLowerCase();
+      const rawText = this.buildSearchableText(tool);
+      const text = rawText.toLowerCase();
       this.searchTexts.set(docKey, text);
 
-      const tokens = this.tokenize(text);
+      const tokens = this.tokenize(rawText);
       const tf = new Map<string, number>();
       const uniqueTokens = new Set<string>();
 
@@ -578,36 +535,6 @@ export class ToolIndex {
     return count;
   }
 
-  /** Total estimated token cost of all indexed tool schemas. */
-  getTotalTokenCost(): number {
-    return this.totalTokenCost;
-  }
-
-  // -----------------------------------------------------------------------
-  // Static Helpers
-  // -----------------------------------------------------------------------
-
-  /**
-   * Estimate token count of a tool's full schema (name + description + inputSchema).
-   *
-   * Uses character-class weighted counting calibrated against cl100k_base.
-   * Accuracy is typically within ±10% for JSON Schema payloads.
-   */
-  static estimateTokens(tool: Tool): number {
-    const parts: string[] = [tool.name];
-    if (tool.description) parts.push(tool.description);
-    if (tool.inputSchema) parts.push(JSON.stringify(tool.inputSchema));
-
-    const text = parts.join(' ');
-    let weightedLen = 0;
-
-    for (let i = 0; i < text.length; i++) {
-      weightedLen += 1 / classifyChar(text[i]);
-    }
-
-    return Math.ceil(weightedLen / (1 / CALIBRATION_DIVISOR));
-  }
-
   // -----------------------------------------------------------------------
   // Internals
   // -----------------------------------------------------------------------
@@ -617,21 +544,98 @@ export class ToolIndex {
     const parts: string[] = [tool.name];
     if (tool.description) parts.push(tool.description);
 
-    // Include property names and descriptions from schema
     if (tool.inputSchema && typeof tool.inputSchema === 'object') {
-      const schema = tool.inputSchema as Record<string, unknown>;
-      const props = schema.properties as Record<string, { description?: string }> | undefined;
-      if (props) {
-        for (const [key, val] of Object.entries(props)) {
-          parts.push(key);
-          if (val && typeof val === 'object' && val.description) {
-            parts.push(val.description);
-          }
-        }
-      }
+      this.collectSchemaSearchText(tool.inputSchema, parts);
     }
 
     return parts.join(' ');
+  }
+
+  /** Recursively collect JSON Schema argument names and descriptions. */
+  private collectSchemaSearchText(
+    schema: unknown,
+    parts: string[],
+    seen = new WeakSet<object>()
+  ): void {
+    if (!schema || typeof schema !== 'object') return;
+    if (seen.has(schema)) return;
+    seen.add(schema);
+
+    if (Array.isArray(schema)) {
+      for (const item of schema) {
+        this.collectSchemaSearchText(item, parts, seen);
+      }
+      return;
+    }
+
+    const schemaObject = schema as Record<string, unknown>;
+    this.pushStringValue(schemaObject.description, parts);
+    this.pushStringValue(schemaObject.title, parts);
+
+    const properties = schemaObject.properties;
+    if (properties && typeof properties === 'object' && !Array.isArray(properties)) {
+      for (const [propertyName, propertySchema] of Object.entries(properties)) {
+        parts.push(propertyName);
+        this.collectSchemaSearchText(propertySchema, parts, seen);
+      }
+    }
+
+    const patternProperties = schemaObject.patternProperties;
+    if (
+      patternProperties &&
+      typeof patternProperties === 'object' &&
+      !Array.isArray(patternProperties)
+    ) {
+      for (const [propertyPattern, propertySchema] of Object.entries(patternProperties)) {
+        parts.push(propertyPattern);
+        this.collectSchemaSearchText(propertySchema, parts, seen);
+      }
+    }
+
+    const dependentSchemas = schemaObject.dependentSchemas;
+    if (
+      dependentSchemas &&
+      typeof dependentSchemas === 'object' &&
+      !Array.isArray(dependentSchemas)
+    ) {
+      for (const [propertyName, dependentSchema] of Object.entries(dependentSchemas)) {
+        parts.push(propertyName);
+        this.collectSchemaSearchText(dependentSchema, parts, seen);
+      }
+    }
+
+    for (const key of [
+      'items',
+      'additionalProperties',
+      'contains',
+      'propertyNames',
+      'if',
+      'then',
+      'else',
+      'not',
+    ]) {
+      this.collectSchemaSearchText(schemaObject[key], parts, seen);
+    }
+
+    for (const key of ['allOf', 'anyOf', 'oneOf', 'prefixItems']) {
+      this.collectSchemaSearchText(schemaObject[key], parts, seen);
+    }
+
+    for (const key of ['$defs', 'definitions']) {
+      const definitions = schemaObject[key];
+      if (definitions && typeof definitions === 'object' && !Array.isArray(definitions)) {
+        for (const [definitionName, definitionSchema] of Object.entries(definitions)) {
+          parts.push(definitionName);
+          this.collectSchemaSearchText(definitionSchema, parts, seen);
+        }
+      }
+    }
+  }
+
+  private pushStringValue(value: unknown, parts: string[]): void {
+    if (typeof value === 'string' && value.trim()) {
+      parts.push(value);
+    }
   }
 
   private getDocumentKey(tool: IndexedTool): string {
@@ -662,6 +666,7 @@ export class ToolIndex {
       .replace(/([a-z])([A-Z])/g, '$1 $2')
       // Split snake_case / kebab-case
       .replace(/[_-]/g, ' ')
+      .toLowerCase()
       // Remove non-alphanumeric (except spaces)
       .replace(/[^a-z0-9\s]/g, '')
       // Split on whitespace

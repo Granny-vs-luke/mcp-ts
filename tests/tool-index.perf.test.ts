@@ -83,10 +83,6 @@ async function measureIndexPerformance(
     }
     const regexMs = performance.now() - regexStart;
 
-    const totalTokenStart = performance.now();
-    const totalTokenCost = index.getTotalTokenCost();
-    const totalTokenMs = performance.now() - totalTokenStart;
-
     const sampleResults = await index.search('github repository', 10);
 
     return {
@@ -95,8 +91,6 @@ async function measureIndexPerformance(
         buildMs: Number(buildMs.toFixed(2)),
         avgSearchMs: Number((searchMs / 100).toFixed(4)),
         avgRegexMs: Number((regexMs / 100).toFixed(4)),
-        totalTokenLookupMs: Number(totalTokenMs.toFixed(4)),
-        totalTokenCost,
         sampleResultCount: sampleResults.length,
         topResult: sampleResults[0],
     };
@@ -107,19 +101,16 @@ function assertWithinBudget(
         buildMs: number;
         avgSearchMs: number;
         avgRegexMs: number;
-        totalTokenLookupMs: number;
     },
     budget: {
         buildMs: number;
         avgSearchMs: number;
         avgRegexMs: number;
-        totalTokenLookupMs: number;
     }
 ) {
     expect(result.buildMs).toBeLessThan(budget.buildMs);
     expect(result.avgSearchMs).toBeLessThan(budget.avgSearchMs);
     expect(result.avgRegexMs).toBeLessThan(budget.avgRegexMs);
-    expect(result.totalTokenLookupMs).toBeLessThan(budget.totalTokenLookupMs);
 }
 
 test.describe('ToolIndex performance', () => {
@@ -133,12 +124,10 @@ test.describe('ToolIndex performance', () => {
         );
 
         expect(result.sampleResultCount).toBeGreaterThan(0);
-        expect(result.totalTokenCost).toBeGreaterThan(0);
         assertWithinBudget(result, {
             buildMs: 1000,
             avgSearchMs: 5,
             avgRegexMs: 3,
-            totalTokenLookupMs: 1,
         });
     });
 
@@ -157,12 +146,10 @@ test.describe('ToolIndex performance', () => {
         );
 
         expect(result.sampleResultCount).toBeGreaterThan(0);
-        expect(result.totalTokenCost).toBeGreaterThan(0);
         assertWithinBudget(result, {
             buildMs: 3000,
             avgSearchMs: 5,
             avgRegexMs: 3,
-            totalTokenLookupMs: 1,
         });
     });
 
@@ -184,12 +171,10 @@ test.describe('ToolIndex performance', () => {
         );
 
         expect(result.sampleResultCount).toBeGreaterThan(0);
-        expect(result.totalTokenCost).toBeGreaterThan(0);
         assertWithinBudget(result, {
             buildMs: 1000,
             avgSearchMs: 5,
             avgRegexMs: 3,
-            totalTokenLookupMs: 1,
         });
     });
 });
