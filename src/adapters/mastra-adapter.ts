@@ -87,9 +87,13 @@ export class MastraAdapter {
             const zodSchemaString = parseSchema(schema);
             // eslint-disable-next-line
             return new Function('z', 'return ' + zodSchemaString)(this.z);
-        } catch (error) {
+        } catch (error: any) {
             // Fallback: Accept any object if conversion fails
-            console.warn('[MastraAdapter] Failed to convert JSON Schema to Zod, using fallback:', error);
+            if (error.code === 'MODULE_NOT_FOUND') {
+                console.warn('[MastraAdapter] json-schema-to-zod is not installed. To improve type checking, install it with: npm install json-schema-to-zod');
+            } else {
+                console.warn('[MastraAdapter] Failed to convert JSON Schema to Zod, using fallback:', error);
+            }
             return this.z!.record(this.z!.any()).optional().describe("Dynamic Input");
         }
     }
