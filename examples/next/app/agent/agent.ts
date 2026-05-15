@@ -5,6 +5,9 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 
 const { ToolRouter } = await import("@mcp-ts/sdk/shared");
 
+// ----------------------------------------------------------------------
+// 1. Agent Instructions
+// ----------------------------------------------------------------------
 const INSTRUCTIONS = `
 You are an expert assistant, an AI assistant that helps users with their tasks using the available MCP tools.
 
@@ -12,35 +15,78 @@ IMPORTANT: When a tool requires user approval, explain what you intend to do and
 If the user denies a tool call, acknowledge their decision and suggest alternatives.
 `;
 
+// ----------------------------------------------------------------------
+// 2. Client Management (Singleton per identity)
+// ----------------------------------------------------------------------
 const globalForMcp = globalThis as unknown as { mcpClientMap?: Map<string, MultiSessionClient> };
 
-export async function createMcpAgent(identity: string = process.env.NEXT_PUBLIC_MCP_IDENTITY!) {
-  let client = globalForMcp.mcpClientMap?.get(identity);
-
+function getMcpClient(identity: string): MultiSessionClient {
+  if (!globalForMcp.mcpClientMap) {
+    globalForMcp.mcpClientMap = new Map();
+  }
+  
+  let client = globalForMcp.mcpClientMap.get(identity);
   if (!client) {
     client = new MultiSessionClient(identity);
-    if (!globalForMcp.mcpClientMap) {
-      globalForMcp.mcpClientMap = new Map();
-    }
     globalForMcp.mcpClientMap.set(identity, client);
   }
+  
+  return client;
+}
+
+// ----------------------------------------------------------------------
+// 3. HITL (Human-in-the-Loop) Approval Logic
+// ----------------------------------------------------------------------
+/**
+ * Determines if a tool call requires explicit user approval.
+ * For testing purposes, we require approval on `readOnly` tools instead of `destructive` ones.
+ */
+function requiresApproval(tool: any, args: any, router: any): boolean {
+  // Handle meta-tool proxy calls: If the LLM uses mcp_execute_tool, 
+  // we must look up the annotations on the actual target tool.
+  if (tool.name === 'mcp_execute_tool') {
+    const targetToolName = String(args?.toolName ?? "");
+    const targetNamespace = String(args?.serverId ?? "") || undefined;
+    
+    if (!targetToolName) return false;
+    
+    try {
+      const targetTool = router.getToolSchema(targetToolName, targetNamespace);
+      return (targetTool as any)?.annotations?.readOnlyHint === true;
+    } catch {
+      return false; // Tool not found, let execution fail normally
+    }
+  }
+
+  // Handle direct tool calls (when not using search/meta-tool routing)
+  return (tool.annotations as any)?.readOnlyHint === true;
+}
+
+// ----------------------------------------------------------------------
+// 4. Agent Initialization
+// ----------------------------------------------------------------------
+export async function createMcpAgent(identity: string = process.env.NEXT_PUBLIC_MCP_IDENTITY!) {
+  const client = getMcpClient(identity);
 
   // Always call connect to synchronize with the database.
-  // MultiSessionClient safely skips already-connected sessions and only connects to newly added ones.
+  // MultiSessionClient safely skips already-connected sessions.
   try {
     await client.connect();
   } catch (error) {
     console.error("[McpAgent] Failed to connect MCP client:", error);
   }
 
+  // Set up Tool Router and Adapter
   const router = new ToolRouter(client, { strategy: "search", maxTools: 5 });
-  const adapter = new AIAdapter(client, { toolRouter: router });
+  const adapter = new AIAdapter(client, {
+    toolRouter: router,
+    needsApproval: (tool, args) => requiresApproval(tool, args, router),
+  });
+
   const tools = await adapter.getTools();
 
   return new ToolLoopAgent({
-    model: createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY })(
-      "deepseek-chat",
-    ),
+    model: createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY })("deepseek-chat"),
     instructions: INSTRUCTIONS,
     tools: tools as any,
     stopWhen: stepCountIs(20),

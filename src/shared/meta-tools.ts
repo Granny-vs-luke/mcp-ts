@@ -337,7 +337,7 @@ export async function executeMetaTool(
 
         if (found.length > 0) {
           lines.push(...found.map((t, i) =>
-            `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n   ${t.description}`
+            `${i + 1}. **${t.name}** (serverName: ${t.serverName}, serverId: ${t.serverId})\n   ${t.description}`
           ));
         }
         
@@ -380,7 +380,7 @@ export async function executeMetaTool(
         : servers
             .map(
               (server, i) =>
-                `${i + 1}. **${server.serverName}** (serverId: ${server.serverId}, sessionId: ${server.sessionId})\n` +
+                `${i + 1}. **${server.serverName}** (serverId: ${server.serverId})\n` +
                 `   Tool count: ${server.toolCount}`
             )
             .join('\n');
@@ -522,7 +522,7 @@ function formatToolSummaries(
 ): string[] {
   return tools.map(
     (t, i) =>
-      `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n` +
+      `${i + 1}. **${t.name}** (serverName: ${t.serverName}, serverId: ${t.serverId})\n` +
       `   ${t.description}`
   );
 }
