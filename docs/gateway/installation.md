@@ -1,7 +1,7 @@
 ---
 title: "Gateway Installation"
 sidebarTitle: "Installation"
-description: "Get up and running with the MCP Gateway in seconds."
+description: "Install the mcp-ts MCP Gateway CLI and run it locally to bridge stdio MCP servers to cloud clients like ChatGPT and Claude in just a few commands."
 icon: "download"
 ---
 

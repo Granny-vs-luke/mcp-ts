@@ -1,7 +1,7 @@
 ---
 title: "Redis"
 sidebarTitle: "Redis"
-description: "High-performance session storage using Redis."
+description: "Use Redis as the mcp-ts session storage backend for production and serverless deployments, with automatic TTL, atomic operations, and distributed access."
 ---
 
 **Recommended for production and serverless deployments.**

@@ -1,7 +1,7 @@
 ---
 title: "Node.js / Express"
 sidebarTitle: "Node.js / Express"
-description: "Complete guide for integrating mcp-ts with Node.js and Express applications."
+description: "Integrate mcp-ts with Node.js and Express: mount the MCP handler, configure authentication and storage, and stream tool calls over SSE from any client."
 icon: "node-js"
 ---
 

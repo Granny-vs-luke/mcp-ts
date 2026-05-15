@@ -1,7 +1,7 @@
 ---
 title: "MCP App Host Comparison"
 sidebarTitle: "Host Comparison"
-description: "Comparison between mcp-ts and mcp-ui for hosting MCP Apps."
+description: "Side-by-side comparison of mcp-ts and mcp-ui as MCP App hosts, covering sandboxing, AppBridge support, framework integration, and developer ergonomics."
 icon: "scales-balanced"
 ---
 

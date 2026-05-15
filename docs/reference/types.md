@@ -1,7 +1,7 @@
 ---
 title: "Types & Errors"
 sidebarTitle: "Types"
-description: "Core TypeScript types and Error classes for mcp-ts."
+description: "Reference for core mcp-ts TypeScript types and error classes, including McpConnectionState, McpConnectionEvent, ToolInfo, and shared error subclasses."
 icon: "code"
 ---
 

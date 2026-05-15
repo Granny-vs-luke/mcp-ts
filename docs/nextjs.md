@@ -1,7 +1,7 @@
 ---
 title: "Next.js"
 sidebarTitle: "Next.js"
-description: "Complete guide for integrating mcp-ts with Next.js applications."
+description: "Integrate mcp-ts with Next.js: create an MCP API route with createNextMcpHandler, wire up authentication, and connect from React with the useMcp hook."
 icon: "n"
 ---
 

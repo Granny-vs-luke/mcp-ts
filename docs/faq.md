@@ -1,7 +1,7 @@
 ---
 title: "FAQ"
 sidebarTitle: "FAQ"
-description: "Frequently asked questions about mcp-ts."
+description: "Answers to common mcp-ts questions about the Model Context Protocol, OAuth authentication, storage backends, client-side usage, and AI SDK integration."
 icon: "question"
 ---
 

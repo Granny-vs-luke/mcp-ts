@@ -1,7 +1,7 @@
 ---
 title: "Vercel AI SDK"
 sidebarTitle: "AI SDK"
-description: "Add MCP capabilities to your Vercel AI SDK projects."
+description: "Convert MCP tools into Vercel AI SDK tool definitions with the AIAdapter so you can call MCP servers directly from generateText, streamText, and agents."
 ---
 
 The `AIAdapter` converts MCP tools into the format expected by the [Vercel AI SDK](https://sdk.vercel.ai/docs). This allows you to use MCP tools with functions like `streamText`, `generateText`, and `useChat`.

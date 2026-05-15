@@ -1,7 +1,7 @@
 ---
 title: "Client-Side API"
 sidebarTitle: "Client-Side"
-description: "React hooks and client utilities for mcp-ts."
+description: "API reference for mcp-ts client-side primitives, including the useMcp React hook, connection options, tool and resource methods, and lifecycle events."
 icon: "desktop"
 ---
 

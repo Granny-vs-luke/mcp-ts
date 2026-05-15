@@ -1,7 +1,7 @@
 ---
 title: "Server-Side API"
 sidebarTitle: "Server-Side"
-description: "Core server-side operations and client classes for mcp-ts."
+description: "API reference for mcp-ts server-side primitives, including MultiSessionClient, SSEClient, framework handlers, and adapters for AI SDK, LangChain, and Mastra."
 icon: "server"
 ---
 

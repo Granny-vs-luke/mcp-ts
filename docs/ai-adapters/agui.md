@@ -1,7 +1,7 @@
 ---
 title: "AGUI Adapter"
 sidebarTitle: "AGUI"
-description: "Interactive UI rendering for MCP tools."
+description: "Use the AG-UI adapter and middleware to expose MCP tools to remote agents like Python LangGraph, AutoGen, and CopilotKit over the AG-UI protocol."
 ---
 
 The AG-UI adapter and middleware enable seamless execution of MCP tools with remote agents (e.g., Python LangGraph, AutoGen, or CopilotKit).
