@@ -431,6 +431,7 @@ export async function executeMetaTool(
       const schema = {
         name: tool.name,
         description: tool.description,
+        ...(tool.annotations && { annotations: tool.annotations }),
         inputSchema: tool.inputSchema,
         executionInstructions: {
           nextTool: 'mcp_execute_tool',
@@ -518,13 +519,30 @@ function formatToolSummaries(
     description: string;
     serverName: string;
     serverId: string;
+    annotations?: {
+      title?: string;
+      readOnlyHint?: boolean;
+      destructiveHint?: boolean;
+      idempotentHint?: boolean;
+      openWorldHint?: boolean;
+    };
   }>
 ): string[] {
-  return tools.map(
-    (t, i) =>
-      `${i + 1}. **${t.name}** (server: ${t.serverName}, serverId: ${t.serverId})\n` +
+  return tools.map((t, i) => {
+    const hints: string[] = [];
+    if (t.annotations?.readOnlyHint) hints.push('readOnly');
+    if (t.annotations?.destructiveHint) hints.push('destructive');
+    if (t.annotations?.idempotentHint) hints.push('idempotent');
+    if (t.annotations?.openWorldHint === false) hints.push('local');
+    const title = t.annotations?.title;
+    const titleStr = title ? ` — ${title}` : '';
+    const hintsStr = hints.length > 0 ? ` [${hints.join(', ')}]` : '';
+
+    return (
+      `${i + 1}. **${t.name}**${titleStr} (server: ${t.serverName}, serverId: ${t.serverId})${hintsStr}\n` +
       `   ${t.description}`
-  );
+    );
+  });
 }
 
 /** Check if a tool name is one of the meta-tools. */

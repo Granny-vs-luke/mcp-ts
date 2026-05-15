@@ -19,7 +19,7 @@ export default function HomePage() {
   // ── Single source of truth for the MCP client ──────────────────────────
   const mcpClient = useMcp({
     url: "/api/mcp",
-    identity: process.env.NEXT_PUBLIC_MCP_IDENTITY!,
+    userId: process.env.NEXT_PUBLIC_MCP_IDENTITY!,
     autoConnect: true,
     autoInitialize: true,
     onRedirect: handleOAuthRedirect,

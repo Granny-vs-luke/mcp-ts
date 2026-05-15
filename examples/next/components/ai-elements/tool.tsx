@@ -35,6 +35,12 @@ export type ToolPart = ToolUIPart | DynamicToolUIPart;
 export type ToolHeaderProps = {
   title?: string;
   className?: string;
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    [key: string]: unknown;
+  };
 } & (
   | { type: ToolUIPart["type"]; state: ToolUIPart["state"]; toolName?: never }
   | {
@@ -77,6 +83,7 @@ export const ToolHeader = ({
   type,
   state,
   toolName,
+  annotations,
   ...props
 }: ToolHeaderProps) => {
   const derivedName =
@@ -93,6 +100,15 @@ export const ToolHeader = ({
       <div className="flex items-center gap-2">
         <WrenchIcon className="size-4 text-muted-foreground" />
         <span className="font-medium text-sm">{title ?? derivedName}</span>
+        {annotations?.readOnlyHint && (
+          <Badge variant="outline" className="text-[10px] uppercase tracking-wider text-green-600 border-green-600/30 bg-green-500/10">Read Only</Badge>
+        )}
+        {annotations?.destructiveHint && (
+          <Badge variant="outline" className="text-[10px] uppercase tracking-wider text-red-600 border-red-600/30 bg-red-500/10">Destructive</Badge>
+        )}
+        {annotations?.idempotentHint && (
+          <Badge variant="outline" className="text-[10px] uppercase tracking-wider text-blue-600 border-blue-600/30 bg-blue-500/10">Idempotent</Badge>
+        )}
         {getStatusBadge(state)}
       </div>
       <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />

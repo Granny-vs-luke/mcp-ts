@@ -6,7 +6,10 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 const { ToolRouter } = await import("@mcp-ts/sdk/shared");
 
 const INSTRUCTIONS = `
-You are an expert assistant, an AI assistant that helps users with their tasks using the available MCP tools
+You are an expert assistant, an AI assistant that helps users with their tasks using the available MCP tools.
+
+IMPORTANT: When a tool requires user approval, explain what you intend to do and why before calling it.
+If the user denies a tool call, acknowledge their decision and suggest alternatives.
 `;
 
 const globalForMcp = globalThis as unknown as { mcpClientMap?: Map<string, MultiSessionClient> };
@@ -16,17 +19,18 @@ export async function createMcpAgent(identity: string = process.env.NEXT_PUBLIC_
 
   if (!client) {
     client = new MultiSessionClient(identity);
-    try {
-      await client.connect();
-      
-      if (!globalForMcp.mcpClientMap) {
-        globalForMcp.mcpClientMap = new Map();
-      }
-      globalForMcp.mcpClientMap.set(identity, client);
-    } catch (error) {
-      console.error("[McpAgent] Failed to connect MCP client:", error);
-      // We do not cache the client if connection fails, ensuring it is retried next time
+    if (!globalForMcp.mcpClientMap) {
+      globalForMcp.mcpClientMap = new Map();
     }
+    globalForMcp.mcpClientMap.set(identity, client);
+  }
+
+  // Always call connect to synchronize with the database.
+  // MultiSessionClient safely skips already-connected sessions and only connects to newly added ones.
+  try {
+    await client.connect();
+  } catch (error) {
+    console.error("[McpAgent] Failed to connect MCP client:", error);
   }
 
   const router = new ToolRouter(client, { strategy: "search", maxTools: 5 });

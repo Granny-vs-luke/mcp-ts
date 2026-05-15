@@ -10,7 +10,7 @@
  * @packageDocumentation
  */
 
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { Tool, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 
 // ---------------------------------------------------------------------------
 // Public Types
@@ -28,6 +28,8 @@ export interface ToolSummary {
   serverId: string;
   /** Session the tool belongs to */
   sessionId: string;
+  /** MCP tool annotations (readOnly, destructive, idempotent, openWorld, title) */
+  annotations?: ToolAnnotations;
 }
 
 /** Server-level summary derived from indexed tools. */
@@ -177,6 +179,7 @@ export class ToolIndex {
         serverName: tool.serverName,
         serverId: tool.serverId,
         sessionId: tool.sessionId,
+        ...(tool.annotations && { annotations: tool.annotations }),
       });
 
       const rawText = this.buildSearchableText(tool);
@@ -543,6 +546,9 @@ export class ToolIndex {
   private buildSearchableText(tool: Tool): string {
     const parts: string[] = [tool.name];
     if (tool.description) parts.push(tool.description);
+
+    // Include annotation title in searchable text for better discoverability
+    if (tool.annotations?.title) parts.push(tool.annotations.title);
 
     if (tool.inputSchema && typeof tool.inputSchema === 'object') {
       this.collectSchemaSearchText(tool.inputSchema, parts);

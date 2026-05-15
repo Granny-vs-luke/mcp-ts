@@ -22,6 +22,13 @@ export interface AIAdapterOptions {
      * When not provided, all tools are returned as before (backward-compatible).
      */
     toolRouter?: ToolRouter;
+
+    /**
+     * Optional custom callback to determine if a tool requires user approval.
+     * Can return a boolean or a Promise<boolean>.
+     * If not provided, defaults to checking the tool's `destructiveHint` annotation.
+     */
+    needsApproval?: (tool: any, args: any) => boolean | Promise<boolean>;
 }
 
 /**
@@ -80,7 +87,12 @@ export class AIAdapter {
                                 const errorMessage = error instanceof Error ? error.message : String(error);
                                 throw new Error(`Tool execution failed: ${errorMessage}`);
                             }
-                        }
+                        },
+                        needsApproval: this.options.needsApproval
+                            ? (args: any) => this.options.needsApproval!(tool, args)
+                            : (tool.annotations as any)?.destructiveHint === true
+                                ? () => true
+                                : undefined
                     }
                 ];
             })
@@ -166,6 +178,23 @@ export class AIAdapter {
                             // route directly to the correct MCP client
                             return await router.callTool(tool.name, args, namespace);
                         },
+                        needsApproval: this.options.needsApproval
+                            ? (args: any) => this.options.needsApproval!(tool, args)
+                            : (args: any) => {
+                                // Default HITL logic using annotations
+                                if (tool.name === 'mcp_execute_tool') {
+                                    const targetToolName = String(args?.toolName ?? "");
+                                    const targetNamespace = String(args?.serverId ?? "") || undefined;
+                                    if (!targetToolName) return false;
+                                    try {
+                                        const targetTool = router.getToolSchema(targetToolName, targetNamespace);
+                                        return (targetTool as any)?.annotations?.destructiveHint === true;
+                                    } catch {
+                                        return false;
+                                    }
+                                }
+                                return (tool.annotations as any)?.destructiveHint === true;
+                            }
                     },
                 ];
             })
