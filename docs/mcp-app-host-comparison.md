@@ -9,7 +9,7 @@ icon: "scales-balanced"
 
 This document compares how **`@mcp-ts/sdk`** (client `AppHost`, React `useMcpApps` / `McpAppRenderer`) and **`@mcp-ui/client`** host MCP Apps: architecture, security, and feature overlap.
 
-## 1. Architecture and design patterns
+## 1. Architecture and Design Patterns
 
 ### `mcp-ui`
 
@@ -27,7 +27,7 @@ This document compares how **`@mcp-ts/sdk`** (client `AppHost`, React `useMcpApp
 
 ---
 
-## 2. Sandboxing and iframes
+## 2. Sandboxing and Iframes
 
 ### `mcp-ui`
 
@@ -46,7 +46,7 @@ This document compares how **`@mcp-ts/sdk`** (client `AppHost`, React `useMcpApp
 
 ---
 
-## 3. Resource prefetch and caching
+## 3. Resource Prefetch and Caching
 
 ### `mcp-ts`
 
@@ -62,7 +62,7 @@ This document compares how **`@mcp-ts/sdk`** (client `AppHost`, React `useMcpApp
 
 ---
 
-## 4. MCP forwarding and overrides (`client` vs callbacks)
+## 4. MCP Forwarding and Overrides (`client` vs Callbacks)
 
 ### `mcp-ui`
 
@@ -81,7 +81,7 @@ This document compares how **`@mcp-ts/sdk`** (client `AppHost`, React `useMcpApp
 
 ---
 
-## 5. Streaming, context, and display
+## 5. Streaming, Context, and Display
 
 ### `mcp-ui`
 
