@@ -174,8 +174,8 @@ export type McpRpcMethod =
   | 'disconnect'
   | 'listTools'
   | 'callTool'
-  | 'getSessions'
-  | 'restoreSession'
+  | 'listSessions'
+  | 'getSession'
   | 'finishAuth'
   | 'listPrompts'
   | 'getPrompt'
@@ -275,7 +275,7 @@ export interface DisconnectResult {
   success: boolean;
 }
 
-export interface RestoreSessionResult {
+export interface GetSessionResult {
   success: boolean;
   toolCount: number;
 }

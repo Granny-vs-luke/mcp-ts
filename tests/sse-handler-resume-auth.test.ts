@@ -31,7 +31,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     );
 
     let resumedSessionId: string | null = null;
-    (manager as any).restoreSession = async ({ sessionId }: { sessionId: string }) => {
+    (manager as any).getSession = async ({ sessionId }: { sessionId: string }) => {
       resumedSessionId = sessionId;
       return { success: true, toolCount: 0 };
     };

@@ -15,7 +15,7 @@ function createMockSupabaseClient() {
 
     const mock = {
         /** Test-only helper to inspect internal state */
-        _getSessions: () => sessions,
+        _listSessions: () => sessions,
         get _simulateMissingTable() { return simulateMissingTable; },
         set _simulateMissingTable(v: boolean) { simulateMissingTable = v; },
 
@@ -152,7 +152,7 @@ test.describe('SupabaseStorageBackend', () => {
             const session = createMockSession();
             await storage.createSession(session);
 
-            const row = mockSupabase._getSessions()[0];
+            const row = mockSupabase._listSessions()[0];
             expect(row.session_id).toBe(session.sessionId);
             expect(row.user_id).toBe(session.userId);
             expect(row.server_id).toBe(session.serverId);
@@ -168,7 +168,7 @@ test.describe('SupabaseStorageBackend', () => {
             const before = Date.now();
             await storage.createSession(createMockSession(), ttl);
 
-            const row = mockSupabase._getSessions()[0];
+            const row = mockSupabase._listSessions()[0];
             const expiresMs = new Date(row.expires_at).getTime();
             expect(expiresMs).toBeGreaterThanOrEqual(before + ttl * 1000 - 100);
             expect(expiresMs).toBeLessThanOrEqual(Date.now() + ttl * 1000 + 100);
@@ -182,7 +182,7 @@ test.describe('SupabaseStorageBackend', () => {
             });
             await storage.createSession(session);
 
-            const row = mockSupabase._getSessions()[0];
+            const row = mockSupabase._listSessions()[0];
             expect(row.tokens).toEqual(tokens);
             expect(row.headers).toEqual({ Authorization: 'Bearer xyz' });
         });
@@ -240,7 +240,7 @@ test.describe('SupabaseStorageBackend', () => {
             const before = Date.now();
             await storage.updateSession(session.userId, session.sessionId, { active: true }, 7200);
 
-            const row = mockSupabase._getSessions()[0];
+            const row = mockSupabase._listSessions()[0];
             const expiresMs = new Date(row.expires_at).getTime();
             // Should now be ~2 hours from now (not 10 seconds)
             expect(expiresMs).toBeGreaterThan(before + 7000 * 1000);
@@ -374,7 +374,7 @@ test.describe('SupabaseStorageBackend', () => {
 
             await storage.cleanupExpiredSessions();
 
-            const rows = mockSupabase._getSessions();
+            const rows = mockSupabase._listSessions();
             expect(rows.length).toBe(1);
             expect(rows[0].session_id).toBe('alive');
         });
@@ -382,7 +382,7 @@ test.describe('SupabaseStorageBackend', () => {
         test('is a no-op when there are no expired sessions', async () => {
             await storage.createSession(createMockSession({ sessionId: 'fresh' }), 3600);
             await storage.cleanupExpiredSessions();
-            expect(mockSupabase._getSessions().length).toBe(1);
+            expect(mockSupabase._listSessions().length).toBe(1);
         });
     });
 

@@ -26,7 +26,7 @@ import type {
   SessionListResult,
   ConnectResult,
   DisconnectResult,
-  RestoreSessionResult,
+  GetSessionResult,
   FinishAuthResult,
   ListToolsRpcResult,
   ListPromptsResult,
@@ -148,11 +148,11 @@ export class SSEConnectionManager {
    */
   async handleRequest(request: McpRpcRequest): Promise<McpRpcResponse> {
     try {
-      let result: SessionListResult | ConnectResult | DisconnectResult | RestoreSessionResult | FinishAuthResult | ListToolsRpcResult | ListPromptsResult | ListResourcesResult | unknown;
+      let result: SessionListResult | ConnectResult | DisconnectResult | GetSessionResult | FinishAuthResult | ListToolsRpcResult | ListPromptsResult | ListResourcesResult | unknown;
 
       switch (request.method) {
-        case 'getSessions':
-          result = await this.getSessions();
+        case 'listSessions':
+          result = await this.listSessions();
           break;
 
         case 'connect':
@@ -171,8 +171,8 @@ export class SSEConnectionManager {
           result = await this.callTool(request.params as CallToolParams);
           break;
 
-        case 'restoreSession':
-          result = await this.restoreSession(request.params as SessionParams);
+        case 'getSession':
+          result = await this.getSession(request.params as SessionParams);
           break;
 
         case 'finishAuth':
@@ -227,7 +227,7 @@ export class SSEConnectionManager {
   /**
    * Get all sessions for the current userId
    */
-  private async getSessions(): Promise<SessionListResult> {
+  private async listSessions(): Promise<SessionListResult> {
     const sessions = await storage.listSessions(this.userId);
 
     return {
@@ -266,7 +266,7 @@ export class SSEConnectionManager {
       // If the existing session is still pending OAuth, treat connect as "resume auth"
       // instead of failing with duplicate connection error.
       if (duplicate.active === false) {
-        await this.restoreSession({ sessionId: duplicate.sessionId });
+        await this.getSession({ sessionId: duplicate.sessionId });
         return {
           sessionId: duplicate.sessionId,
           success: true,
@@ -439,7 +439,7 @@ export class SSEConnectionManager {
   /**
    * Restore and validate an existing session
    */
-  private async restoreSession(params: SessionParams): Promise<RestoreSessionResult> {
+  private async getSession(params: SessionParams): Promise<GetSessionResult> {
     const { sessionId } = params;
 
     const session = await storage.getSession(this.userId, sessionId);

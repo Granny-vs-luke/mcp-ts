@@ -20,7 +20,7 @@ import type {
   SessionListResult,
   ConnectResult,
   DisconnectResult,
-  RestoreSessionResult,
+  GetSessionResult,
   FinishAuthResult,
   ListToolsRpcResult,
   ListPromptsResult,
@@ -87,8 +87,8 @@ export class SSEClient {
     return this.connected;
   }
 
-  async getSessions(): Promise<SessionListResult> {
-    return this.sendRequest<SessionListResult>('getSessions');
+  async listSessions(): Promise<SessionListResult> {
+    return this.sendRequest<SessionListResult>('listSessions');
   }
 
   async connectToServer(params: ConnectParams): Promise<ConnectResult> {
@@ -113,8 +113,8 @@ export class SSEClient {
     return result;
   }
 
-  async restoreSession(sessionId: string): Promise<RestoreSessionResult> {
-    return this.sendRequest<RestoreSessionResult>('restoreSession', { sessionId });
+  async getSession(sessionId: string): Promise<GetSessionResult> {
+    return this.sendRequest<GetSessionResult>('getSession', { sessionId });
   }
 
   async finishAuth(sessionId: string, code: string): Promise<FinishAuthResult> {
@@ -198,7 +198,7 @@ export class SSEClient {
     const data = await this.readRpcResponseFromStream(response, {
       delayConnectionEvents:
         method === 'connect' ||
-        method === 'restoreSession' ||
+        method === 'getSession' ||
         method === 'finishAuth',
     });
     return this.parseRpcResponse<T>(data);

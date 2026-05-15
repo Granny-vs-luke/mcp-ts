@@ -441,7 +441,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
     try {
       setIsInitializing(true);
 
-      const result = await clientRef.current.getSessions();
+      const result = await clientRef.current.listSessions();
       const sessions = result.sessions || [];
 
       // Initialize connections
@@ -470,7 +470,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                 return;
               }
               suppressAuthRedirectSessionsRef.current.add(session.sessionId);
-              await clientRef.current.restoreSession(session.sessionId);
+              await clientRef.current.getSession(session.sessionId);
             } catch (error) {
               console.error(`[useMcp] Failed to validate session ${session.sessionId}:`, error);
             } finally {
@@ -602,7 +602,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
     }
     // Ensure this attempt is not suppressed as background restore.
     suppressAuthRedirectSessionsRef.current.delete(sessionId);
-    await clientRef.current.restoreSession(sessionId);
+    await clientRef.current.getSession(sessionId);
   }, []);
 
   /**

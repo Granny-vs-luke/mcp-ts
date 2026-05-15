@@ -386,7 +386,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
         try {
             isInitializing.value = true;
 
-            const result = await clientRef.value.getSessions();
+            const result = await clientRef.value.listSessions();
             const sessions = result.sessions || [];
 
             // Initialize connections
@@ -413,7 +413,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                                 return;
                             }
                             suppressAuthRedirectSessions.value.add(session.sessionId);
-                            await clientRef.value.restoreSession(session.sessionId);
+                            await clientRef.value.getSession(session.sessionId);
                         } catch (error) {
                             console.error(`[useMcp] Failed to validate session ${session.sessionId}:`, error);
                         } finally {
@@ -589,7 +589,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
             throw new Error('SSE client not initialized');
         }
         suppressAuthRedirectSessions.value.delete(sessionId);
-        await clientRef.value.restoreSession(sessionId);
+        await clientRef.value.getSession(sessionId);
     };
 
     /**

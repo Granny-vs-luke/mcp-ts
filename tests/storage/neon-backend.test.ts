@@ -161,7 +161,7 @@ function createMockNeonSql() {
 
     return {
         sql: { query },
-        getSessions: () => sessions,
+        listSessions: () => sessions,
         setMissingTable: (value: boolean) => {
             simulateMissingTable = value;
         },
@@ -250,6 +250,6 @@ test.describe('NeonStorageBackend', () => {
 
         await storage.clearGlobalSessions();
         expect(await storage.listSessions('user-b')).toEqual([]);
-        expect(mockNeon.getSessions()).toEqual([]);
+        expect(mockNeon.listSessions()).toEqual([]);
     });
 });

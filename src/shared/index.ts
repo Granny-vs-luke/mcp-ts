@@ -52,7 +52,7 @@ export type {
   SessionListResult,
   ConnectResult,
   DisconnectResult,
-  RestoreSessionResult,
+  GetSessionResult,
   FinishAuthResult,
   ListToolsRpcResult,
   ListPromptsResult,

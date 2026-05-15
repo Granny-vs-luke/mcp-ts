@@ -17,7 +17,7 @@ export interface AppHostClient {
     /**
      * Get list of active sessions
      */
-    getSessions(): Promise<SessionListResult>;
+    listSessions(): Promise<SessionListResult>;
 
     /**
      * Call a tool on a specific session

@@ -267,12 +267,12 @@ client.disconnect();
 
 ---
 
-**`getSessions(): Promise<Session[]>`**
+**`listSessions(): Promise<Session[]>`**
 
 Get all user sessions.
 
 ```typescript
-const sessions = await client.getSessions();
+const sessions = await client.listSessions();
 ```
 
 ---
