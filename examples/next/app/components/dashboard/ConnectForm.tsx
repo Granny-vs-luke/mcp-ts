@@ -29,7 +29,7 @@ export default function ConnectForm({
   const [serverName, setServerName] = useState("");
   const [serverUrl, setServerUrl] = useState("");
   const [transportType, setTransportType] = useState<
-    "sse" | "streamable_http" | "auto"
+    "sse" | "streamable-http" | "auto"
   >("auto");
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -97,7 +97,7 @@ export default function ConnectForm({
           <Select
             value={transportType}
             onValueChange={(v) =>
-              setTransportType(v as "sse" | "streamable_http" | "auto")
+              setTransportType(v as "sse" | "streamable-http" | "auto")
             }
             disabled={connecting}
           >
@@ -106,7 +106,7 @@ export default function ConnectForm({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="auto">Auto</SelectItem>
-              <SelectItem value="streamable_http">Streamable HTTP</SelectItem>
+              <SelectItem value="streamable-http">Streamable HTTP</SelectItem>
               <SelectItem value="sse">SSE</SelectItem>
             </SelectContent>
           </Select>

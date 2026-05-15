@@ -124,7 +124,8 @@
     "ioredis": "^5.0.0",
     "react": ">=18.0.0",
     "rxjs": ">=7.0.0",
-    "zod": "^3.23.0"
+    "zod": "^3.23.0",
+    "json-schema-to-zod": "^2.7.0"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -156,13 +157,15 @@
     },
     "@supabase/supabase-js": {
       "optional": true
+    },
+    "json-schema-to-zod": {
+      "optional": true
     }
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.5.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "json-schema": "^0.4.0",
-    "json-schema-to-zod": "^2.7.0",
     "nanoid": "^5.1.6"
   },
   "devDependencies": {
@@ -180,6 +183,7 @@
     "better-sqlite3": "^12.6.2",
     "ioredis": "^5.9.2",
     "ioredis-mock": "^8.13.1",
+    "json-schema-to-zod": "^2.7.0",
     "playwright": "^1.58.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

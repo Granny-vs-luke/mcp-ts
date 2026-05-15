@@ -12,7 +12,7 @@ const McpContext = createContext<McpContextValue | null>(null);
 interface McpProviderProps {
     children: ReactNode;
     url: string;
-    identity: string;
+    userId: string;
     requestTimeout?: number;
 }
 
@@ -20,7 +20,7 @@ interface McpProviderProps {
  * MCP Provider - Shares a single MCP client instance across the app
  * Prevents duplicate SSE connections and request timeouts
  */
-export function McpProvider({ children, url, identity, requestTimeout }: McpProviderProps) {
+export function McpProvider({ children, url, userId, requestTimeout }: McpProviderProps) {
     const handleOAuthRedirect = useMemo(() => createOAuthPopupRedirectHandler({
         onBlocked: (authUrl: string) => {
             console.warn('Popup blocked, falling back to redirect');
@@ -30,7 +30,7 @@ export function McpProvider({ children, url, identity, requestTimeout }: McpProv
 
     const mcpClient = useMcp({
         url,
-        identity,
+        userId,
         requestTimeout,
         onRedirect: handleOAuthRedirect,
     });

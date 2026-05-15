@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { MCPClient } from '../src/server/mcp/oauth-client';
-import { storage, _setStorageInstanceForTesting } from '../src/server/storage';
+import { sessions, _setStorageInstanceForTesting } from '../src/server/storage';
 import { MemoryStorageBackend } from '../src/server/storage/memory-backend';
 
 test.describe('MCPClient.getMcpServerConfig', () => {
-    const identity = 'test-user';
+    const userId = 'test-user';
 
     const originalInitialize = (MCPClient.prototype as any).initialize;
     const originalGetValidTokens = (MCPClient.prototype as any).getValidTokens;
@@ -48,19 +48,19 @@ test.describe('MCPClient.getMcpServerConfig', () => {
             serverId: 'server2',
             serverName: 'Server Two',
             serverUrl: 'http://server2',
-            transportType: 'streamable_http' as const,
+            transportType: 'streamable-http' as const,
             callbackUrl: 'http://callback2',
         };
 
         // Mock storage
         const mockStorage = new MemoryStorageBackend();
-        mockStorage.getIdentitySessionsData = async (id: string) => {
-            if (id === identity) return [session1, session2] as any;
+        mockStorage.list = async (id: string) => {
+            if (id === userId) return [session1, session2] as any;
             return [];
         };
         _setStorageInstanceForTesting(mockStorage);
 
-        const config = await MCPClient.getMcpServerConfig(identity);
+        const config = await MCPClient.getMcpServerConfig(userId);
 
         expect(initCallCount).toBe(2);
         expect(getTokensCallCount).toBe(2);
@@ -71,7 +71,7 @@ test.describe('MCPClient.getMcpServerConfig', () => {
                 url: 'http://server1',
             }),
             'server_two': expect.objectContaining({
-                transport: 'streamable_http',
+                transport: 'streamable-http',
                 url: 'http://server2',
             }),
         });
@@ -86,21 +86,21 @@ test.describe('MCPClient.getMcpServerConfig', () => {
             callbackUrl: 'http://callback1',
         };
 
-        let removeSessionCalledWith: any[] = [];
+        let deleteCalledWith: any[] = [];
 
         // Mock storage
         const mockStorage = new MemoryStorageBackend();
-        mockStorage.getIdentitySessionsData = async (id: string) => {
+        mockStorage.list = async (id: string) => {
             return [session1] as any;
         };
-        mockStorage.removeSession = async (id: string, sId: string) => {
-            removeSessionCalledWith = [id, sId];
+        mockStorage.delete = async (id: string, sId: string) => {
+            deleteCalledWith = [id, sId];
         };
         _setStorageInstanceForTesting(mockStorage);
 
-        const config = await MCPClient.getMcpServerConfig(identity);
+        const config = await MCPClient.getMcpServerConfig(userId);
 
-        expect(removeSessionCalledWith).toEqual([identity, 's1']);
+        expect(deleteCalledWith).toEqual([userId, 's1']);
         expect(config).toEqual({});
     });
 });
@@ -114,20 +114,20 @@ test.describe('MCPClient static Authorization headers', () => {
         _setStorageInstanceForTesting(new MemoryStorageBackend());
 
         const client = new MCPClient({
-            identity: 'test-user',
+            userId: 'test-user',
             sessionId: 'static-auth-session',
             serverId: 'static-auth-server',
             serverName: 'Static Auth Server',
             serverUrl: 'https://example.com/mcp',
             callbackUrl: 'https://app.local/auth/callback',
-            transportType: 'streamable_http',
+            transportType: 'streamable-http',
             headers: {
                 Authorization: 'Bearer static-token',
             },
         });
 
         await (client as any).initialize();
-        const transport = (client as any).getTransport('streamable_http');
+        const transport = (client as any).getTransport('streamable-http');
 
         expect((transport as any)._requestInit?.headers).toEqual({
             Authorization: 'Bearer static-token',

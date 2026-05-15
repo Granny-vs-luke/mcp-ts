@@ -5,7 +5,7 @@ import { FileStorageBackend } from './file-backend';
 import { SqliteStorage } from './sqlite-backend.js';
 import { SupabaseStorageBackend } from './supabase-backend.js';
 import { NeonStorageBackend, type NeonStorageOptions } from './neon-backend.js';
-import type { StorageBackend } from './types.js';
+import type { SessionStore } from './types.js';
 
 // Re-export types
 export * from './types.js';
@@ -40,17 +40,17 @@ function warnIfNeonConnectionStringIsInsecure(connectionString: string): void {
     }
 }
 
-let storageInstance: StorageBackend | null = null;
-let storagePromise: Promise<StorageBackend> | null = null;
+let storageInstance: SessionStore | null = null;
+let storagePromise: Promise<SessionStore> | null = null;
 
-async function initializeStorage<T extends StorageBackend>(store: T): Promise<T> {
+async function initializeStorage<T extends SessionStore>(store: T): Promise<T> {
     if (typeof store.init === 'function') {
         await store.init();
     }
     return store;
 }
 
-async function createStorage(): Promise<StorageBackend> {
+async function createStorage(): Promise<SessionStore> {
     const type = process.env.MCP_TS_STORAGE_TYPE?.toLowerCase();
 
     // Explicit selection
@@ -187,7 +187,7 @@ async function createStorage(): Promise<StorageBackend> {
     return await initializeStorage(new MemoryStorageBackend());
 }
 
-async function getStorage(): Promise<StorageBackend> {
+async function getStorage(): Promise<SessionStore> {
     if (storageInstance) {
         return storageInstance;
     }
@@ -206,9 +206,9 @@ async function getStorage(): Promise<StorageBackend> {
 /**
  * Set the storage instance (for testing)
  * @internal
- * @param instance - StorageBackend instance or null to reset
+ * @param instance - SessionStore instance or null to reset
  */
-export function _setStorageInstanceForTesting(instance: StorageBackend | null): void {
+export function _setStorageInstanceForTesting(instance: SessionStore | null): void {
     storageInstance = instance;
     if (!instance) {
         storagePromise = null;
@@ -219,7 +219,7 @@ export function _setStorageInstanceForTesting(instance: StorageBackend | null): 
  * Global session store instance
  * Uses lazy initialization with a Proxy to handle async setup transparently
  */
-export const storage: StorageBackend = new Proxy({} as StorageBackend, {
+export const sessions: SessionStore = new Proxy({} as SessionStore, {
     get(_target, prop) {
         return async (...args: any[]) => {
             const instance = await getStorage();

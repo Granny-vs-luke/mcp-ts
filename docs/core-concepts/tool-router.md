@@ -42,8 +42,8 @@ To use the `ToolRouter`, initialize it with your `MultiSessionClient` and pass i
 import { MultiSessionClient } from "@mcp-ts/sdk/server";
 import { AIAdapter } from "@mcp-ts/sdk/adapters/ai";
 
-export async function createMcpAgent(identity: string = "user-123") {
-  const client = new MultiSessionClient(identity);
+export async function createMcpAgent(userId: string = "user-123") {
+  const client = new MultiSessionClient(userId);
   await client.connect();
 
   // Dynamic import for ToolRouter (shared SDK utility)

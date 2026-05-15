@@ -26,14 +26,14 @@ import { createSSEHandler } from '@mcp-ts/sdk/server';
 const router = express.Router();
 
 router.get('/sse', (req, res) => {
-  const identity = req.query.identity as string;
+  const userId = req.query.userId as string;
 
-  if (!identity) {
-    return res.status(400).json({ error: 'identity required' });
+  if (!userId) {
+    return res.status(400).json({ error: 'userId required' });
   }
 
   const sseHandler = createSSEHandler({
-    identity,
+    userId,
     heartbeatInterval: 30000,
   });
 
@@ -71,8 +71,8 @@ import { useMcp } from '@mcp-ts/sdk/client';
 
 export function McpApp() {
   const { connections, connect, status } = useMcp({
-    url: 'http://localhost:3000/api/mcp/sse?identity=user-123',
-    identity: 'user-123',
+    url: 'http://localhost:3000/api/mcp/sse?userId=user-123',
+    userId: 'user-123',
   });
 
   const handleConnect = () => {

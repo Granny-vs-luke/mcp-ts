@@ -36,7 +36,7 @@ Adapters work with both individual `MCPClient` instances andaggregated `MultiSes
 import { MCPClient } from '@mcp-ts/sdk/server';
 
 const client = new MCPClient({
-  identity: 'user_123',
+  userId: 'user_123',
   sessionId: 'session_abc',
   serverUrl: 'https://mcp-server.com',
   callbackUrl: 'https://myapp.com/callback'

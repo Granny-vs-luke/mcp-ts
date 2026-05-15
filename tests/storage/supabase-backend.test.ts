@@ -15,7 +15,7 @@ function createMockSupabaseClient() {
 
     const mock = {
         /** Test-only helper to inspect internal state */
-        _getSessions: () => sessions,
+        _listSessions: () => sessions,
         get _simulateMissingTable() { return simulateMissingTable; },
         set _simulateMissingTable(v: boolean) { simulateMissingTable = v; },
 
@@ -146,16 +146,15 @@ test.describe('SupabaseStorageBackend', () => {
         });
     });
 
-    // ── createSession ────────────────────────────────────────────────────────
-    test.describe('createSession', () => {
-        test('maps all SessionData fields to snake_case columns', async () => {
+    // ── create ───────────────────────────────────────────────────────────────
+    test.describe('create', () => {
+        test('maps all Session fields to snake_case columns', async () => {
             const session = createMockSession();
-            await storage.createSession(session);
+            await storage.create(session);
 
-            const row = mockSupabase._getSessions()[0];
+            const row = mockSupabase._listSessions()[0];
             expect(row.session_id).toBe(session.sessionId);
-            expect(row.identity).toBe(session.identity);
-            expect(row.user_id).toBe(session.identity);   // RLS mirror
+            expect(row.user_id).toBe(session.userId);
             expect(row.server_id).toBe(session.serverId);
             expect(row.server_name).toBe(session.serverName);
             expect(row.server_url).toBe(session.serverUrl);
@@ -167,9 +166,9 @@ test.describe('SupabaseStorageBackend', () => {
         test('sets expires_at correctly from TTL', async () => {
             const ttl = 3600;
             const before = Date.now();
-            await storage.createSession(createMockSession(), ttl);
+            await storage.create(createMockSession(), ttl);
 
-            const row = mockSupabase._getSessions()[0];
+            const row = mockSupabase._listSessions()[0];
             const expiresMs = new Date(row.expires_at).getTime();
             expect(expiresMs).toBeGreaterThanOrEqual(before + ttl * 1000 - 100);
             expect(expiresMs).toBeLessThanOrEqual(Date.now() + ttl * 1000 + 100);
@@ -181,67 +180,67 @@ test.describe('SupabaseStorageBackend', () => {
                 tokens,
                 headers: { Authorization: 'Bearer xyz' },
             });
-            await storage.createSession(session);
+            await storage.create(session);
 
-            const row = mockSupabase._getSessions()[0];
+            const row = mockSupabase._listSessions()[0];
             expect(row.tokens).toEqual(tokens);
             expect(row.headers).toEqual({ Authorization: 'Bearer xyz' });
         });
 
         test('throws on duplicate session (unique key violation)', async () => {
             const session = createMockSession();
-            await storage.createSession(session);
-            await expect(storage.createSession(session)).rejects.toThrow('already exists');
+            await storage.create(session);
+            await expect(storage.create(session)).rejects.toThrow('already exists');
         });
     });
 
-    // ── updateSession ────────────────────────────────────────────────────────
-    test.describe('updateSession', () => {
+    // ── update ───────────────────────────────────────────────────────────────
+    test.describe('update', () => {
         test('updates partial fields and preserves unchanged ones', async () => {
             const session = createMockSession();
-            await storage.createSession(session);
+            await storage.create(session);
 
             const newTokens = createMockTokens();
-            await storage.updateSession(session.identity, session.sessionId, {
+            await storage.update(session.userId, session.sessionId, {
                 active: true,
                 tokens: newTokens,
-                transportType: 'streamable_http',
+                transportType: 'streamable-http',
             });
 
-            const retrieved = await storage.getSession(session.identity, session.sessionId);
+            const retrieved = await storage.get(session.userId, session.sessionId);
             // Updated
             expect(retrieved?.active).toBe(true);
             expect(retrieved?.tokens).toEqual(newTokens);
-            expect(retrieved?.transportType).toBe('streamable_http');
+            expect(retrieved?.transportType).toBe('streamable-http');
             // Preserved
             expect(retrieved?.serverId).toBe(session.serverId);
             expect(retrieved?.serverUrl).toBe(session.serverUrl);
-            expect(retrieved?.identity).toBe(session.identity);
+            expect(retrieved?.userId).toBe(session.userId);
         });
 
         test('handles OAuth token refresh safely', async () => {
             const session = createMockSession({ tokens: createMockTokens() });
-            await storage.createSession(session);
+            await storage.create(session);
 
             const refreshed = createMockTokens({
                 access_token:  'new-access-token',
                 refresh_token: 'new-refresh-token',
             });
-            await storage.updateSession(session.identity, session.sessionId, { tokens: refreshed });
+            await storage.update(session.userId, session.sessionId, { tokens: refreshed });
 
-            const retrieved = await storage.getSession(session.identity, session.sessionId);
+            const retrieved = await storage.get(session.userId, session.sessionId);
             expect(retrieved?.tokens?.access_token).toBe('new-access-token');
             expect(retrieved?.tokens?.refresh_token).toBe('new-refresh-token');
         });
 
         test('refreshes expires_at with a new TTL', async () => {
             const session = createMockSession();
-            await storage.createSession(session, 10);        // 10s TTL on create
+            await storage.create(session, 10);        // 10s TTL on create
 
             const before = Date.now();
-            await storage.updateSession(session.identity, session.sessionId, { active: true }, 7200);
+            await storage.update(session.userId, session.sessionId, { active: true }, 7200);
 
-            const row = mockSupabase._getSessions()[0];
+            const row = mockSupabase._listSessions()[0];
             const expiresMs = new Date(row.expires_at).getTime();
             // Should now be ~2 hours from now (not 10 seconds)
             expect(expiresMs).toBeGreaterThan(before + 7000 * 1000);
@@ -249,18 +248,18 @@ test.describe('SupabaseStorageBackend', () => {
 
         test('throws if session does not exist', async () => {
             await expect(
-                storage.updateSession('no-user', 'no-session', { active: true })
+                storage.update('no-user', 'no-session', { active: true })
             ).rejects.toThrow('not found');
         });
     });
 
-    // ── getSession ───────────────────────────────────────────────────────────
-    test.describe('getSession', () => {
-        test('maps DB row back to camelCase SessionData correctly', async () => {
+    // ── get ──────────────────────────────────────────────────────────────────
+    test.describe('get', () => {
+        test('maps DB row back to camelCase Session correctly', async () => {
             const session = createMockSession();
-            await storage.createSession(session);
+            await storage.create(session);
 
-            const result = await storage.getSession(session.identity, session.sessionId);
+            const result = await storage.get(session.userId, session.sessionId);
 
             expect(result).not.toBeNull();
             expect(result?.sessionId).toBe(session.sessionId);
@@ -269,86 +268,86 @@ test.describe('SupabaseStorageBackend', () => {
             expect(result?.serverUrl).toBe(session.serverUrl);
             expect(result?.transportType).toBe(session.transportType);
             expect(result?.callbackUrl).toBe(session.callbackUrl);
-            expect(result?.identity).toBe(session.identity);
+            expect(result?.userId).toBe(session.userId);
             expect(result?.active).toBe(session.active);
             expect(typeof result?.createdAt).toBe('number');
         });
 
         test('returns null when session does not exist', async () => {
-            expect(await storage.getSession('ghost', 'ghost')).toBeNull();
+            expect(await storage.get('ghost', 'ghost')).toBeNull();
         });
 
-        test('does not leak sessions across identities', async () => {
-            const a = createMockSession({ sessionId: 'a', identity: 'user-a' });
-            const b = createMockSession({ sessionId: 'b', identity: 'user-b' });
-            await storage.createSession(a);
-            await storage.createSession(b);
+        test('does not leak sessions across userIds', async () => {
+            const a = createMockSession({ sessionId: 'a', userId: 'user-a' });
+            const b = createMockSession({ sessionId: 'b', userId: 'user-b' });
+            await storage.create(a);
+            await storage.create(b);
 
             // user-a queries for user-b's session ID → should get null
-            expect(await storage.getSession('user-a', 'b')).toBeNull();
+            expect(await storage.get('user-a', 'b')).toBeNull();
         });
     });
 
-    // ── removeSession ────────────────────────────────────────────────────────
-    test.describe('removeSession', () => {
+    // ── delete ───────────────────────────────────────────────────────────────
+    test.describe('delete', () => {
         test('deletes the session so it can no longer be retrieved', async () => {
             const session = createMockSession();
-            await storage.createSession(session);
-            await storage.removeSession(session.identity, session.sessionId);
-            expect(await storage.getSession(session.identity, session.sessionId)).toBeNull();
+            await storage.create(session);
+            await storage.delete(session.userId, session.sessionId);
+            expect(await storage.get(session.userId, session.sessionId)).toBeNull();
         });
 
-        test('does not remove other sessions belonging to the same identity', async () => {
-            const identity = 'multi-user';
-            await storage.createSession(createMockSession({ sessionId: 's1', identity }));
-            await storage.createSession(createMockSession({ sessionId: 's2', identity }));
+        test('does not remove other sessions belonging to the same userId', async () => {
+            const userId = 'multi-user';
+            await storage.create(createMockSession({ sessionId: 's1', userId }));
+            await storage.create(createMockSession({ sessionId: 's2', userId }));
 
-            await storage.removeSession(identity, 's1');
+            await storage.delete(userId, 's1');
 
-            const remaining = await storage.getIdentityMcpSessions(identity);
+            const remaining = await storage.listIds(userId);
             expect(remaining).toEqual(['s2']);
         });
     });
 
-    // ── getIdentitySessionsData ──────────────────────────────────────────────
-    test.describe('getIdentitySessionsData', () => {
-        test('returns all full SessionData objects for the identity', async () => {
-            const identity = 'owner';
-            await storage.createSession(createMockSession({ sessionId: 'x1', identity }));
-            await storage.createSession(createMockSession({ sessionId: 'x2', identity, serverName: 'Alt Server' }));
+    // ── list ──────────────────────────────────────────────────────
+    test.describe('list', () => {
+        test('returns all full Session objects for the userId', async () => {
+            const userId = 'owner';
+            await storage.create(createMockSession({ sessionId: 'x1', userId }));
+            await storage.create(createMockSession({ sessionId: 'x2', userId, serverName: 'Alt Server' }));
             // Another user — must NOT appear
-            await storage.createSession(createMockSession({ sessionId: 'x3', identity: 'intruder' }));
+            await storage.create(createMockSession({ sessionId: 'x3', userId: 'intruder' }));
 
-            const sessions = await storage.getIdentitySessionsData(identity);
+            const sessions = await storage.list(userId);
             expect(sessions.length).toBe(2);
             expect(sessions.map(s => s.sessionId)).toContain('x1');
             expect(sessions.map(s => s.sessionId)).toContain('x2');
         });
 
-        test('returns empty array for identity with no sessions', async () => {
-            expect(await storage.getIdentitySessionsData('nobody')).toEqual([]);
+        test('returns empty array for userId with no sessions', async () => {
+            expect(await storage.list('nobody')).toEqual([]);
         });
     });
 
-    // ── getIdentityMcpSessions ───────────────────────────────────────────────
-    test.describe('getIdentityMcpSessions', () => {
+    // ── listIds ────────────────────────────────────────────────────
+    test.describe('listIds', () => {
         test('returns only session IDs (not full objects)', async () => {
-            const identity = 'slim-user';
-            await storage.createSession(createMockSession({ sessionId: 'id-a', identity }));
-            await storage.createSession(createMockSession({ sessionId: 'id-b', identity }));
+            const userId = 'slim-user';
+            await storage.create(createMockSession({ sessionId: 'id-a', userId }));
+            await storage.create(createMockSession({ sessionId: 'id-b', userId }));
 
-            const ids = await storage.getIdentityMcpSessions(identity);
+            const ids = await storage.listIds(userId);
             expect(ids.sort()).toEqual(['id-a', 'id-b']);
         });
     });
 
-    // ── getAllSessionIds ──────────────────────────────────────────────────────
-    test.describe('getAllSessionIds', () => {
-        test('returns session IDs across ALL identities', async () => {
-            await storage.createSession(createMockSession({ sessionId: 'g1', identity: 'u1' }));
-            await storage.createSession(createMockSession({ sessionId: 'g2', identity: 'u2' }));
+    // ── listAllIds ───────────────────────────────────────────────────────────
+    test.describe('listAllIds', () => {
+        test('returns session IDs across ALL users', async () => {
+            await storage.create(createMockSession({ sessionId: 'g1', userId: 'u1' }));
+            await storage.create(createMockSession({ sessionId: 'g2', userId: 'u2' }));
 
-            const ids = await storage.getAllSessionIds();
+            const ids = await storage.listAllIds();
             expect(ids).toContain('g1');
             expect(ids).toContain('g2');
             expect(ids.length).toBe(2);
@@ -357,33 +356,33 @@ test.describe('SupabaseStorageBackend', () => {
 
     // ── clearAll ─────────────────────────────────────────────────────────────
     test.describe('clearAll', () => {
-        test('wipes every session regardless of identity', async () => {
-            await storage.createSession(createMockSession({ sessionId: 'c1', identity: 'u1' }));
-            await storage.createSession(createMockSession({ sessionId: 'c2', identity: 'u2' }));
+        test('wipes every session regardless of userId', async () => {
+            await storage.create(createMockSession({ sessionId: 'c1', userId: 'u1' }));
+            await storage.create(createMockSession({ sessionId: 'c2', userId: 'u2' }));
 
             await storage.clearAll();
 
-            expect(await storage.getAllSessionIds()).toEqual([]);
+            expect(await storage.listAllIds()).toEqual([]);
         });
     });
 
-    // ── cleanupExpiredSessions ───────────────────────────────────────────────
-    test.describe('cleanupExpiredSessions', () => {
+    // ── cleanupExpired ───────────────────────────────────────────────────────
+    test.describe('cleanupExpired', () => {
         test('deletes rows where expires_at is in the past', async () => {
-            await storage.createSession(createMockSession({ sessionId: 'alive' }),  3600);  // future
-            await storage.createSession(createMockSession({ sessionId: 'zombie' }), -3600); // past
+            await storage.create(createMockSession({ sessionId: 'alive' }),  3600);  // future
+            await storage.create(createMockSession({ sessionId: 'zombie' }), -3600); // past
 
-            await storage.cleanupExpiredSessions();
+            await storage.cleanupExpired();
 
-            const rows = mockSupabase._getSessions();
+            const rows = mockSupabase._listSessions();
             expect(rows.length).toBe(1);
             expect(rows[0].session_id).toBe('alive');
         });
 
         test('is a no-op when there are no expired sessions', async () => {
-            await storage.createSession(createMockSession({ sessionId: 'fresh' }), 3600);
-            await storage.cleanupExpiredSessions();
-            expect(mockSupabase._getSessions().length).toBe(1);
+            await storage.create(createMockSession({ sessionId: 'fresh' }), 3600);
+            await storage.cleanupExpired();
+            expect(mockSupabase._listSessions().length).toBe(1);
         });
     });
 
@@ -394,3 +393,4 @@ test.describe('SupabaseStorageBackend', () => {
         });
     });
 });
+

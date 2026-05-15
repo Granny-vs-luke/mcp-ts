@@ -12,9 +12,9 @@ import type { McpRpcResponse } from '../../shared/types.js';
 
 export interface NextMcpHandlerOptions {
   /**
-   * Extract identity from request (default: from 'identity' query param)
+   * Extract userId from request (default: from 'userId' query param)
    */
-  getIdentity?: (request: Request) => string | null;
+  getUserId?: (request: Request) => string | null;
 
   /**
    * Extract auth token from request (default: from 'token' query param or Authorization header)
@@ -25,7 +25,7 @@ export interface NextMcpHandlerOptions {
    * Authenticate user and verify access (optional)
    * Return true if user is authenticated, false otherwise
    */
-  authenticate?: (identity: string, token: string | null) => Promise<boolean> | boolean;
+  authenticate?: (userId: string, token: string | null) => Promise<boolean> | boolean;
 
   /**
    * Heartbeat interval in milliseconds (default: 30000)
@@ -45,10 +45,13 @@ export interface NextMcpHandlerOptions {
 
 export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
   const {
-    getIdentity = (request: Request) => new URL(request.url).searchParams.get('identity'),
+    getUserId = (request: Request) => request.headers.get('x-mcp-user-id'),
     getAuthToken = (request: Request) => {
-      const url = new URL(request.url);
-      return url.searchParams.get('token') || request.headers.get('authorization');
+      const authHeader = request.headers.get('authorization');
+      if (authHeader?.toLowerCase().startsWith('bearer ')) {
+        return authHeader.slice(7);
+      }
+      return authHeader;
     },
     authenticate = () => true,
     heartbeatInterval = 30000,
@@ -56,8 +59,8 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
     getClientMetadata,
   } = options;
 
-  const toManagerOptions = (identity: string, resolvedClientMetadata?: ClientMetadata) => ({
-    identity,
+  const toManagerOptions = (userId: string, resolvedClientMetadata?: ClientMetadata) => ({
+    userId,
     heartbeatInterval,
     clientDefaults: resolvedClientMetadata,
   });
@@ -79,15 +82,15 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
   }
 
   async function POST(request: Request): Promise<Response> {
-    const identity = getIdentity(request);
+    const userId = getUserId(request);
     const authToken = getAuthToken(request);
     const acceptsEventStream = (request.headers.get('accept') || '').toLowerCase().includes('text/event-stream');
 
-    if (!identity) {
-      return Response.json({ error: { code: 'MISSING_IDENTITY', message: 'Missing identity' } }, { status: 400 });
+    if (!userId) {
+      return Response.json({ error: { code: 'MISSING_userId', message: 'Missing userId' } }, { status: 400 });
     }
 
-    const isAuthorized = await authenticate(identity, authToken);
+    const isAuthorized = await authenticate(userId, authToken);
     if (!isAuthorized) {
       return Response.json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } }, { status: 401 });
     }
@@ -113,7 +116,7 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
 
       if (!acceptsEventStream) {
         const manager = new SSEConnectionManager(
-          toManagerOptions(identity, resolvedClientMetadata),
+          toManagerOptions(userId, resolvedClientMetadata),
           () => { }
         );
         try {
@@ -138,7 +141,7 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
       };
 
       const manager = new SSEConnectionManager(
-        toManagerOptions(identity, resolvedClientMetadata),
+        toManagerOptions(userId, resolvedClientMetadata),
         (event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse) => {
           if (isRpcResponseEvent(event)) {
             sendSSE('rpc-response', event);
@@ -183,7 +186,7 @@ export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
     } catch (error) {
       const err = error instanceof Error ? error : new Error('Unknown error');
       console.error('[MCP Next Handler] Failed to handle RPC', {
-        identity,
+        userId,
         message: err.message,
         stack: err.stack,
         rawBody: rawBody.slice(0, 500),

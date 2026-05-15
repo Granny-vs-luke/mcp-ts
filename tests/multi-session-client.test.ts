@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { MultiSessionClient } from '../src/server/mcp/multi-session-client';
 import { MCPClient } from '../src/server/mcp/oauth-client';
-import { storage, _setStorageInstanceForTesting } from '../src/server/storage';
+import { sessions, _setStorageInstanceForTesting } from '../src/server/storage';
 import { MemoryStorageBackend } from '../src/server/storage/memory-backend';
 
 test.describe('MultiSessionClient', () => {
-    const identity = 'test-identity';
+    const userId = 'test-userId';
     
     // Save original MCPClient methods to restore later
     const originalConnect = (MCPClient.prototype as any).connect;
@@ -54,10 +54,10 @@ test.describe('MultiSessionClient', () => {
             active: true   // mark as fully established sessions
         }));
         
-        mockStorage.getIdentitySessionsData = async () => mockSessions as any;
+        mockStorage.list = async () => mockSessions as any;
         _setStorageInstanceForTesting(mockStorage);
 
-        const multiClient = new MultiSessionClient(identity);
+        const multiClient = new MultiSessionClient(userId);
         await multiClient.connect();
 
         const clients = multiClient.getClients();
@@ -79,7 +79,7 @@ test.describe('MultiSessionClient', () => {
             (this as any)._mockConnected = true;
         };
 
-        const multiClient = new MultiSessionClient(identity, { timeout: 10000 });
+        const multiClient = new MultiSessionClient(userId, { timeout: 10000 });
         
         const testSession = {
             sessionId: 'concurrent-session',
@@ -115,7 +115,7 @@ test.describe('MultiSessionClient', () => {
             (this as any)._mockConnected = true;
         };
 
-        const multiClient = new MultiSessionClient(identity, { maxRetries: 2, retryDelay: 50 });
+        const multiClient = new MultiSessionClient(userId, { maxRetries: 2, retryDelay: 50 });
         
         const testSession = {
             sessionId: 'retry-session',
@@ -148,7 +148,7 @@ test.describe('MultiSessionClient', () => {
         console.error = () => { loggedErrors++; };
 
         try {
-            const multiClient = new MultiSessionClient(identity, { maxRetries: 1, retryDelay: 10 });
+            const multiClient = new MultiSessionClient(userId, { maxRetries: 1, retryDelay: 10 });
             
             const testSession = {
                 sessionId: 'fail-session',
@@ -180,7 +180,7 @@ test.describe('MultiSessionClient', () => {
             callbackUrl: 'url'
         } as any;
 
-        const multiClient = new MultiSessionClient(identity);
+        const multiClient = new MultiSessionClient(userId);
         await (multiClient as any).connectSession(testSession);
         
         const client = multiClient.getClients()[0];

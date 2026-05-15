@@ -106,16 +106,16 @@ Test your setup with a simple script:
 
 ```typescript
 // test-mcp.ts
-import { storage } from '@mcp-ts/sdk/server';
+import { sessions } from '@mcp-ts/sdk/server';
 
 async function test() {
-  const sessionId = storage.generateSessionId();
+  const sessionId = sessions.generateSessionId();
   console.log('Generated session ID:', sessionId);
 
-  // Test storage backend
-  await storage.createSession({
+  // Test the session store
+  await sessions.create({
     sessionId,
-    identity: 'test-user',
+    userId: 'test-user',
     serverId: 'test-server',
     serverName: 'Test Server',
     serverUrl: 'https://example.com',
@@ -125,7 +125,7 @@ async function test() {
     createdAt: Date.now(),
   });
 
-  const session = await storage.getSession('test-user', sessionId);
+  const session = await sessions.get('test-user', sessionId);
   console.log('✓ Storage backend working!', session?.serverName);
 }
 

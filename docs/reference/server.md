@@ -13,15 +13,15 @@ Creates handlers for Next.js App Router API routes.
 import { createNextMcpHandler } from '@mcp-ts/sdk/server';
 
 const { GET, POST } = createNextMcpHandler({
-  getIdentity: (request) => string,
+  getUserId: (request) => string,
   getAuthToken?: (request) => string | null,
-  authenticate?: (identity, token) => Promise<boolean>,
+  authenticate?: (userId, token) => Promise<boolean>,
   heartbeatInterval?: number,
 });
 ```
 
 **Options:**
-- `getIdentity` - Function to extract identity from request (required)
+- `getUserId` - Function to extract userId from request (required)
 - `getAuthToken` - Function to extract auth token from request (optional)
 - `authenticate` - Custom authentication logic (optional)
 - `heartbeatInterval` - SSE heartbeat interval in ms (default: 30000)
@@ -40,14 +40,14 @@ Creates an SSE handler for standard Node.js/Express applications.
 import { createSSEHandler } from '@mcp-ts/sdk/server';
 
 const handler = createSSEHandler({
-  identity: string,
-  onAuth?: (identity) => Promise<boolean>,
+  userId: string,
+  onAuth?: (userId) => Promise<boolean>,
   heartbeatInterval?: number,
 });
 ```
 
 **Options:**
-- `identity` - User/Client identifier (required)
+- `userId` - User/Client identifier (required)
 - `onAuth` - Authentication callback (optional)
 - `heartbeatInterval` - Heartbeat interval in ms (default: 30000)
 - `clientDefaults` - Static OAuth client metadata (optional)
@@ -65,12 +65,12 @@ Direct MCP client class for server-side operations.
 import { MCPClient } from '@mcp-ts/sdk/server';
 
 const client = new MCPClient({
-  identity: string,
+  userId: string,
   sessionId: string,
   serverId?: string,
   serverUrl?: string,
   callbackUrl?: string,
-  transportType?: 'sse' | 'streamable_http',
+  transportType?: 'sse' | 'streamable-http',
   onRedirect?: (authUrl: string) => void,
   // OAuth Metadata
   clientName?: string,
@@ -189,12 +189,12 @@ await client.finishAuth(authCode);
 
 ### `MultiSessionClient`
 
-Manages multiple MCP connections for a single user identity, allowing aggregation of tools from all connected servers.
+Manages multiple MCP connections for a single user, allowing aggregation of tools from all connected servers.
 
 ```typescript
 import { MultiSessionClient } from '@mcp-ts/sdk/server';
 
-const mcp = new MultiSessionClient(identity, {
+const mcp = new MultiSessionClient(userId, {
   timeout: 15000,
   maxRetries: 2,
   retryDelay: 1000,

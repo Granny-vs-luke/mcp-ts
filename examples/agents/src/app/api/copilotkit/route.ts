@@ -25,10 +25,10 @@ export const POST = async (req: NextRequest) => {
     },
   });
 
-  const identity = "demo-user-123";
+  const userId = "demo-user-123";
   // Import dynamically to avoid build-time issues if package is linking
   const { MultiSessionClient } = await import("@mcp-ts/sdk/server");
-  const client = new MultiSessionClient(identity);
+  const client = new MultiSessionClient(userId);
 
   // Connect to all active sessions before getting tools
   await client.connect();

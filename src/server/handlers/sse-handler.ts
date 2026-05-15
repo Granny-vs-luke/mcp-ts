@@ -26,7 +26,7 @@ import type {
   SessionListResult,
   ConnectResult,
   DisconnectResult,
-  RestoreSessionResult,
+  GetSessionResult,
   FinishAuthResult,
   ListToolsRpcResult,
   ListPromptsResult,
@@ -37,7 +37,7 @@ import { RpcErrorCodes } from '../../shared/errors.js';
 import { UnauthorizedError } from '../../shared/errors.js';
 import { isConnectionEvent, isRpcResponseEvent } from '../../shared/event-routing.js';
 import { MCPClient } from '../mcp/oauth-client.js';
-import { storage } from '../storage/index.js';
+import { sessions } from '../storage/index.js';
 
 // ============================================
 // Types & Interfaces
@@ -52,10 +52,10 @@ export interface ClientMetadata {
 
 export interface SSEHandlerOptions {
   /** User/Client identifier */
-  identity: string;
+  userId: string;
 
   /** Optional callback for authentication/authorization */
-  onAuth?: (identity: string) => Promise<boolean>;
+  onAuth?: (userId: string) => Promise<boolean>;
 
   /** Heartbeat interval in milliseconds @default 30000 */
   heartbeatInterval?: number;
@@ -92,7 +92,7 @@ function normalizeHeaders(headers?: Record<string, string>): Record<string, stri
  * Each instance corresponds to one connected browser client.
  */
 export class SSEConnectionManager {
-  private readonly identity: string;
+  private readonly userId: string;
   private readonly clients = new Map<string, MCPClient>();
   private heartbeatTimer?: NodeJS.Timeout;
   private isActive = true;
@@ -101,7 +101,7 @@ export class SSEConnectionManager {
     private readonly options: SSEHandlerOptions,
     private readonly sendEvent: (event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse) => void
   ) {
-    this.identity = options.identity;
+    this.userId = options.userId;
     this.startHeartbeat();
   }
 
@@ -148,11 +148,11 @@ export class SSEConnectionManager {
    */
   async handleRequest(request: McpRpcRequest): Promise<McpRpcResponse> {
     try {
-      let result: SessionListResult | ConnectResult | DisconnectResult | RestoreSessionResult | FinishAuthResult | ListToolsRpcResult | ListPromptsResult | ListResourcesResult | unknown;
+      let result: SessionListResult | ConnectResult | DisconnectResult | GetSessionResult | FinishAuthResult | ListToolsRpcResult | ListPromptsResult | ListResourcesResult | unknown;
 
       switch (request.method) {
-        case 'getSessions':
-          result = await this.getSessions();
+        case 'listSessions':
+          result = await this.listSessions();
           break;
 
         case 'connect':
@@ -171,8 +171,8 @@ export class SSEConnectionManager {
           result = await this.callTool(request.params as CallToolParams);
           break;
 
-        case 'restoreSession':
-          result = await this.restoreSession(request.params as SessionParams);
+        case 'getSession':
+          result = await this.getSession(request.params as SessionParams);
           break;
 
         case 'finishAuth':
@@ -225,13 +225,13 @@ export class SSEConnectionManager {
   }
 
   /**
-   * Get all sessions for the current identity
+   * Get all sessions for the current userId
    */
-  private async getSessions(): Promise<SessionListResult> {
-    const sessions = await storage.getIdentitySessionsData(this.identity);
+  private async listSessions(): Promise<SessionListResult> {
+    const sessionList = await sessions.list(this.userId);
 
     return {
-      sessions: sessions.map((s) => ({
+      sessions: sessionList.map((s) => ({
         sessionId: s.sessionId,
         serverId: s.serverId,
         serverName: s.serverName,
@@ -254,10 +254,10 @@ export class SSEConnectionManager {
     // Tool name format: tool_<serverId>_<toolName> - with 12 char serverId leaves 46 chars for tool name
     const serverId = params.serverId && params.serverId.length <= 12
       ? params.serverId
-      : await storage.generateSessionId();
+      : await sessions.generateSessionId();
 
     // Check for existing connections
-    const existingSessions = await storage.getIdentitySessionsData(this.identity);
+    const existingSessions = await sessions.list(this.userId);
     const duplicate = existingSessions.find(s =>
       s.serverId === serverId || s.serverUrl === serverUrl
     );
@@ -266,7 +266,7 @@ export class SSEConnectionManager {
       // If the existing session is still pending OAuth, treat connect as "resume auth"
       // instead of failing with duplicate connection error.
       if (duplicate.active === false) {
-        await this.restoreSession({ sessionId: duplicate.sessionId });
+        await this.getSession({ sessionId: duplicate.sessionId });
         return {
           sessionId: duplicate.sessionId,
           success: true,
@@ -276,7 +276,7 @@ export class SSEConnectionManager {
     }
 
     // Generate session ID
-    const sessionId = await storage.generateSessionId();
+    const sessionId = await sessions.generateSessionId();
 
     try {
       // Get resolved client metadata
@@ -284,7 +284,7 @@ export class SSEConnectionManager {
 
       // Create MCP client
       const client = new MCPClient({
-        identity: this.identity,
+        userId: this.userId,
         sessionId,
         serverId,
         serverName,
@@ -360,7 +360,7 @@ export class SSEConnectionManager {
     } else {
       // Handle orphaned sessions (e.g., OAuth flow failed before client was stored)
       // Directly remove from storage since there's no active client
-      await storage.removeSession(this.identity, sessionId);
+      await sessions.delete(this.userId, sessionId);
     }
 
     return { success: true };
@@ -375,13 +375,13 @@ export class SSEConnectionManager {
       return existing;
     }
 
-    const session = await storage.getSession(this.identity, sessionId);
+    const session = await sessions.get(this.userId, sessionId);
     if (!session) {
       throw new Error('Session not found');
     }
 
     const client = new MCPClient({
-      identity: this.identity,
+      userId: this.userId,
       sessionId,
       // These fields are optional in MCPClient, but when rehydrating a known
       // stored session on the server we pass them explicitly to preserve the
@@ -439,10 +439,10 @@ export class SSEConnectionManager {
   /**
    * Restore and validate an existing session
    */
-  private async restoreSession(params: SessionParams): Promise<RestoreSessionResult> {
+  private async getSession(params: SessionParams): Promise<GetSessionResult> {
     const { sessionId } = params;
 
-    const session = await storage.getSession(this.identity, sessionId);
+    const session = await sessions.get(this.userId, sessionId);
     if (!session) {
       throw new Error('Session not found');
     }
@@ -462,7 +462,7 @@ export class SSEConnectionManager {
       const clientMetadata = await this.getResolvedClientMetadata();
 
       const client = new MCPClient({
-        identity: this.identity,
+        userId: this.userId,
         sessionId,
         // These fields are optional in MCPClient, but when rehydrating a known
         // stored session on the server we pass them explicitly to preserve the
@@ -506,14 +506,14 @@ export class SSEConnectionManager {
   private async finishAuth(params: FinishAuthParams): Promise<FinishAuthResult> {
     const { sessionId, code } = params;
 
-    const session = await storage.getSession(this.identity, sessionId);
+    const session = await sessions.get(this.userId, sessionId);
     if (!session) {
       throw new Error('Session not found');
     }
 
     try {
       const client = new MCPClient({
-        identity: this.identity,
+        userId: this.userId,
         sessionId,
         // These fields are optional in MCPClient, but when rehydrating a known
         // stored session on the server we pass them explicitly to preserve the
@@ -524,7 +524,7 @@ export class SSEConnectionManager {
         serverUrl: session.serverUrl,
         callbackUrl: session.callbackUrl,
         // NOTE: transportType is intentionally omitted here.
-        // The session's stored transportType is a placeholder ('streamable_http')
+        // The session's stored transportType is a placeholder ('streamable-http')
         // set before transport negotiation. Omitting it lets MCPClient auto-negotiate
         // (try streamable_http → SSE fallback), which is critical for servers like
         // Neon that only support SSE transport.

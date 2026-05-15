@@ -23,13 +23,34 @@ MCP_TS_STORAGE_TYPE=memory
 
 ### Usage
 
-```typescript
-import { storage } from '@mcp-ts/sdk/server';
+### Option 1: Default Usage
 
-// Storage uses in-memory by default if no other backend is configured
-await storage.createSession({
+The global `sessions` proxy uses the In-Memory backend by default if no other storage environment variables are configured.
+
+```typescript
+import { sessions } from '@mcp-ts/sdk/server';
+
+await sessions.create({
   sessionId: 'test-123',
-  identity: 'test-user',
+  userId: 'test-user',
+  serverUrl: 'https://test.example.com',
+  callbackUrl: 'https://test.com/callback',
+  transportType: 'sse',
+  active: true,
+  createdAt: Date.now(),
+});
+```
+
+### Option 2: Manual Instantiation
+
+```typescript
+import { MemoryStorageBackend } from '@mcp-ts/sdk/server';
+
+const memoryBackend = new MemoryStorageBackend();
+
+await memoryBackend.create({
+  sessionId: 'test-123',
+  userId: 'test-user',
   serverUrl: 'https://test.example.com',
   callbackUrl: 'https://test.com/callback',
   transportType: 'sse',

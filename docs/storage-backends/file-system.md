@@ -31,12 +31,29 @@ MCP_TS_STORAGE_FILE=./sessions.json
 
 ## Usage
 
-```typescript
-import { storage } from '@mcp-ts/sdk/server';
+### Option 1: Automatic Detection (Recommended)
 
-// Storage automatically uses File when MCP_TS_STORAGE_FILE is set
-const sessions = await storage.getIdentitySessionsData('user-123');
-console.log('Stored sessions:', sessions);
+When `MCP_TS_STORAGE_FILE` is present in your environment, the global `sessions` proxy automatically uses the File System backend.
+
+```typescript
+import { sessions } from '@mcp-ts/sdk/server';
+
+// This will use File System automatically if env vars are set
+const sessionList = await sessions.list('user-123');
+console.log('Stored sessions:', sessionList);
+```
+
+### Option 2: Manual Instantiation
+
+If you want to manage the File System backend yourself:
+
+```typescript
+import { FileStorageBackend } from '@mcp-ts/sdk/server';
+
+const fileBackend = new FileStorageBackend({ path: './sessions.json' });
+await fileBackend.init();
+
+const sessionList = await fileBackend.list('user-123');
 ```
 
 ### File Format
@@ -45,7 +62,7 @@ console.log('Stored sessions:', sessions);
 [
   {
     "sessionId": "abc123",
-    "identity": "user-123",
+    "userId": "user-123",
     "serverId": "server-1",
     "serverName": "My MCP Server",
     "serverUrl": "https://mcp.example.com",

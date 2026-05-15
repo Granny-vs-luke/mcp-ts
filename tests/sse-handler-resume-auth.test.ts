@@ -13,25 +13,25 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
 
-    await storage.createSession({
+    await storage.create({
       sessionId: 'existing-session',
-      identity: 'user-1',
+      userId: 'user-1',
       serverId: 'srv-1',
       serverName: 'Server One',
       serverUrl: 'https://example.com/mcp',
       callbackUrl: 'https://app.local/oauth/callback',
-      transportType: 'streamable_http',
+      transportType: 'streamable-http',
       createdAt: Date.now(),
       active: false,
     });
 
     const manager = new SSEConnectionManager(
-      { identity: 'user-1' },
+      { userId: 'user-1' },
       () => { }
     );
 
     let resumedSessionId: string | null = null;
-    (manager as any).restoreSession = async ({ sessionId }: { sessionId: string }) => {
+    (manager as any).getSession = async ({ sessionId }: { sessionId: string }) => {
       resumedSessionId = sessionId;
       return { success: true, toolCount: 0 };
     };
@@ -61,20 +61,20 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
 
-    await storage.createSession({
+    await storage.create({
       sessionId: 'existing-active',
-      identity: 'user-2',
+      userId: 'user-2',
       serverId: 'srv-2',
       serverName: 'Server Two',
       serverUrl: 'https://example.com/mcp-active',
       callbackUrl: 'https://app.local/oauth/callback',
-      transportType: 'streamable_http',
+      transportType: 'streamable-http',
       createdAt: Date.now(),
       active: true,
     });
 
     const manager = new SSEConnectionManager(
-      { identity: 'user-2' },
+      { userId: 'user-2' },
       () => { }
     );
 
@@ -99,20 +99,20 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
 
-    await storage.createSession({
+    await storage.create({
       sessionId: 'resource-session',
-      identity: 'user-3',
+      userId: 'user-3',
       serverId: 'srv-3',
       serverName: 'Server Three',
       serverUrl: 'https://example.com/mcp-resource',
       callbackUrl: 'https://app.local/oauth/callback',
-      transportType: 'streamable_http',
+      transportType: 'streamable-http',
       createdAt: Date.now(),
       active: true,
     });
 
     const manager = new SSEConnectionManager(
-      { identity: 'user-3' },
+      { userId: 'user-3' },
       () => { }
     );
 
@@ -160,7 +160,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
         serverName: 'Server Three',
         serverUrl: 'https://example.com/mcp-resource',
         callbackUrl: 'https://app.local/oauth/callback',
-        transportType: 'streamable_http',
+        transportType: 'streamable-http',
       }]);
     } finally {
       (MCPClient.prototype as any).connect = originalConnect;
@@ -174,7 +174,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     _setStorageInstanceForTesting(storage);
 
     const manager = new SSEConnectionManager(
-      { identity: 'user-4' },
+      { userId: 'user-4' },
       () => { }
     );
 

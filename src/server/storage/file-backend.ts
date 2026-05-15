@@ -1,15 +1,15 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import { StorageBackend, SessionData, SetClientOptions } from './types.js';
+import type { SessionStore, Session, SetClientOptions } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
 
 /**
- * File system implementation of StorageBackend
+ * File system implementation of SessionStore
  * Persists sessions to a JSON file
  */
-export class FileStorageBackend implements StorageBackend {
+export class FileStorageBackend implements SessionStore {
     private filePath: string;
-    private memoryCache: Map<string, SessionData> | null = null;
+    private memoryCache: Map<string, Session> | null = null;
     private initialized = false;
 
     /**
@@ -36,8 +36,8 @@ export class FileStorageBackend implements StorageBackend {
 
             this.memoryCache = new Map();
             if (Array.isArray(json)) {
-                json.forEach((s: SessionData) => {
-                    this.memoryCache!.set(this.getSessionKey(s.identity || 'unknown', s.sessionId), s);
+                json.forEach((s: Session) => {
+                    this.memoryCache!.set(this.getSessionKey(s.userId || 'unknown', s.sessionId), s);
                 });
             }
         } catch (error: any) {
@@ -65,20 +65,20 @@ export class FileStorageBackend implements StorageBackend {
         await fs.writeFile(this.filePath, JSON.stringify(sessions, null, 2), 'utf-8');
     }
 
-    private getSessionKey(identity: string, sessionId: string): string {
-        return `${identity}:${sessionId}`;
+    private getSessionKey(userId: string, sessionId: string): string {
+        return `${userId}:${sessionId}`;
     }
 
     generateSessionId(): string {
         return generateSessionId();
     }
 
-    async createSession(session: SessionData, ttl?: number): Promise<void> {
+    async create(session: Session, ttl?: number): Promise<void> {
         await this.ensureInitialized();
-        const { sessionId, identity } = session;
-        if (!sessionId || !identity) throw new Error('identity and sessionId required');
+        const { sessionId, userId } = session;
+        if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
-        const sessionKey = this.getSessionKey(identity, sessionId);
+        const sessionKey = this.getSessionKey(userId, sessionId);
         if (this.memoryCache!.has(sessionKey)) {
             throw new Error(`Session ${sessionId} already exists`);
         }
@@ -88,11 +88,11 @@ export class FileStorageBackend implements StorageBackend {
         // Note: TTL is ignored in file backend - sessions don't auto-expire
     }
 
-    async updateSession(identity: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
         await this.ensureInitialized();
-        if (!identity || !sessionId) throw new Error('identity and sessionId required');
+        if (!userId || !sessionId) throw new Error('userId and sessionId required');
 
-        const sessionKey = this.getSessionKey(identity, sessionId);
+        const sessionKey = this.getSessionKey(userId, sessionId);
         const current = this.memoryCache!.get(sessionKey);
 
         if (!current) {
@@ -109,33 +109,33 @@ export class FileStorageBackend implements StorageBackend {
         // Note: TTL is ignored in file backend - sessions don't auto-expire
     }
 
-    async getSession(identity: string, sessionId: string): Promise<SessionData | null> {
+    async get(userId: string, sessionId: string): Promise<Session | null> {
         await this.ensureInitialized();
-        const sessionKey = this.getSessionKey(identity, sessionId);
+        const sessionKey = this.getSessionKey(userId, sessionId);
         return this.memoryCache!.get(sessionKey) || null;
     }
 
-    async getIdentitySessionsData(identity: string): Promise<SessionData[]> {
+    async list(userId: string): Promise<Session[]> {
         await this.ensureInitialized();
-        return Array.from(this.memoryCache!.values()).filter(s => s.identity === identity);
+        return Array.from(this.memoryCache!.values()).filter(s => s.userId === userId);
     }
 
-    async getIdentityMcpSessions(identity: string): Promise<string[]> {
+    async listIds(userId: string): Promise<string[]> {
         await this.ensureInitialized();
         return Array.from(this.memoryCache!.values())
-            .filter(s => s.identity === identity)
+            .filter(s => s.userId === userId)
             .map(s => s.sessionId);
     }
 
-    async removeSession(identity: string, sessionId: string): Promise<void> {
+    async delete(userId: string, sessionId: string): Promise<void> {
         await this.ensureInitialized();
-        const sessionKey = this.getSessionKey(identity, sessionId);
+        const sessionKey = this.getSessionKey(userId, sessionId);
         if (this.memoryCache!.delete(sessionKey)) {
             await this.flush();
         }
     }
 
-    async getAllSessionIds(): Promise<string[]> {
+    async listAllIds(): Promise<string[]> {
         await this.ensureInitialized();
         return Array.from(this.memoryCache!.values()).map(s => s.sessionId);
     }
@@ -146,7 +146,7 @@ export class FileStorageBackend implements StorageBackend {
         await this.flush();
     }
 
-    async cleanupExpiredSessions(): Promise<void> {
+    async cleanupExpired(): Promise<void> {
         // Could implement TTL check here using createdAt
         await this.ensureInitialized();
     }

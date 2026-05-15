@@ -1,10 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { StorageBackend, SessionData } from './types.js';
+import type { SessionStore, Session } from './types.js';
 import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
 
-export class SupabaseStorageBackend implements StorageBackend {
+export class SupabaseStorageBackend implements SessionStore {
     private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
 
     constructor(private supabase: SupabaseClient) {}
@@ -34,7 +34,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         return generateSessionId();
     }
 
-    private mapRowToSessionData(row: any): SessionData {
+    private mapRowToSessionData(row: any): Session {
         return {
             sessionId: row.session_id,
             serverId: row.server_id,
@@ -43,7 +43,7 @@ export class SupabaseStorageBackend implements StorageBackend {
             transportType: row.transport_type,
             callbackUrl: row.callback_url,
             createdAt: new Date(row.created_at).getTime(),
-            identity: row.identity,
+            userId: row.user_id,
             headers: decryptObject(row.headers),
             active: row.active,
             clientInformation: row.client_information,
@@ -53,9 +53,9 @@ export class SupabaseStorageBackend implements StorageBackend {
         };
     }
 
-    async createSession(session: SessionData, ttl?: number): Promise<void> {
-        const { sessionId, identity } = session;
-        if (!sessionId || !identity) throw new Error('identity and sessionId required');
+    async create(session: Session, ttl?: number): Promise<void> {
+        const { sessionId, userId } = session;
+        if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
         const expiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
@@ -64,14 +64,13 @@ export class SupabaseStorageBackend implements StorageBackend {
             .from('mcp_sessions')
             .insert({
                 session_id: sessionId,
-                user_id: identity, // Maps user_id to identity to support RLS using auth.uid()
+                user_id: userId, // Maps user_id to userId to support RLS using auth.uid()
                 server_id: session.serverId,
                 server_name: session.serverName,
                 server_url: session.serverUrl,
                 transport_type: session.transportType,
                 callback_url: session.callbackUrl,
                 created_at: new Date(session.createdAt || Date.now()).toISOString(),
-                identity: identity,
                 headers: encryptObject(session.headers),
                 active: session.active ?? false,
                 client_information: session.clientInformation,
@@ -90,7 +89,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         }
     }
 
-    async updateSession(identity: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
         const expiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
 
@@ -115,7 +114,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         const { data: updatedRows, error } = await this.supabase
             .from('mcp_sessions')
             .update(updateData)
-            .eq('identity', identity)
+            .eq('user_id', userId)
             .eq('session_id', sessionId)
             .select('id');
 
@@ -124,15 +123,15 @@ export class SupabaseStorageBackend implements StorageBackend {
         }
 
         if (!updatedRows || updatedRows.length === 0) {
-            throw new Error(`Session ${sessionId} not found for identity ${identity}`);
+            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
     }
 
-    async getSession(identity: string, sessionId: string): Promise<SessionData | null> {
+    async get(userId: string, sessionId: string): Promise<Session | null> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('*')
-            .eq('identity', identity)
+            .eq('user_id', userId)
             .eq('session_id', sessionId)
             .maybeSingle();
 
@@ -146,25 +145,25 @@ export class SupabaseStorageBackend implements StorageBackend {
         return this.mapRowToSessionData(data);
     }
 
-    async getIdentitySessionsData(identity: string): Promise<SessionData[]> {
+    async list(userId: string): Promise<Session[]> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('*')
-            .eq('identity', identity);
+            .eq('user_id', userId);
 
         if (error) {
-            console.error(`[SupabaseStorage] Failed to get session data for ${identity}:`, error);
+            console.error(`[SupabaseStorage] Failed to get session data for ${userId}:`, error);
             return [];
         }
 
         return data.map(row => this.mapRowToSessionData(row));
     }
 
-    async removeSession(identity: string, sessionId: string): Promise<void> {
+    async delete(userId: string, sessionId: string): Promise<void> {
         const { error } = await this.supabase
             .from('mcp_sessions')
             .delete()
-            .eq('identity', identity)
+            .eq('user_id', userId)
             .eq('session_id', sessionId);
 
         if (error) {
@@ -172,21 +171,21 @@ export class SupabaseStorageBackend implements StorageBackend {
         }
     }
 
-    async getIdentityMcpSessions(identity: string): Promise<string[]> {
+    async listIds(userId: string): Promise<string[]> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('session_id')
-            .eq('identity', identity);
+            .eq('user_id', userId);
 
         if (error) {
-            console.error(`[SupabaseStorage] Failed to get sessions for ${identity}:`, error);
+            console.error(`[SupabaseStorage] Failed to get sessions for ${userId}:`, error);
             return [];
         }
 
         return data.map(row => row.session_id);
     }
 
-    async getAllSessionIds(): Promise<string[]> {
+    async listAllIds(): Promise<string[]> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('session_id');
@@ -211,7 +210,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         }
     }
 
-    async cleanupExpiredSessions(): Promise<void> {
+    async cleanupExpired(): Promise<void> {
         const { error } = await this.supabase
             .from('mcp_sessions')
             .delete()

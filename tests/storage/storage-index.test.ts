@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { storage, _setStorageInstanceForTesting } from '../../src/server/storage';
+import { sessions, _setStorageInstanceForTesting } from '../../src/server/storage';
 import { createMockSession } from '../test-utils';
 
 test.describe('storage index bootstrap', () => {
@@ -25,7 +25,7 @@ test.describe('storage index bootstrap', () => {
 
     test.afterEach(async () => {
         try {
-            await storage.disconnect();
+            await sessions.disconnect();
         } catch {
             // Storage may not have been initialized for a given test.
         }
@@ -51,14 +51,14 @@ test.describe('storage index bootstrap', () => {
 
         const session = createMockSession({
             sessionId: 'sqlite-bootstrap-session',
-            transportType: 'streamable_http',
+            transportType: 'streamable-http',
         });
 
-        await storage.createSession(session);
+        await sessions.create(session);
 
-        const retrieved = await storage.getSession(session.identity, session.sessionId);
+        const retrieved = await sessions.get(session.userId, session.sessionId);
         expect(retrieved?.sessionId).toBe(session.sessionId);
-        expect(retrieved?.transportType).toBe('streamable_http');
+        expect(retrieved?.transportType).toBe('streamable-http');
     });
 
     test('falls back to memory when explicit neon selection has no connection string', async () => {
@@ -66,13 +66,13 @@ test.describe('storage index bootstrap', () => {
 
         const session = createMockSession({
             sessionId: 'neon-fallback-session',
-            transportType: 'streamable_http',
+            transportType: 'streamable-http',
         });
 
-        await storage.createSession(session);
+        await sessions.create(session);
 
-        const retrieved = await storage.getSession(session.identity, session.sessionId);
+        const retrieved = await sessions.get(session.userId, session.sessionId);
         expect(retrieved?.sessionId).toBe(session.sessionId);
-        expect(retrieved?.transportType).toBe('streamable_http');
+        expect(retrieved?.transportType).toBe('streamable-http');
     });
 });

@@ -148,7 +148,7 @@ import { useMcp } from '@mcp-ts/sdk/client/react';
 function App() {
   const { connections, connect } = useMcp({
     url: '/api/mcp',
-    identity: 'user-123',
+    userId: 'user-123',
   });
 
   return (
@@ -192,8 +192,8 @@ import { streamText } from 'ai';
 import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
-  const { messages, identity } = await req.json();
-  const client = new MultiSessionClient(identity);
+  const { messages, userId } = await req.json();
+  const client = new MultiSessionClient(userId);
 
   try {
     await client.connect();

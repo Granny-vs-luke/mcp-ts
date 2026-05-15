@@ -21,7 +21,7 @@ Create an API route at `app/api/mcp/route.ts` to handle MCP connections.
 import { createNextMcpHandler } from '@mcp-ts/sdk/server';
 
 export const { GET, POST } = createNextMcpHandler({
-  getIdentity: (req) => "user_123", // Replace with actual auth
+  getUserId: (req) => "user_123", // Replace with actual auth
 });
 ```
 
@@ -36,7 +36,7 @@ import { useMcp } from '@mcp-ts/sdk/client';
 export function McpApp() {
   const { connections, connect, callTool, status } = useMcp({
     url: '/api/mcp',
-    identity: 'user_123',
+    userId: 'user_123',
   });
 
   const handleConnect = () => {

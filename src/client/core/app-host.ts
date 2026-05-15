@@ -559,7 +559,7 @@ export class AppHost {
   private async getSessionId(): Promise<string | undefined> {
     if (this.sessionId) return this.sessionId;
     if (!this.client) return undefined;
-    const result = await this.client.getSessions();
+    const result = await this.client.listSessions();
     return result.sessions?.[0]?.sessionId;
   }
 

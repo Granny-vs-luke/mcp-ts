@@ -6,7 +6,7 @@ import { UnauthorizedError as SDKUnauthorizedError } from '@modelcontextprotocol
 import { STATE_EXPIRATION_MS, SESSION_TTL_SECONDS } from '../src/shared/constants';
 
 test.describe('Session Lifecycle Management', () => {
-    const identity = 'test-user';
+    const userId = 'test-user';
     const sessionId = 'test-session';
     const serverId = 'test-server';
     const serverUrl = 'http://localhost:8080';
@@ -25,7 +25,7 @@ test.describe('Session Lifecycle Management', () => {
 
     test('Scenario 1: Successful Connection Promotion (active: true, long TTL)', async () => {
         const client = new MCPClient({
-            identity,
+            userId,
             sessionId,
             serverId,
             serverUrl,
@@ -61,26 +61,26 @@ test.describe('Session Lifecycle Management', () => {
         expect(savedWithActive).toBe(true);
         expect(savedWithTtl).toBe(SESSION_TTL_SECONDS);
         
-        const session = await mockStorage.getSession(identity, sessionId);
+        const session = await mockStorage.get(userId, sessionId);
         expect(session?.active).toBe(true);
     });
 
     test('Scenario 2: Proactive Cleanup on Generic Error for transient session', async () => {
         const client = new MCPClient({
-            identity,
+            userId,
             sessionId,
             serverId,
             serverUrl,
             callbackUrl,
         });
 
-        await mockStorage.createSession({
+        await mockStorage.create({
             sessionId,
-            identity,
+            userId,
             serverId,
             serverUrl,
             callbackUrl,
-            transportType: 'streamable_http',
+            transportType: 'streamable-http',
             createdAt: Date.now(),
             active: false,
         });
@@ -98,31 +98,31 @@ test.describe('Session Lifecycle Management', () => {
             throw new Error('ECONNREFUSED');
         };
 
-        let removeSessionCalled = false;
-        mockStorage.removeSession = async (id, sId) => {
-            if (id === identity && sId === sessionId) removeSessionCalled = true;
+        let deleteSessionCalled = false;
+        mockStorage.delete = async (id, sId) => {
+            if (id === userId && sId === sessionId) deleteSessionCalled = true;
         };
 
         await expect(client.connect()).rejects.toThrow('ECONNREFUSED');
-        expect(removeSessionCalled).toBe(true);
+        expect(deleteSessionCalled).toBe(true);
     });
 
     test('Scenario 2b: Generic reconnect error preserves active session credentials', async () => {
         const client = new MCPClient({
-            identity,
+            userId,
             sessionId,
             serverId,
             serverUrl,
             callbackUrl,
         });
 
-        await mockStorage.createSession({
+        await mockStorage.create({
             sessionId,
-            identity,
+            userId,
             serverId,
             serverUrl,
             callbackUrl,
-            transportType: 'streamable_http',
+            transportType: 'streamable-http',
             createdAt: Date.now(),
             active: true,
         });
@@ -139,18 +139,18 @@ test.describe('Session Lifecycle Management', () => {
             throw new Error('ECONNREFUSED');
         };
 
-        let removeSessionCalled = false;
-        mockStorage.removeSession = async () => {
-            removeSessionCalled = true;
+        let deleteSessionCalled = false;
+        mockStorage.delete = async () => {
+            deleteSessionCalled = true;
         };
 
         await expect(client.connect()).rejects.toThrow('ECONNREFUSED');
-        expect(removeSessionCalled).toBe(false);
+        expect(deleteSessionCalled).toBe(false);
     });
 
     test('Scenario 3: Proactive Cleanup on Terminal Auth Failure (no URL)', async () => {
         const client = new MCPClient({
-            identity,
+            userId,
             sessionId,
             serverId,
             serverUrl,
@@ -169,18 +169,18 @@ test.describe('Session Lifecycle Management', () => {
             throw new SDKUnauthorizedError('Unauthorized');
         };
 
-        let removeSessionCalled = false;
-        mockStorage.removeSession = async (id, sId) => {
-            if (id === identity && sId === sessionId) removeSessionCalled = true;
+        let deleteSessionCalled = false;
+        mockStorage.delete = async (id, sId) => {
+            if (id === userId && sId === sessionId) deleteSessionCalled = true;
         };
 
         await expect(client.connect()).rejects.toThrow('OAuth authorization URL not available');
-        expect(removeSessionCalled).toBe(true);
+        expect(deleteSessionCalled).toBe(true);
     });
 
     test('Scenario 4: Short-lived Pending State (active: false, short TTL)', async () => {
         const client = new MCPClient({
-            identity,
+            userId,
             sessionId,
             serverId,
             serverUrl,

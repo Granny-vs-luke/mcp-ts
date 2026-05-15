@@ -5,12 +5,12 @@ description: "Global storage API methods and custom backend integration."
 icon: "database"
 ---
 
-### `storage`
+### `sessions`
 
-Global storage instance that automatically selects the appropriate backend based on environment configuration.
+Global `sessions` instance that automatically selects the appropriate backend based on environment configuration. It follows a Repository-inspired interface for managing MCP sessions.
 
 ```typescript
-import { storage } from '@mcp-ts/sdk/server';
+import { sessions } from '@mcp-ts/sdk/server';
 ```
 
 #### Configuration
@@ -39,19 +39,19 @@ MCP_TS_STORAGE_TYPE=memory
 Generate a unique session ID.
 
 ```typescript
-const sessionId = storage.generateSessionId();
+const sessionId = sessions.generateSessionId();
 ```
 
 ---
 
-**`createSession(session: SessionData): Promise<void>`**
+**`create(session: Session, ttl?: number): Promise<void>`**
 
 Create a new session. Throws if session already exists.
 
 ```typescript
-await storage.createSession({
+await sessions.create({
   sessionId: 'abc123',
-  identity: 'user-123',
+  userId: 'user-123',
   serverId: 'server-id',
   serverName: 'My Server',
   serverUrl: 'https://mcp.example.com',
@@ -59,73 +59,73 @@ await storage.createSession({
   transportType: 'sse',
   active: true,
   createdAt: Date.now(),
-});
+}, 3600); // Optional TTL in seconds
 ```
 
 ---
 
-**`updateSession(identity: string, sessionId: string, data: Partial<SessionData>): Promise<void>`**
+**`update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void>`**
 
 Update an existing session with partial data. Throws if session doesn't exist.
 
 ```typescript
-await storage.updateSession('user-123', 'abc123', {
+await sessions.update('user-123', 'abc123', {
   active: false,
   tokens: {
     access_token: 'new-token',
     token_type: 'Bearer',
   },
-});
+}, 3600); // Optional TTL refresh
 ```
 
 ---
 
-**`getSession(identity: string, sessionId: string): Promise<SessionData | null>`**
+**`get(userId: string, sessionId: string): Promise<Session | null>`**
 
 Retrieve session data.
 
 ```typescript
-const session = await storage.getSession('user-123', 'abc123');
+const session = await sessions.get('user-123', 'abc123');
 ```
 
 ---
 
-**`getIdentitySessionsData(identity: string): Promise<SessionData[]>`**
+**`list(userId: string): Promise<Session[]>`**
 
-Get all session data for an identity.
+Get all session data for a user ID.
 
 ```typescript
-const sessions = await storage.getIdentitySessionsData('user-123');
+const sessionList = await sessions.list('user-123');
 ```
 
 ---
 
-**`getIdentityMcpSessions(identity: string): Promise<string[]>`**
+**`listIds(userId: string): Promise<string[]>`**
 
-Get all session IDs for an identity.
+Get all session IDs for a user ID.
 
 ```typescript
-const sessionIds = await storage.getIdentityMcpSessions('user-123');
+const sessionIds = await sessions.listIds('user-123');
 ```
 
 ---
 
-**`removeSession(identity: string, sessionId: string): Promise<void>`**
+**`delete(userId: string, sessionId: string): Promise<void>`**
 
 Delete a session.
 
 ```typescript
-await storage.removeSession('user-123', 'abc123');
+await sessions.delete('user-123', 'abc123');
 ```
 
 ---
 
-**`getAllSessionIds(): Promise<string[]>`**
+**`listAllIds(): Promise<string[]>`**
 
 Get all session IDs across all users (admin operation).
 
 ```typescript
-const allSessions = await storage.getAllSessionIds();
+const allSessions = await sessions.listAllIds();
 ```
 
 ---
@@ -135,17 +135,17 @@ const allSessions = await storage.getAllSessionIds();
 Clear all sessions (admin operation).
 
 ```typescript
-await storage.clearAll();
+await sessions.clearAll();
 ```
 
 ---
 
-**`cleanupExpiredSessions(): Promise<void>`**
+**`cleanupExpired(): Promise<void>`**
 
 Clean up expired sessions (Redis only, no-op for others).
 
 ```typescript
-await storage.cleanupExpiredSessions();
+await sessions.cleanupExpired();
 ```
 
 ---
@@ -155,14 +155,14 @@ await storage.cleanupExpiredSessions();
 Disconnect from storage backend.
 
 ```typescript
-await storage.disconnect();
+await sessions.disconnect();
 ```
 
 ---
 
-### Custom Storage Backends
+### Custom Session Stores
 
-You can also use specific storage backends directly:
+You can also use specific session store backends directly:
 
 ```typescript
 import { 

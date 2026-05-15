@@ -5,7 +5,7 @@ import type {
     OAuthClientMetadata,
     OAuthTokens
 } from "@modelcontextprotocol/sdk/shared/auth.js";
-import { storage, SessionData } from "../storage/index.js";
+import { sessions, type Session } from "../storage/index.js";
 import {
     DEFAULT_CLIENT_NAME,
     DEFAULT_CLIENT_URI,
@@ -34,7 +34,7 @@ export interface AgentsOAuthProvider extends OAuthClientProvider {
 }
 
 export interface StorageOAuthClientProviderOptions {
-    identity: string;
+    userId: string;
     serverId: string;
     sessionId: string;
     redirectUrl: string;
@@ -49,10 +49,10 @@ export interface StorageOAuthClientProviderOptions {
 
 /**
  * Storage-backed OAuth provider implementation for MCP
- * Stores OAuth tokens, client information, and PKCE verifiers using the configured StorageBackend
+ * Stores OAuth tokens, client information, and PKCE verifiers using the configured SessionStore
  */
 export class StorageOAuthClientProvider implements AgentsOAuthProvider {
-    public readonly identity: string;
+    public readonly userId: string;
     public readonly serverId: string;
     public readonly sessionId: string;
     public readonly redirectUrl: string;
@@ -69,11 +69,11 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     private tokenExpiresAt?: number;
 
     /**
-     * Creates a new storage-backed OAuth provider
+     * Creates a new session-backed OAuth provider
      * @param options - Provider configuration
      */
     constructor(options: StorageOAuthClientProviderOptions) {
-        this.identity = options.identity;
+        this.userId = options.userId;
         this.serverId = options.serverId;
         this.sessionId = options.sessionId;
         this.redirectUrl = options.redirectUrl;
@@ -110,25 +110,25 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     /**
-     * Loads OAuth data from storage session
+     * Loads OAuth data from the session store
      * @private
      */
-    private async getSessionData(): Promise<SessionData> {
-        const data = await storage.getSession(this.identity, this.sessionId);
+    private async getSessionData(): Promise<Session> {
+        const data = await sessions.get(this.userId, this.sessionId);
         if (!data) {
-            return {} as SessionData;
+            return {} as Session;
         }
         return data;
     }
 
     /**
-     * Saves OAuth data to storage
+     * Saves OAuth data to the session store
      * @param data - Partial OAuth data to save
      * @private
      * @throws Error if session doesn't exist (session must be created by controller layer)
      */
-    private async saveSessionData(data: Partial<SessionData>): Promise<void> {
-        await storage.updateSession(this.identity, this.sessionId, data);
+    private async saveSessionData(data: Partial<Session>): Promise<void> {
+        await sessions.update(this.userId, this.sessionId, data);
     }
 
     /**
@@ -170,7 +170,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * Stores OAuth tokens
      */
     async saveTokens(tokens: OAuthTokens): Promise<void> {
-        const data: Partial<SessionData> = { tokens };
+        const data: Partial<Session> = { tokens };
 
         if (tokens.expires_in) {
             this.tokenExpiresAt = Date.now() + (tokens.expires_in * 1000) - TOKEN_EXPIRY_BUFFER_MS;
@@ -188,7 +188,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async checkState(_state: string): Promise<{ valid: boolean; serverId?: string; error?: string }> {
-        const data = await storage.getSession(this.identity, this.sessionId);
+        const data = await sessions.get(this.userId, this.sessionId);
 
         if (!data) {
             return { valid: false, error: "Session not found" };
@@ -212,9 +212,9 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         scope: "all" | "client" | "tokens" | "verifier"
     ): Promise<void> {
         if (scope === "all") {
-            await storage.removeSession(this.identity, this.sessionId);
+            await sessions.delete(this.userId, this.sessionId);
         } else {
-            const updates: Partial<SessionData> = {};
+            const updates: Partial<Session> = {};
 
             if (scope === "client") {
                 updates.clientInformation = undefined;

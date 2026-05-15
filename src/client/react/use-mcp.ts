@@ -25,7 +25,7 @@ export interface UseMcpOptions {
   /**
    * User/Client identifier
    */
-  identity: string;
+  userId: string;
 
   /**
    * Optional auth token
@@ -110,7 +110,7 @@ export interface McpClient {
     serverName: string;
     serverUrl: string;
     callbackUrl: string;
-    transportType?: 'sse' | 'streamable_http';
+    transportType?: 'sse' | 'streamable-http';
   }) => Promise<string>;
 
   /**
@@ -126,7 +126,7 @@ export interface McpClient {
     serverName: string;
     serverUrl: string;
     callbackUrl: string;
-    transportType?: 'sse' | 'streamable_http';
+    transportType?: 'sse' | 'streamable-http';
   }) => Promise<string>;
 
   /**
@@ -220,7 +220,7 @@ export interface McpClient {
 export function useMcp(options: UseMcpOptions): McpClient {
   const {
     url,
-    identity,
+    userId,
     authToken,
     autoConnect = true,
     autoInitialize = true,
@@ -249,7 +249,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
 
     const clientOptions: SSEClientOptions = {
       url,
-      identity,
+      userId,
       authToken,
       onConnectionEvent: (event) => {
         // Update local state based on event
@@ -285,7 +285,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
       isMountedRef.current = false;
       client.disconnect();
     };
-  }, [url, identity, authToken, autoConnect, autoInitialize]);
+  }, [url, userId, authToken, autoConnect, autoInitialize]);
 
   /**
    * Update connections based on event
@@ -441,7 +441,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
     try {
       setIsInitializing(true);
 
-      const result = await clientRef.current.getSessions();
+      const result = await clientRef.current.listSessions();
       const sessions = result.sessions || [];
 
       // Initialize connections
@@ -470,7 +470,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                 return;
               }
               suppressAuthRedirectSessionsRef.current.add(session.sessionId);
-              await clientRef.current.restoreSession(session.sessionId);
+              await clientRef.current.getSession(session.sessionId);
             } catch (error) {
               console.error(`[useMcp] Failed to validate session ${session.sessionId}:`, error);
             } finally {
@@ -498,7 +498,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
       serverName: string;
       serverUrl: string;
       callbackUrl: string;
-      transportType?: 'sse' | 'streamable_http';
+      transportType?: 'sse' | 'streamable-http';
     }): Promise<string> => {
       if (!clientRef.current) {
         throw new Error('SSE client not initialized');
@@ -519,7 +519,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
       serverName: string;
       serverUrl: string;
       callbackUrl: string;
-      transportType?: 'sse' | 'streamable_http';
+      transportType?: 'sse' | 'streamable-http';
     }): Promise<string> => {
       if (!clientRef.current) {
         throw new Error('SSE client not initialized');
@@ -602,7 +602,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
     }
     // Ensure this attempt is not suppressed as background restore.
     suppressAuthRedirectSessionsRef.current.delete(sessionId);
-    await clientRef.current.restoreSession(sessionId);
+    await clientRef.current.getSession(sessionId);
   }, []);
 
   /**

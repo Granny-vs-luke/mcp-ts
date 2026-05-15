@@ -87,7 +87,7 @@ test.describe('Error Classes', () => {
     test.describe('RpcErrorCodes', () => {
         test('should expose standard error codes', () => {
             expect(RpcErrorCodes.EXECUTION_ERROR).toBe('EXECUTION_ERROR');
-            expect(RpcErrorCodes.MISSING_IDENTITY).toBe('MISSING_IDENTITY');
+            expect(RpcErrorCodes.MISSING_USER_ID).toBe('MISSING_USER_ID');
             expect(RpcErrorCodes.UNAUTHORIZED).toBe('UNAUTHORIZED');
             expect(RpcErrorCodes.NO_CONNECTION).toBe('NO_CONNECTION');
             expect(RpcErrorCodes.UNKNOWN_METHOD).toBe('UNKNOWN_METHOD');

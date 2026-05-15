@@ -1,7 +1,7 @@
 
 
 import { MCPClient } from './oauth-client.js';
-import { storage, type SessionData } from '../storage/index.js';
+import { sessions, type Session } from '../storage/index.js';
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_MAX_RETRIES = 2;
@@ -9,7 +9,7 @@ const DEFAULT_RETRY_DELAY_MS = 1000;
 const CONNECTION_BATCH_SIZE = 5;
 
 /**
- * Manages multiple MCP connections for a single user identity.
+ * Manages multiple MCP connections for a single user.
  * Allows aggregating tools from all connected servers.
  */
 export interface MultiSessionOptions {
@@ -31,7 +31,7 @@ export interface MultiSessionOptions {
 }
 
 /**
- * Manages multiple MCP client connections for a single user identity.
+ * Manages multiple MCP client connections for a single user.
  *
  * On a traditional long-running server, you can cache this instance per user
  * so the connections stay alive between requests. On serverless, a new instance
@@ -40,18 +40,18 @@ export interface MultiSessionOptions {
  */
 export class MultiSessionClient {
     private clients: MCPClient[] = [];
-    private identity: string;
+    private userId: string;
     private options: MultiSessionOptions;
 
     /**
-     * Creates a new MultiSessionClient for the given user identity.
+     * Creates a new MultiSessionClient for the given user userId.
      *
-     * @param identity - A unique string identifying the user (e.g. user ID or email).
+     * @param userId - A unique string identifying the user (e.g. user ID or email).
      * @param options  - Optional tuning for connection timeout, retry count, and retry delay.
      *                   Falls back to sensible defaults if not provided.
      */
-    constructor(identity: string, options: MultiSessionOptions = {}) {
-        this.identity = identity;
+    constructor(userId: string, options: MultiSessionOptions = {}) {
+        this.userId = userId;
         this.options = {
             timeout: DEFAULT_TIMEOUT_MS,
             maxRetries: DEFAULT_MAX_RETRIES,
@@ -61,7 +61,7 @@ export class MultiSessionClient {
     }
 
     /**
-     * Fetches all sessions for this identity from storage and returns only the
+     * Fetches all sessions for this userId from storage and returns only the
      * ones that are ready to connect.
      *
      * A session is considered connectable when:
@@ -73,9 +73,9 @@ export class MultiSessionClient {
      * Note: Sessions where `active` is `undefined` (legacy records) are included
      * for backwards compatibility.
      */
-    private async getActiveSessions(): Promise<SessionData[]> {
-        const sessions = await storage.getIdentitySessionsData(this.identity);
-        const valid = sessions.filter(s =>
+    private async getActiveSessions(): Promise<Session[]> {
+        const sessionList = await sessions.list(this.userId);
+        const valid = sessionList.filter(s =>
             s.serverId &&
             s.serverUrl &&
             s.callbackUrl &&
@@ -91,7 +91,7 @@ export class MultiSessionClient {
      * has many active MCP sessions (e.g. 20+ servers). Within each batch, sessions
      * are connected concurrently using `Promise.all` for speed.
      */
-    private async connectInBatches(sessions: SessionData[]): Promise<void> {
+    private async connectInBatches(sessions: Session[]): Promise<void> {
         for (let i = 0; i < sessions.length; i += CONNECTION_BATCH_SIZE) {
             const batch = sessions.slice(i, i + CONNECTION_BATCH_SIZE);
             await Promise.all(batch.map(session => this.connectSession(session)));
@@ -110,7 +110,7 @@ export class MultiSessionClient {
      *   per-session mutex so we never spin up two physical connections for the same session.
      * - On completion (success or failure), the promise is cleaned up from the map.
      */
-    private async connectSession(session: SessionData): Promise<void> {
+    private async connectSession(session: Session): Promise<void> {
         const existingClient = this.clients.find(c => c.getSessionId() === session.sessionId);
         if (existingClient?.isConnected()) {
             return;
@@ -146,7 +146,7 @@ export class MultiSessionClient {
      * If all attempts are exhausted, logs an error and returns silently (does not throw),
      * so a single bad server doesn't block the rest of the batch from connecting.
      */
-    private async establishConnectionWithRetries(session: SessionData): Promise<void> {
+    private async establishConnectionWithRetries(session: Session): Promise<void> {
         const maxRetries = this.options.maxRetries ?? DEFAULT_MAX_RETRIES;
         const retryDelay = this.options.retryDelay ?? DEFAULT_RETRY_DELAY_MS;
         let lastError: unknown;
@@ -154,7 +154,7 @@ export class MultiSessionClient {
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
                 const client = new MCPClient({
-                    identity: this.identity,
+                    userId: this.userId,
                     sessionId: session.sessionId,
                     serverId: session.serverId,
                     serverUrl: session.serverUrl,
@@ -192,7 +192,7 @@ export class MultiSessionClient {
     }
 
     /**
-     * The main entry point. Fetches all active sessions for this identity from
+     * The main entry point. Fetches all active sessions for this userId from
      * storage and establishes connections to all of them in batches.
      *
      * Call this once after creating the client. On traditional servers, you can

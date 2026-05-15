@@ -18,7 +18,7 @@ const darkTheme: CopilotKitCSSProperties = {
 
 export default function CopilotKitPage() {
   return (
-    <McpProvider url="/api/mcp" identity="demo-user-123">
+    <McpProvider url="/api/mcp" userId="demo-user-123">
       <main className="h-screen flex" style={darkTheme}>
         <aside className="w-80 shrink-0">
           <McpSidebar />

@@ -24,35 +24,35 @@ test.describe('FileStorageBackend', () => {
         }
     });
 
-    test.describe('createSession', () => {
+    test.describe('create', () => {
         test('should store session data in file', async () => {
             const session = createMockSession();
-            await storage.createSession(session);
+            await storage.create(session);
 
-            const retrieved = await storage.getSession(session.identity, session.sessionId);
+            const retrieved = await storage.get(session.userId, session.sessionId);
             expect(retrieved).toBeDefined();
             expect(retrieved?.serverId).toBe(session.serverId);
         });
 
         test('should throw if session already exists', async () => {
             const session = createMockSession();
-            await storage.createSession(session);
+            await storage.create(session);
 
-            await expect(storage.createSession(session)).rejects.toThrow('already exists');
+            await expect(storage.create(session)).rejects.toThrow('already exists');
         });
     });
 
-    test.describe('updateSession', () => {
+    test.describe('update', () => {
         test('should update existing session', async () => {
             const session = createMockSession();
-            await storage.createSession(session);
+            await storage.create(session);
 
-            await storage.updateSession(session.identity, session.sessionId, {
+            await storage.update(session.userId, session.sessionId, {
                 active: true,
                 tokens: createMockTokens()
             });
 
-            const retrieved = await storage.getSession(session.identity, session.sessionId);
+            const retrieved = await storage.get(session.userId, session.sessionId);
             expect(retrieved?.active).toBe(true);
             expect(retrieved?.tokens).toBeDefined();
             expect(retrieved?.serverId).toBe(session.serverId);
@@ -60,21 +60,21 @@ test.describe('FileStorageBackend', () => {
 
         test('should throw if session does not exist', async () => {
             await expect(
-                storage.updateSession('unknown', 'unknown', { active: true })
+                storage.update('unknown', 'unknown', { active: true })
             ).rejects.toThrow('not found');
         });
     });
 
-    test.describe('getIdentitySessionsData', () => {
-        test('should return all sessions for an identity', async () => {
-            const identity = 'test-user';
-            const session1 = createMockSession({ sessionId: 'session-1', identity });
-            const session2 = createMockSession({ sessionId: 'session-2', identity });
+    test.describe('list', () => {
+        test('should return all sessions for a userId', async () => {
+            const userId = 'test-user';
+            const session1 = createMockSession({ sessionId: 'session-1', userId });
+            const session2 = createMockSession({ sessionId: 'session-2', userId });
 
-            await storage.createSession(session1);
-            await storage.createSession(session2);
+            await storage.create(session1);
+            await storage.create(session2);
 
-            const sessions = await storage.getIdentitySessionsData(identity);
+            const sessions = await storage.list(userId);
             expect(sessions.length).toBe(2);
         });
     });

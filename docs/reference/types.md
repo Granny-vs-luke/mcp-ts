@@ -52,14 +52,14 @@ interface ToolInfo {
 ### Session Types
 
 ```typescript
-interface SessionData {
+interface Session {
   sessionId: string;
-  identity?: string;
+  userId: string;
   serverId?: string;
   serverName?: string;
   serverUrl: string;
   callbackUrl: string;
-  transportType: 'sse' | 'streamable_http';
+  transportType: 'sse' | 'streamable-http';
   active: boolean;
   createdAt: number;
   headers?: Record<string, string>;

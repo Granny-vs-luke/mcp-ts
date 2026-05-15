@@ -15,7 +15,7 @@ function OAuthCallbackContent() {
 
   const { finishAuth } = useMcp({
     url: "/api/mcp",
-    identity: process.env.NEXT_PUBLIC_MCP_IDENTITY!,
+    userId: process.env.NEXT_PUBLIC_MCP_USER_ID!,
     autoConnect: true,
     autoInitialize: false,
   });

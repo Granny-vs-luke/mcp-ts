@@ -57,7 +57,7 @@ The optional block:
 - Enables Row Level Security on the table.
 - Adds a policy that allows the server-side `mcp_service_role` to perform storage operations.
 
-This optional block limits table access to the dedicated backend role. The Neon storage backend is intended for server-side use, and session access is scoped by `identity` in application queries.
+This optional block limits table access to the dedicated backend role. The Neon storage backend is intended for server-side use, and session access is scoped by `userId` in application queries.
 
 ## Schema
 
@@ -80,7 +80,6 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL,
     active BOOLEAN DEFAULT false,
-    identity TEXT NOT NULL,
     headers JSONB,
     client_information JSONB,
     tokens JSONB,
@@ -88,7 +87,6 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     client_id TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_mcp_sessions_identity ON public.mcp_sessions(identity);
 CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user_id ON public.mcp_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_sessions_expires_at ON public.mcp_sessions(expires_at);
 
@@ -110,28 +108,35 @@ EXECUTE FUNCTION public.set_current_timestamp_updated_at();
 
 ## Usage
 
-```typescript
-import { storage } from '@mcp-ts/sdk/server';
+### Option 1: Automatic Detection (Recommended)
 
-// Storage automatically uses Neon when configured with:
-// MCP_TS_STORAGE_TYPE=neon
-const sessions = await storage.getIdentitySessionsData('user-123');
+When `MCP_TS_STORAGE_TYPE=neon` and `NEON_DATABASE_URL` are present in your environment, the global `sessions` proxy automatically uses the Neon backend.
+
+```typescript
+import { sessions } from '@mcp-ts/sdk/server';
+
+// This will use Neon automatically if env vars are set
+const sessionList = await sessions.list('user-123');
 ```
 
-You can also create the backend directly:
+### Option 2: Manual Instantiation
+
+If you want to manage the Neon SQL client yourself or use multiple storage backends:
 
 ```typescript
 import { neon } from '@neondatabase/serverless';
 import { createNeonStorageBackend } from '@mcp-ts/sdk/server';
 
 const sql = neon(process.env.NEON_DATABASE_URL!);
-const storage = createNeonStorageBackend(sql);
-await storage.init();
+const neonBackend = createNeonStorageBackend(sql);
+await neonBackend.init(); // Optional but recommended to verify connection
+
+const sessionList = await neonBackend.list('user-123');
 ```
 
 ## Cleanup
 
-Expired sessions are removed when `storage.cleanupExpiredSessions()` runs. Schedule that call from your application or platform cron if you want cleanup without database cron support.
+Expired sessions are removed when `sessions.cleanupExpired()` runs. Schedule that call from your application or platform cron if you want cleanup without database cron support.
 
 If your Neon project has `pg_cron` enabled, you can also run the optional migration at `migrations/neon/20260513020000_add_session_cleanup_cron.sql`. Neon requires endpoint-level `cron.database_name` configuration before `pg_cron` can be installed and used. After that setup, the migration schedules:
 

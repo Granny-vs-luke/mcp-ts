@@ -20,7 +20,7 @@ import type {
   SessionListResult,
   ConnectResult,
   DisconnectResult,
-  RestoreSessionResult,
+  GetSessionResult,
   FinishAuthResult,
   ListToolsRpcResult,
   ListPromptsResult,
@@ -32,7 +32,7 @@ export interface SSEClientOptions {
   url: string;
 
   /** User/Client identifier */
-  identity: string;
+  userId: string;
 
   /** Optional auth token for authenticated requests */
   authToken?: string;
@@ -87,8 +87,8 @@ export class SSEClient {
     return this.connected;
   }
 
-  async getSessions(): Promise<SessionListResult> {
-    return this.sendRequest<SessionListResult>('getSessions');
+  async listSessions(): Promise<SessionListResult> {
+    return this.sendRequest<SessionListResult>('listSessions');
   }
 
   async connectToServer(params: ConnectParams): Promise<ConnectResult> {
@@ -113,8 +113,8 @@ export class SSEClient {
     return result;
   }
 
-  async restoreSession(sessionId: string): Promise<RestoreSessionResult> {
-    return this.sendRequest<RestoreSessionResult>('restoreSession', { sessionId });
+  async getSession(sessionId: string): Promise<GetSessionResult> {
+    return this.sendRequest<GetSessionResult>('getSession', { sessionId });
   }
 
   async finishAuth(sessionId: string, code: string): Promise<FinishAuthResult> {
@@ -198,7 +198,7 @@ export class SSEClient {
     const data = await this.readRpcResponseFromStream(response, {
       delayConnectionEvents:
         method === 'connect' ||
-        method === 'restoreSession' ||
+        method === 'getSession' ||
         method === 'finishAuth',
     });
     return this.parseRpcResponse<T>(data);
@@ -311,22 +311,20 @@ export class SSEClient {
   }
 
   private buildUrl(): string {
-    const url = new URL(this.options.url, globalThis.location?.origin);
-    url.searchParams.set('identity', this.options.identity);
-    if (this.options.authToken) {
-      url.searchParams.set('token', this.options.authToken);
-    }
-    return url.toString();
+    return new URL(this.options.url, globalThis.location?.origin).toString();
   }
 
   private buildHeaders(): HeadersInit {
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Accept': 'text/event-stream',
+      'x-mcp-user-id': this.options.userId,
     };
+
     if (this.options.authToken) {
       headers['Authorization'] = `Bearer ${this.options.authToken}`;
     }
+    
     return headers;
   }
 

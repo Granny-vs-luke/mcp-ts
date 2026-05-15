@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL,
     active BOOLEAN DEFAULT false,
-    identity TEXT NOT NULL,
     headers JSONB,
     client_information JSONB,
     tokens JSONB,
@@ -22,7 +21,6 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     client_id TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_mcp_sessions_identity ON public.mcp_sessions(identity);
 CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user_id ON public.mcp_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_sessions_expires_at ON public.mcp_sessions(expires_at);
 
