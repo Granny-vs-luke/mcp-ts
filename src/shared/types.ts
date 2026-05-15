@@ -163,18 +163,6 @@ export type ToolInfo = {
   name: string;
   description?: string;
   inputSchema?: unknown;
-  annotations?: {
-    audience?: string[];
-    priority?: number;
-    title?: string;
-    description?: string;
-    category?: string;
-    readOnlyHint?: boolean;
-    idempotentHint?: boolean;
-    openWorldHint?: boolean;
-    destructiveHint?: boolean;
-    [key: string]: unknown;
-  };
 };
 
 // Transport type

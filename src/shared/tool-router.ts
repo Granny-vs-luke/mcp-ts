@@ -194,7 +194,6 @@ export class ToolRouter {
                 (compact.description ?? '') +
                 (compact.parameterHint ? ` Parameters: ${compact.parameterHint}` : ''),
               inputSchema: { type: 'object' as const, properties: {} },
-              ...(t.annotations && { annotations: t.annotations }),
             };
           });
         }
@@ -459,7 +458,6 @@ export class ToolRouter {
             (compact.description ?? '') +
             (compact.parameterHint ? ` Parameters: ${compact.parameterHint}` : ''),
           inputSchema: { type: 'object' as const, properties: {} },
-          ...(t.annotations && { annotations: t.annotations }),
         };
       });
     }
