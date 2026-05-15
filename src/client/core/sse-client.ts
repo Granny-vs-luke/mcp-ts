@@ -311,22 +311,20 @@ export class SSEClient {
   }
 
   private buildUrl(): string {
-    const url = new URL(this.options.url, globalThis.location?.origin);
-    url.searchParams.set('userId', this.options.userId);
-    if (this.options.authToken) {
-      url.searchParams.set('token', this.options.authToken);
-    }
-    return url.toString();
+    return new URL(this.options.url, globalThis.location?.origin).toString();
   }
 
   private buildHeaders(): HeadersInit {
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Accept': 'text/event-stream',
+      'x-mcp-identity': this.options.userId,
     };
+
     if (this.options.authToken) {
       headers['Authorization'] = `Bearer ${this.options.authToken}`;
     }
+    
     return headers;
   }
 

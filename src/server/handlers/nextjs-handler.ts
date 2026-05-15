@@ -45,10 +45,13 @@ export interface NextMcpHandlerOptions {
 
 export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
   const {
-    getUserId = (request: Request) => new URL(request.url).searchParams.get('userId'),
+    getUserId = (request: Request) => request.headers.get('x-mcp-identity'),
     getAuthToken = (request: Request) => {
-      const url = new URL(request.url);
-      return url.searchParams.get('token') || request.headers.get('authorization');
+      const authHeader = request.headers.get('authorization');
+      if (authHeader?.toLowerCase().startsWith('bearer ')) {
+        return authHeader.slice(7);
+      }
+      return authHeader;
     },
     authenticate = () => true,
     heartbeatInterval = 30000,
