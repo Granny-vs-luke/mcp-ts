@@ -288,12 +288,12 @@ test.describe('SupabaseStorageBackend', () => {
         });
     });
 
-    // ── removeSession ────────────────────────────────────────────────────────
-    test.describe('removeSession', () => {
+    // ── deleteSession ────────────────────────────────────────────────────────
+    test.describe('deleteSession', () => {
         test('deletes the session so it can no longer be retrieved', async () => {
             const session = createMockSession();
             await storage.createSession(session);
-            await storage.removeSession(session.userId, session.sessionId);
+            await storage.deleteSession(session.userId, session.sessionId);
             expect(await storage.getSession(session.userId, session.sessionId)).toBeNull();
         });
 
@@ -302,15 +302,15 @@ test.describe('SupabaseStorageBackend', () => {
             await storage.createSession(createMockSession({ sessionId: 's1', userId }));
             await storage.createSession(createMockSession({ sessionId: 's2', userId }));
 
-            await storage.removeSession(userId, 's1');
+            await storage.deleteSession(userId, 's1');
 
-            const remaining = await storage.getUserSessionIds(userId);
+            const remaining = await storage.listSessionIds(userId);
             expect(remaining).toEqual(['s2']);
         });
     });
 
-    // ── getUserSession ──────────────────────────────────────────────
-    test.describe('getUserSession', () => {
+    // ── listSessions ──────────────────────────────────────────────
+    test.describe('listSessions', () => {
         test('returns all full SessionData objects for the userId', async () => {
             const userId = 'owner';
             await storage.createSession(createMockSession({ sessionId: 'x1', userId }));
@@ -318,51 +318,51 @@ test.describe('SupabaseStorageBackend', () => {
             // Another user — must NOT appear
             await storage.createSession(createMockSession({ sessionId: 'x3', userId: 'intruder' }));
 
-            const sessions = await storage.getUserSession(userId);
+            const sessions = await storage.listSessions(userId);
             expect(sessions.length).toBe(2);
             expect(sessions.map(s => s.sessionId)).toContain('x1');
             expect(sessions.map(s => s.sessionId)).toContain('x2');
         });
 
         test('returns empty array for userId with no sessions', async () => {
-            expect(await storage.getUserSession('nobody')).toEqual([]);
+            expect(await storage.listSessions('nobody')).toEqual([]);
         });
     });
 
-    // ── getUserSessionIds ───────────────────────────────────────────────
-    test.describe('getUserSessionIds', () => {
+    // ── listSessionIds ───────────────────────────────────────────────
+    test.describe('listSessionIds', () => {
         test('returns only session IDs (not full objects)', async () => {
             const userId = 'slim-user';
             await storage.createSession(createMockSession({ sessionId: 'id-a', userId }));
             await storage.createSession(createMockSession({ sessionId: 'id-b', userId }));
 
-            const ids = await storage.getUserSessionIds(userId);
+            const ids = await storage.listSessionIds(userId);
             expect(ids.sort()).toEqual(['id-a', 'id-b']);
         });
     });
 
-    // ── getAllSessionIds ──────────────────────────────────────────────────────
-    test.describe('getAllSessionIds', () => {
+    // ── listGlobalSessionIds ──────────────────────────────────────────────────────
+    test.describe('listGlobalSessionIds', () => {
         test('returns session IDs across ALL users', async () => {
             await storage.createSession(createMockSession({ sessionId: 'g1', userId: 'u1' }));
             await storage.createSession(createMockSession({ sessionId: 'g2', userId: 'u2' }));
 
-            const ids = await storage.getAllSessionIds();
+            const ids = await storage.listGlobalSessionIds();
             expect(ids).toContain('g1');
             expect(ids).toContain('g2');
             expect(ids.length).toBe(2);
         });
     });
 
-    // ── clearAll ─────────────────────────────────────────────────────────────
-    test.describe('clearAll', () => {
+    // ── clearGlobalSessions ─────────────────────────────────────────────────────────────
+    test.describe('clearGlobalSessions', () => {
         test('wipes every session regardless of userId', async () => {
             await storage.createSession(createMockSession({ sessionId: 'c1', userId: 'u1' }));
             await storage.createSession(createMockSession({ sessionId: 'c2', userId: 'u2' }));
 
-            await storage.clearAll();
+            await storage.clearGlobalSessions();
 
-            expect(await storage.getAllSessionIds()).toEqual([]);
+            expect(await storage.listGlobalSessionIds()).toEqual([]);
         });
     });
 

@@ -122,7 +122,7 @@ export class SqliteStorage implements StorageBackend {
         return JSON.parse(row.data) as SessionData;
     }
 
-    async getUserSession(userId: string): Promise<SessionData[]> {
+    async listSessions(userId: string): Promise<SessionData[]> {
         this.ensureInitialized();
 
         const stmt = this.db!.prepare(
@@ -133,7 +133,7 @@ export class SqliteStorage implements StorageBackend {
         return rows.map(row => JSON.parse(row.data) as SessionData);
     }
 
-    async getUserSessionIds(userId: string): Promise<string[]> {
+    async listSessionIds(userId: string): Promise<string[]> {
         this.ensureInitialized();
 
         const stmt = this.db!.prepare(
@@ -144,7 +144,7 @@ export class SqliteStorage implements StorageBackend {
         return rows.map(row => row.sessionId);
     }
 
-    async removeSession(userId: string, sessionId: string): Promise<void> {
+    async deleteSession(userId: string, sessionId: string): Promise<void> {
         this.ensureInitialized();
         const stmt = this.db!.prepare(
             `DELETE FROM ${this.table} WHERE sessionId = ? AND userId = ?`
@@ -152,14 +152,14 @@ export class SqliteStorage implements StorageBackend {
         stmt.run(sessionId, userId);
     }
 
-    async getAllSessionIds(): Promise<string[]> {
+    async listGlobalSessionIds(): Promise<string[]> {
         this.ensureInitialized();
         const stmt = this.db!.prepare(`SELECT sessionId FROM ${this.table}`);
         const rows = stmt.all() as { sessionId: string }[];
         return rows.map(row => row.sessionId);
     }
 
-    async clearAll(): Promise<void> {
+    async clearGlobalSessions(): Promise<void> {
         this.ensureInitialized();
         const stmt = this.db!.prepare(`DELETE FROM ${this.table}`);
         stmt.run();

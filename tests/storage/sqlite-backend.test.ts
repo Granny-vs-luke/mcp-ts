@@ -77,7 +77,7 @@ test.describe('SqliteStorage', () => {
         });
     });
 
-    test.describe('getUserSession', () => {
+    test.describe('listSessions', () => {
         test('should return all sessions for an userId', async () => {
             const userId = 'test-user';
             const session1 = createMockSession({ sessionId: 'session-1', userId });
@@ -86,7 +86,7 @@ test.describe('SqliteStorage', () => {
             await storage.createSession(session1);
             await storage.createSession(session2);
 
-            const sessions = await storage.getUserSession(userId);
+            const sessions = await storage.listSessions(userId);
             expect(sessions.length).toBe(2);
         });
     });

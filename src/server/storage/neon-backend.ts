@@ -207,7 +207,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async getUserSession(userId: string): Promise<SessionData[]> {
+    async listSessions(userId: string): Promise<SessionData[]> {
         try {
             const rows = await this.sql.query(
                 `SELECT * FROM ${this.tableName} WHERE user_id = $1`,
@@ -220,7 +220,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async removeSession(userId: string, sessionId: string): Promise<void> {
+    async deleteSession(userId: string, sessionId: string): Promise<void> {
         try {
             await this.sql.query(
                 `DELETE FROM ${this.tableName} WHERE user_id = $1 AND session_id = $2`,
@@ -231,7 +231,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async getUserSessionIds(userId: string): Promise<string[]> {
+    async listSessionIds(userId: string): Promise<string[]> {
         try {
             const rows = await this.sql.query(
                 `SELECT session_id FROM ${this.tableName} WHERE user_id = $1`,
@@ -244,7 +244,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async getAllSessionIds(): Promise<string[]> {
+    async listGlobalSessionIds(): Promise<string[]> {
         try {
             const rows = await this.sql.query(
                 `SELECT session_id FROM ${this.tableName}`
@@ -256,7 +256,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async clearAll(): Promise<void> {
+    async clearGlobalSessions(): Promise<void> {
         try {
             await this.sql.query(`DELETE FROM ${this.tableName}`);
         } catch (error) {

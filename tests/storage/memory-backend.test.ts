@@ -53,7 +53,7 @@ test.describe('MemoryStorageBackend', () => {
         });
     });
 
-    test.describe('getUserSession', () => {
+    test.describe('listSessions', () => {
         test('should return all sessions for an userId', async () => {
             const userId = 'test-user';
             const session1 = createMockSession({ sessionId: 'session-1', userId });
@@ -62,17 +62,17 @@ test.describe('MemoryStorageBackend', () => {
             await storage.createSession(session1);
             await storage.createSession(session2);
 
-            const sessions = await storage.getUserSession(userId);
+            const sessions = await storage.listSessions(userId);
             expect(sessions.length).toBe(2);
         });
     });
 
-    test.describe('removeSession', () => {
+    test.describe('deleteSession', () => {
         test('should delete session from memory', async () => {
             const session = createMockSession();
             await storage.createSession(session);
 
-            await storage.removeSession(session.userId, session.sessionId);
+            await storage.deleteSession(session.userId, session.sessionId);
 
             const result = await storage.getSession(session.userId, session.sessionId);
             expect(result).toBeNull();

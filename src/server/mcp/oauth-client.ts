@@ -540,7 +540,7 @@ export class MCPClient {
           // We remove it now to ensure the database remains lean, bypassing the 
           // automated lifecycle sweep.
           try {
-            await storage.removeSession(this.userId, this.sessionId);
+            await storage.deleteSession(this.userId, this.sessionId);
           } catch {
             // Non-blocking: Proactive cleanup failures are suppressed to prioritize 
             // the original error context.
@@ -581,7 +581,7 @@ export class MCPClient {
       try {
         const existingSession = await storage.getSession(this.userId, this.sessionId);
         if (!existingSession || existingSession.active !== true) {
-          await storage.removeSession(this.userId, this.sessionId);
+          await storage.deleteSession(this.userId, this.sessionId);
         }
       } catch {
         // Non-blocking: Cleanup is performed on a best-effort basis and should
@@ -1041,7 +1041,7 @@ export class MCPClient {
       await (this.oauthProvider as any).invalidateCredentials('all');
     }
 
-    await storage.removeSession(this.userId, this.sessionId);
+    await storage.deleteSession(this.userId, this.sessionId);
     this.disconnect();
   }
 
@@ -1162,7 +1162,7 @@ export class MCPClient {
    */
   static async getMcpServerConfig(userId: string): Promise<Record<string, any>> {
     const mcpConfig: Record<string, any> = {};
-    const sessions = await storage.getUserSession(userId);
+    const sessions = await storage.listSessions(userId);
 
     await Promise.all(
       sessions.map(async (sessionData) => {
@@ -1176,7 +1176,7 @@ export class MCPClient {
             !sessionData.serverUrl ||
             !sessionData.callbackUrl
           ) {
-            await storage.removeSession(userId, sessionId);
+            await storage.deleteSession(userId, sessionId);
             return;
           }
 
@@ -1223,7 +1223,7 @@ export class MCPClient {
             ...(headers && { headers }),
           };
         } catch (error) {
-          await storage.removeSession(userId, sessionId);
+          await storage.deleteSession(userId, sessionId);
           console.warn(`[MCP] Failed to process session ${sessionId}:`, error);
         }
       })

@@ -212,7 +212,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         scope: "all" | "client" | "tokens" | "verifier"
     ): Promise<void> {
         if (scope === "all") {
-            await storage.removeSession(this.userId, this.sessionId);
+            await storage.deleteSession(this.userId, this.sessionId);
         } else {
             const updates: Partial<SessionData> = {};
 

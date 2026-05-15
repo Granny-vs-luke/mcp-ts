@@ -110,20 +110,20 @@ test.describe('RedisStorageBackend', () => {
         });
     });
 
-    test.describe('removeSession', () => {
+    test.describe('deleteSession', () => {
         test('should delete session from Redis', async () => {
             const session = createMockSession();
 
             await storage.createSession(session);
 
-            await storage.removeSession(session.userId, session.sessionId);
+            await storage.deleteSession(session.userId, session.sessionId);
 
             const result = await storage.getSession(session.userId, session.sessionId);
             expect(result).toBeNull();
         });
     });
 
-    test.describe('getUserSession', () => {
+    test.describe('listSessions', () => {
         test('should return all sessions for a userId', async () => {
             const userId = 'test-user';
             const session1 = createMockSession({ sessionId: 'session-1', userId });
@@ -132,7 +132,7 @@ test.describe('RedisStorageBackend', () => {
             await storage.createSession(session1);
             await storage.createSession(session2);
 
-            const sessions = await storage.getUserSession(userId);
+            const sessions = await storage.listSessions(userId);
 
             expect(sessions.length).toBe(2);
             expect(sessions.map(s => s.sessionId)).toContain('session-1');
@@ -140,7 +140,7 @@ test.describe('RedisStorageBackend', () => {
         });
 
         test('should return empty array for userId with no sessions', async () => {
-            const sessions = await storage.getUserSession('unknown-user');
+            const sessions = await storage.listSessions('unknown-user');
             expect(sessions).toEqual([]);
         });
 
@@ -150,7 +150,7 @@ test.describe('RedisStorageBackend', () => {
 
             await redis.del(`mcp:session:${session.userId}:${session.sessionId}`);
 
-            const sessions = await storage.getUserSession(session.userId);
+            const sessions = await storage.listSessions(session.userId);
             const indexedSessionIds = await redis.smembers(`mcp:userId:${session.userId}:sessions`);
 
             expect(sessions).toEqual([]);
@@ -158,26 +158,26 @@ test.describe('RedisStorageBackend', () => {
         });
     });
 
-    test.describe('getAllSessionIds', () => {
+    test.describe('listGlobalSessionIds', () => {
         test('should return plain session ids without userId prefixes', async () => {
             const session = createMockSession({ sessionId: 'session-admin-view' });
             await storage.createSession(session);
 
-            const sessionIds = await storage.getAllSessionIds();
+            const sessionIds = await storage.listGlobalSessionIds();
 
             expect(sessionIds).toContain('session-admin-view');
             expect(sessionIds).not.toContain(`${session.userId}:${session.sessionId}`);
         });
     });
 
-    test.describe('clearAll', () => {
+    test.describe('clearGlobalSessions', () => {
         test('should delete both session keys and userId indexes', async () => {
             const session = createMockSession({ sessionId: 'clear-all-session' });
             await storage.createSession(session);
 
-            await storage.clearAll();
+            await storage.clearGlobalSessions();
 
-            const sessionIds = await storage.getUserSessionIds(session.userId);
+            const sessionIds = await storage.listSessionIds(session.userId);
             const indexedSessionIds = await redis.smembers(`mcp:userId:${session.userId}:sessions`);
 
             expect(sessionIds).toEqual([]);

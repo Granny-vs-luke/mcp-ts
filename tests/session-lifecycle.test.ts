@@ -98,13 +98,13 @@ test.describe('Session Lifecycle Management', () => {
             throw new Error('ECONNREFUSED');
         };
 
-        let removeSessionCalled = false;
-        mockStorage.removeSession = async (id, sId) => {
-            if (id === userId && sId === sessionId) removeSessionCalled = true;
+        let deleteSessionCalled = false;
+        mockStorage.deleteSession = async (id, sId) => {
+            if (id === userId && sId === sessionId) deleteSessionCalled = true;
         };
 
         await expect(client.connect()).rejects.toThrow('ECONNREFUSED');
-        expect(removeSessionCalled).toBe(true);
+        expect(deleteSessionCalled).toBe(true);
     });
 
     test('Scenario 2b: Generic reconnect error preserves active session credentials', async () => {
@@ -139,13 +139,13 @@ test.describe('Session Lifecycle Management', () => {
             throw new Error('ECONNREFUSED');
         };
 
-        let removeSessionCalled = false;
-        mockStorage.removeSession = async () => {
-            removeSessionCalled = true;
+        let deleteSessionCalled = false;
+        mockStorage.deleteSession = async () => {
+            deleteSessionCalled = true;
         };
 
         await expect(client.connect()).rejects.toThrow('ECONNREFUSED');
-        expect(removeSessionCalled).toBe(false);
+        expect(deleteSessionCalled).toBe(false);
     });
 
     test('Scenario 3: Proactive Cleanup on Terminal Auth Failure (no URL)', async () => {
@@ -169,13 +169,13 @@ test.describe('Session Lifecycle Management', () => {
             throw new SDKUnauthorizedError('Unauthorized');
         };
 
-        let removeSessionCalled = false;
-        mockStorage.removeSession = async (id, sId) => {
-            if (id === userId && sId === sessionId) removeSessionCalled = true;
+        let deleteSessionCalled = false;
+        mockStorage.deleteSession = async (id, sId) => {
+            if (id === userId && sId === sessionId) deleteSessionCalled = true;
         };
 
         await expect(client.connect()).rejects.toThrow('OAuth authorization URL not available');
-        expect(removeSessionCalled).toBe(true);
+        expect(deleteSessionCalled).toBe(true);
     });
 
     test('Scenario 4: Short-lived Pending State (active: false, short TTL)', async () => {

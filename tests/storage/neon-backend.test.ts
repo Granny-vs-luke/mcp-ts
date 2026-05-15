@@ -239,17 +239,17 @@ test.describe('NeonStorageBackend', () => {
         await storage.createSession(createMockSession({ sessionId: 'b', userId: 'user-a' }), -1);
         await storage.createSession(createMockSession({ sessionId: 'c', userId: 'user-b' }), 3600);
 
-        expect((await storage.getUserSessionIds('user-a')).sort()).toEqual(['a', 'b']);
-        expect((await storage.getAllSessionIds()).sort()).toEqual(['a', 'b', 'c']);
+        expect((await storage.listSessionIds('user-a')).sort()).toEqual(['a', 'b']);
+        expect((await storage.listGlobalSessionIds()).sort()).toEqual(['a', 'b', 'c']);
 
         await storage.cleanupExpiredSessions();
-        expect((await storage.getAllSessionIds()).sort()).toEqual(['a', 'c']);
+        expect((await storage.listGlobalSessionIds()).sort()).toEqual(['a', 'c']);
 
-        await storage.removeSession('user-a', 'a');
+        await storage.deleteSession('user-a', 'a');
         expect(await storage.getSession('user-a', 'a')).toBeNull();
 
-        await storage.clearAll();
-        expect(await storage.getUserSession('user-b')).toEqual([]);
+        await storage.clearGlobalSessions();
+        expect(await storage.listSessions('user-b')).toEqual([]);
         expect(mockNeon.getSessions()).toEqual([]);
     });
 });

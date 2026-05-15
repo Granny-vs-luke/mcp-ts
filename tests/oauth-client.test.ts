@@ -54,7 +54,7 @@ test.describe('MCPClient.getMcpServerConfig', () => {
 
         // Mock storage
         const mockStorage = new MemoryStorageBackend();
-        mockStorage.getUserSession = async (id: string) => {
+        mockStorage.listSessions = async (id: string) => {
             if (id === userId) return [session1, session2] as any;
             return [];
         };
@@ -86,21 +86,21 @@ test.describe('MCPClient.getMcpServerConfig', () => {
             callbackUrl: 'http://callback1',
         };
 
-        let removeSessionCalledWith: any[] = [];
+        let deleteSessionCalledWith: any[] = [];
 
         // Mock storage
         const mockStorage = new MemoryStorageBackend();
-        mockStorage.getUserSession = async (id: string) => {
+        mockStorage.listSessions = async (id: string) => {
             return [session1] as any;
         };
-        mockStorage.removeSession = async (id: string, sId: string) => {
-            removeSessionCalledWith = [id, sId];
+        mockStorage.deleteSession = async (id: string, sId: string) => {
+            deleteSessionCalledWith = [id, sId];
         };
         _setStorageInstanceForTesting(mockStorage);
 
         const config = await MCPClient.getMcpServerConfig(userId);
 
-        expect(removeSessionCalledWith).toEqual([userId, 's1']);
+        expect(deleteSessionCalledWith).toEqual([userId, 's1']);
         expect(config).toEqual({});
     });
 });

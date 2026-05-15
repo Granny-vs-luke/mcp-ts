@@ -70,12 +70,12 @@ export class MemoryStorageBackend implements StorageBackend {
         return this.sessions.get(sessionKey) || null;
     }
 
-    async getUserSessionIds(userId: string): Promise<string[]> {
+    async listSessionIds(userId: string): Promise<string[]> {
         const set = this.userIdSessions.get(userId);
         return set ? Array.from(set) : [];
     }
 
-    async getUserSession(userId: string): Promise<SessionData[]> {
+    async listSessions(userId: string): Promise<SessionData[]> {
         const set = this.userIdSessions.get(userId);
         if (!set) return [];
 
@@ -89,7 +89,7 @@ export class MemoryStorageBackend implements StorageBackend {
         return results;
     }
 
-    async removeSession(userId: string, sessionId: string): Promise<void> {
+    async deleteSession(userId: string, sessionId: string): Promise<void> {
         const sessionKey = this.getSessionKey(userId, sessionId);
         this.sessions.delete(sessionKey);
 
@@ -102,11 +102,11 @@ export class MemoryStorageBackend implements StorageBackend {
         }
     }
 
-    async getAllSessionIds(): Promise<string[]> {
+    async listGlobalSessionIds(): Promise<string[]> {
         return Array.from(this.sessions.values()).map(s => s.sessionId);
     }
 
-    async clearAll(): Promise<void> {
+    async clearGlobalSessions(): Promise<void> {
         this.sessions.clear();
         this.userIdSessions.clear();
     }

@@ -145,7 +145,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         return this.mapRowToSessionData(data);
     }
 
-    async getUserSession(userId: string): Promise<SessionData[]> {
+    async listSessions(userId: string): Promise<SessionData[]> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('*')
@@ -159,7 +159,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         return data.map(row => this.mapRowToSessionData(row));
     }
 
-    async removeSession(userId: string, sessionId: string): Promise<void> {
+    async deleteSession(userId: string, sessionId: string): Promise<void> {
         const { error } = await this.supabase
             .from('mcp_sessions')
             .delete()
@@ -171,7 +171,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         }
     }
 
-    async getUserSessionIds(userId: string): Promise<string[]> {
+    async listSessionIds(userId: string): Promise<string[]> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('session_id')
@@ -185,7 +185,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         return data.map(row => row.session_id);
     }
 
-    async getAllSessionIds(): Promise<string[]> {
+    async listGlobalSessionIds(): Promise<string[]> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('session_id');
@@ -198,7 +198,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         return data.map(row => row.session_id);
     }
 
-    async clearAll(): Promise<void> {
+    async clearGlobalSessions(): Promise<void> {
         // Warning: This deletes everything. Typically only used in testing.
         const { error } = await this.supabase
             .from('mcp_sessions')

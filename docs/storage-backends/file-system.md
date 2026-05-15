@@ -35,7 +35,7 @@ MCP_TS_STORAGE_FILE=./sessions.json
 import { storage } from '@mcp-ts/sdk/server';
 
 // Storage automatically uses File when MCP_TS_STORAGE_FILE is set
-const sessions = await storage.getUserSession('user-123');
+const sessions = await storage.listSessions('user-123');
 console.log('Stored sessions:', sessions);
 ```
 

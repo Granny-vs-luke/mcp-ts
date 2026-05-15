@@ -153,12 +153,12 @@ export class RedisStorageBackend implements StorageBackend {
         }
     }
 
-    async getUserSessionIds(userId: string): Promise<string[]> {
-        const sessions = await this.getUserSession(userId);
+    async listSessionIds(userId: string): Promise<string[]> {
+        const sessions = await this.listSessions(userId);
         return sessions.map((session) => session.sessionId);
     }
 
-    async getUserSession(userId: string): Promise<SessionData[]> {
+    async listSessions(userId: string): Promise<SessionData[]> {
         try {
             const userIdKey = this.getUserIdKey(userId);
             const sessionIds = await this.redis.smembers(userIdKey);
@@ -183,7 +183,7 @@ export class RedisStorageBackend implements StorageBackend {
         }
     }
 
-    async removeSession(userId: string, sessionId: string): Promise<void> {
+    async deleteSession(userId: string, sessionId: string): Promise<void> {
         try {
             const sessionKey = this.getSessionKey(userId, sessionId);
             const userIdKey = this.getUserIdKey(userId);
@@ -195,7 +195,7 @@ export class RedisStorageBackend implements StorageBackend {
         }
     }
 
-    async getAllSessionIds(): Promise<string[]> {
+    async listGlobalSessionIds(): Promise<string[]> {
         try {
             const keys = await this.scanKeys(`${this.KEY_PREFIX}*`);
             const sessions = await Promise.all(
@@ -221,7 +221,7 @@ export class RedisStorageBackend implements StorageBackend {
         }
     }
 
-    async clearAll(): Promise<void> {
+    async clearGlobalSessions(): Promise<void> {
         try {
             const keys = await this.scanKeys(`${this.KEY_PREFIX}*`);
             const userIdKeys = await this.scanKeys(`${this.USER_ID_KEY_PREFIX}*${this.USER_ID_KEY_SUFFIX}`);

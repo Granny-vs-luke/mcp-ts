@@ -90,52 +90,52 @@ const session = await storage.getSession('user-123', 'abc123');
 
 ---
 
-**`getUserSession(identity: string): Promise<SessionData[]>`**
+**`listSessions(identity: string): Promise<SessionData[]>`**
 
 Get all session data for an identity.
 
 ```typescript
-const sessions = await storage.getUserSession('user-123');
+const sessions = await storage.listSessions('user-123');
 ```
 
 ---
 
-**`getUserSessionIds(identity: string): Promise<string[]>`**
+**`listSessionIds(identity: string): Promise<string[]>`**
 
 Get all session IDs for an identity.
 
 ```typescript
-const sessionIds = await storage.getUserSessionIds('user-123');
+const sessionIds = await storage.listSessionIds('user-123');
 ```
 
 ---
 
-**`removeSession(identity: string, sessionId: string): Promise<void>`**
+**`deleteSession(identity: string, sessionId: string): Promise<void>`**
 
 Delete a session.
 
 ```typescript
-await storage.removeSession('user-123', 'abc123');
+await storage.deleteSession('user-123', 'abc123');
 ```
 
 ---
 
-**`getAllSessionIds(): Promise<string[]>`**
+**`listGlobalSessionIds(): Promise<string[]>`**
 
 Get all session IDs across all users (admin operation).
 
 ```typescript
-const allSessions = await storage.getAllSessionIds();
+const allSessions = await storage.listGlobalSessionIds();
 ```
 
 ---
 
-**`clearAll(): Promise<void>`**
+**`clearGlobalSessions(): Promise<void>`**
 
 Clear all sessions (admin operation).
 
 ```typescript
-await storage.clearAll();
+await storage.clearGlobalSessions();
 ```
 
 ---

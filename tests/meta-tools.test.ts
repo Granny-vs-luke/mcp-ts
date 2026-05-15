@@ -242,4 +242,98 @@ test.describe('executeMetaTool', () => {
         expect(text).toContain('list_tables');
         expect(text).toContain('Database MCP');
     });
+
+    test.describe('mcp_search_tools edge cases and incorrect arguments', () => {
+        test('should handle missing query gracefully (fallback to empty string)', async () => {
+            const router = new ToolRouter([
+                createRouterClient('database-server', 'Database MCP', [
+                    { name: 'list_tables', description: 'List database tables' },
+                ]) as any,
+            ], { strategy: 'search' });
+
+            const result = await executeMetaTool(
+                'mcp_search_tools',
+                {}, // No query
+                router
+            );
+
+            expect(result?.isError).toBe(false);
+            const text = (result?.content[0] as any).text;
+            expect(typeof text).toBe('string');
+        });
+
+        test('should cap overly large limits to max allowed (20 for search)', async () => {
+            let capturedLimit = 0;
+            const router = {
+                searchTools: async (query: string, limit: number) => {
+                    capturedLimit = limit;
+                    return [];
+                }
+            };
+            
+            await executeMetaTool(
+                'mcp_search_tools',
+                { query: 'test', limit: 9999 },
+                router as any
+            );
+            
+            expect(capturedLimit).toBe(20);
+        });
+
+        test('should handle invalid limit types by falling back to default (5 for search)', async () => {
+            let capturedLimit = 0;
+            const router = {
+                searchTools: async (query: string, limit: number) => {
+                    capturedLimit = limit;
+                    return [];
+                }
+            };
+            
+            await executeMetaTool(
+                'mcp_search_tools',
+                { query: 'test', limit: 'invalid_string' },
+                router as any
+            );
+            
+            expect(capturedLimit).toBe(5);
+        });
+
+        test('should return empty results gracefully when serverName does not match any connected server', async () => {
+            const router = new ToolRouter([
+                createRouterClient('database-server', 'Database MCP', [
+                    { name: 'list_tables', description: 'List database tables' },
+                ]) as any,
+            ], { strategy: 'search' });
+
+            const result = await executeMetaTool(
+                'mcp_search_tools',
+                { query: 'list', serverName: 'nonexistent-server' },
+                router
+            );
+
+            expect(result?.isError).toBe(false);
+            const text = (result?.content[0] as any).text;
+            expect(text).toContain('No tools found matching your query');
+        });
+
+        test('should handle select query with non-existent tools gracefully', async () => {
+            const router = new ToolRouter([
+                createRouterClient('database-server', 'Database MCP', [
+                    { name: 'list_tables', description: 'List database tables' },
+                ]) as any,
+            ], { strategy: 'search' });
+
+            const result = await executeMetaTool(
+                'mcp_search_tools',
+                { query: 'select:fake_tool_1,fake_tool_2' },
+                router
+            );
+
+            expect(result?.isError).toBe(true); // Should be an error if NO tools were found
+            const text = (result?.content[0] as any).text;
+            expect(text).toContain('Errors resolving some tools');
+            expect(text).toContain('fake_tool_1**: Tool not found');
+            expect(text).toContain('fake_tool_2**: Tool not found');
+        });
+    });
 });

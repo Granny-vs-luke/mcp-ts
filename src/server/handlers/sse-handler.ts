@@ -228,7 +228,7 @@ export class SSEConnectionManager {
    * Get all sessions for the current userId
    */
   private async getSessions(): Promise<SessionListResult> {
-    const sessions = await storage.getUserSession(this.userId);
+    const sessions = await storage.listSessions(this.userId);
 
     return {
       sessions: sessions.map((s) => ({
@@ -257,7 +257,7 @@ export class SSEConnectionManager {
       : await storage.generateSessionId();
 
     // Check for existing connections
-    const existingSessions = await storage.getUserSession(this.userId);
+    const existingSessions = await storage.listSessions(this.userId);
     const duplicate = existingSessions.find(s =>
       s.serverId === serverId || s.serverUrl === serverUrl
     );
@@ -360,7 +360,7 @@ export class SSEConnectionManager {
     } else {
       // Handle orphaned sessions (e.g., OAuth flow failed before client was stored)
       // Directly remove from storage since there's no active client
-      await storage.removeSession(this.userId, sessionId);
+      await storage.deleteSession(this.userId, sessionId);
     }
 
     return { success: true };

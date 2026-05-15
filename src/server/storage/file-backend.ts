@@ -115,19 +115,19 @@ export class FileStorageBackend implements StorageBackend {
         return this.memoryCache!.get(sessionKey) || null;
     }
 
-    async getUserSession(userId: string): Promise<SessionData[]> {
+    async listSessions(userId: string): Promise<SessionData[]> {
         await this.ensureInitialized();
         return Array.from(this.memoryCache!.values()).filter(s => s.userId === userId);
     }
 
-    async getUserSessionIds(userId: string): Promise<string[]> {
+    async listSessionIds(userId: string): Promise<string[]> {
         await this.ensureInitialized();
         return Array.from(this.memoryCache!.values())
             .filter(s => s.userId === userId)
             .map(s => s.sessionId);
     }
 
-    async removeSession(userId: string, sessionId: string): Promise<void> {
+    async deleteSession(userId: string, sessionId: string): Promise<void> {
         await this.ensureInitialized();
         const sessionKey = this.getSessionKey(userId, sessionId);
         if (this.memoryCache!.delete(sessionKey)) {
@@ -135,12 +135,12 @@ export class FileStorageBackend implements StorageBackend {
         }
     }
 
-    async getAllSessionIds(): Promise<string[]> {
+    async listGlobalSessionIds(): Promise<string[]> {
         await this.ensureInitialized();
         return Array.from(this.memoryCache!.values()).map(s => s.sessionId);
     }
 
-    async clearAll(): Promise<void> {
+    async clearGlobalSessions(): Promise<void> {
         await this.ensureInitialized();
         this.memoryCache!.clear();
         await this.flush();

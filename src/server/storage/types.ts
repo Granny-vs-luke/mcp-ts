@@ -80,29 +80,29 @@ export interface StorageBackend {
     getSession(userId: string, sessionId: string): Promise<SessionData | null>;
 
     /**
-     * Gets full session data for all of an userId's sessions
+     * Gets full session data for all of a userId's sessions
      */
-    getUserSession(userId: string): Promise<SessionData[]>;
+    listSessions(userId: string): Promise<SessionData[]>;
 
     /**
      * Removes a session
      */
-    removeSession(userId: string, sessionId: string): Promise<void>;
+    deleteSession(userId: string, sessionId: string): Promise<void>;
 
     /**
      * Gets all sessions IDs of an userId
      */
-    getUserSessionIds(userId: string): Promise<string[]>;
+    listSessionIds(userId: string): Promise<string[]>;
 
     /**
      * Gets all session IDs across all users (Admin)
      */
-    getAllSessionIds(): Promise<string[]>;
+    listGlobalSessionIds(): Promise<string[]>;
 
     /**
      * Clears all sessions (Admin)
      */
-    clearAll(): Promise<void>;
+    clearGlobalSessions(): Promise<void>;
 
     /**
      * Clean up expired sessions
