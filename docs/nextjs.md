@@ -20,13 +20,13 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export const { GET, POST } = createNextMcpHandler({
-  // Extract identity from request
-  getIdentity: (request) => {
-    return new URL(request.url).searchParams.get('identity');
+  // Extract userId from request
+  getUserId: (request) => {
+    return new URL(request.url).searchParams.get('userId');
   },
 
   // Optional: Custom authentication
-  authenticate: async (identity, token) => {
+  authenticate: async (userId, token) => {
     // Verify token with your auth system
     return true; // or throw error if invalid
   },
@@ -45,7 +45,7 @@ Create a component at `components/McpConnections.tsx`:
 
 import { useMcp } from '@mcp-ts/sdk/client';
 
-export function McpConnections({ identity }: { identity: string }) {
+export function McpConnections({ userId }: { userId: string }) {
   const {
     connections,
     status,
@@ -53,8 +53,8 @@ export function McpConnections({ identity }: { identity: string }) {
     disconnect,
     callTool,
   } = useMcp({
-    url: `/api/mcp?identity=${identity}`,
-    identity,
+    url: `/api/mcp?userId=${userId}`,
+    userId,
     autoConnect: true,
   });
 
@@ -113,13 +113,13 @@ Use the component in your page at `app/page.tsx`:
 import { McpConnections } from '@/components/McpConnections';
 
 export default function Home() {
-  // Get identity from your auth system
-  const identity = 'user-123'; // Replace with actual identity
+  // Get userId from your auth system
+  const userId = 'user-123'; // Replace with actual userId
 
   return (
     <main>
       <h1>My App</h1>
-      <McpConnections identity={identity} />
+      <McpConnections userId={userId} />
     </main>
   );
 }
@@ -137,9 +137,9 @@ import { streamText } from 'ai';
 import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
-  const { messages, identity } = await req.json();
+  const { messages, userId } = await req.json();
 
-  const client = new MultiSessionClient(identity);
+  const client = new MultiSessionClient(userId);
 
   try {
     await client.connect();
@@ -180,14 +180,14 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  const identity = req.query.identity as string;
+  const userId = req.query.userId as string;
 
-  if (!identity) {
-    return res.status(400).json({ error: 'identity required' });
+  if (!userId) {
+    return res.status(400).json({ error: 'userId required' });
   }
 
   const sseHandler = createSSEHandler({
-    identity,
+    userId,
     heartbeatInterval: 30000,
   });
 
@@ -205,12 +205,12 @@ Same as App Router component above.
 import { McpConnections } from '@/components/McpConnections';
 
 export default function Home() {
-  const identity = 'user-123';
+  const userId = 'user-123';
 
   return (
     <div>
       <h1>My App</h1>
-      <McpConnections identity={identity} />
+      <McpConnections userId={userId} />
     </div>
   );
 }
@@ -232,7 +232,7 @@ export default function OAuthCallback() {
   const router = useRouter();
   const { finishAuth } = useMcp({
     url: '/api/mcp',
-    identity: 'user-123',
+    userId: 'user-123',
   });
 
   useEffect(() => {
@@ -278,7 +278,7 @@ import {
 function McpPopupBridge() {
   const mcpClient = useMcp({
     url: '/api/mcp',
-    identity: 'user-123',
+    userId: 'user-123',
     onRedirect: useMemo(() => createOAuthPopupRedirectHandler(), []),
   });
 
@@ -352,10 +352,10 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export const { GET, POST } = createNextMcpHandler({
-  getIdentity: (request) => {
-    const identity = new URL(request.url).searchParams.get('identity');
-    if (!identity) throw new Error('identity required');
-    return identity;
+  getUserId: (request) => {
+    const userId = new URL(request.url).searchParams.get('userId');
+    if (!userId) throw new Error('userId required');
+    return userId;
   },
 });
 ```
@@ -366,10 +366,10 @@ export const { GET, POST } = createNextMcpHandler({
 import { useMcp } from '@mcp-ts/sdk/client';
 import { useState } from 'react';
 
-export function McpClient({ identity }: { identity: string }) {
+export function McpClient({ userId }: { userId: string }) {
   const { connections, connect, callTool, status } = useMcp({
-    url: `/api/mcp?identity=${identity}`,
-    identity,
+    url: `/api/mcp?userId=${userId}`,
+    userId,
     autoConnect: true,
   });
 

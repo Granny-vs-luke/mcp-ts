@@ -61,7 +61,7 @@ test.describe('Session Lifecycle Management', () => {
         expect(savedWithActive).toBe(true);
         expect(savedWithTtl).toBe(SESSION_TTL_SECONDS);
         
-        const session = await mockStorage.getSession(userId, sessionId);
+        const session = await mockStorage.get(userId, sessionId);
         expect(session?.active).toBe(true);
     });
 
@@ -74,7 +74,7 @@ test.describe('Session Lifecycle Management', () => {
             callbackUrl,
         });
 
-        await mockStorage.createSession({
+        await mockStorage.create({
             sessionId,
             userId,
             serverId,
@@ -99,7 +99,7 @@ test.describe('Session Lifecycle Management', () => {
         };
 
         let deleteSessionCalled = false;
-        mockStorage.deleteSession = async (id, sId) => {
+        mockStorage.delete = async (id, sId) => {
             if (id === userId && sId === sessionId) deleteSessionCalled = true;
         };
 
@@ -116,7 +116,7 @@ test.describe('Session Lifecycle Management', () => {
             callbackUrl,
         });
 
-        await mockStorage.createSession({
+        await mockStorage.create({
             sessionId,
             userId,
             serverId,
@@ -140,7 +140,7 @@ test.describe('Session Lifecycle Management', () => {
         };
 
         let deleteSessionCalled = false;
-        mockStorage.deleteSession = async () => {
+        mockStorage.delete = async () => {
             deleteSessionCalled = true;
         };
 
@@ -170,7 +170,7 @@ test.describe('Session Lifecycle Management', () => {
         };
 
         let deleteSessionCalled = false;
-        mockStorage.deleteSession = async (id, sId) => {
+        mockStorage.delete = async (id, sId) => {
             if (id === userId && sId === sessionId) deleteSessionCalled = true;
         };
 

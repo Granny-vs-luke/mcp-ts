@@ -102,7 +102,7 @@ const memoryStorage = new MemoryStorageBackend();
 All backends store the same session data structure:
 
 ```typescript
-interface SessionData {
+interface Session {
   sessionId: string;
   userId: string;
   serverId?: string;

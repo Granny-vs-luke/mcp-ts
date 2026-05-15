@@ -1,12 +1,12 @@
 import type { Redis } from 'ioredis';
-import { StorageBackend, SessionData } from './types.js';
+import type { SessionStore, Session } from './types.js';
 import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 
 /**
- * Redis implementation of StorageBackend
+ * Redis implementation of SessionStore
  */
-export class RedisStorageBackend implements StorageBackend {
+export class RedisStorageBackend implements SessionStore {
     private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
     private readonly KEY_PREFIX = 'mcp:session:';
     private readonly USER_ID_KEY_PREFIX = 'mcp:userId:';
@@ -19,7 +19,7 @@ export class RedisStorageBackend implements StorageBackend {
             await this.redis.ping();
             console.log('[mcp-ts][Storage] Redis: ✓ Connected to server.');
         } catch (error: any) {
-            throw new Error(`[RedisStorage] Failed to connect to Redis: ${error.message}`);
+            throw new Error(`[RedisStorageBackend] Failed to connect to Redis: ${error.message}`);
         }
     }
 
@@ -32,7 +32,7 @@ export class RedisStorageBackend implements StorageBackend {
     }
 
     /**
-     * Generates Redis key for tracking all sessions for an userId
+     * Generates Redis key for tracking all sessions for a user
      * @private
      */
     private getUserIdKey(userId: string): string {
@@ -67,7 +67,7 @@ export class RedisStorageBackend implements StorageBackend {
                 }
             } while (cursor !== '0');
         } catch (error) {
-            console.warn('[RedisStorage] SCAN failed, falling back to KEYS:', error);
+            console.warn('[RedisStorageBackend] SCAN failed, falling back to KEYS:', error);
             return await this.redis.keys(pattern);
         }
 
@@ -78,7 +78,7 @@ export class RedisStorageBackend implements StorageBackend {
         return generateSessionId();
     }
 
-    async createSession(session: SessionData, ttl?: number): Promise<void> {
+    async create(session: Session, ttl?: number): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
@@ -101,7 +101,7 @@ export class RedisStorageBackend implements StorageBackend {
 
         await this.redis.sadd(userIdKey, sessionId);
     }
-    async updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
         const sessionKey = this.getSessionKey(userId, sessionId);
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
 
@@ -136,7 +136,7 @@ export class RedisStorageBackend implements StorageBackend {
         }
     }
 
-    async getSession(userId: string, sessionId: string): Promise<SessionData | null> {
+    async get(userId: string, sessionId: string): Promise<Session | null> {
         try {
             const sessionKey = this.getSessionKey(userId, sessionId);
             const sessionDataStr = await this.redis.get(sessionKey);
@@ -145,20 +145,20 @@ export class RedisStorageBackend implements StorageBackend {
                 return null;
             }
 
-            const sessionData: SessionData = JSON.parse(sessionDataStr);
-            return sessionData;
+            const Session: Session = JSON.parse(sessionDataStr);
+            return Session;
         } catch (error) {
-            console.error('[RedisStorage] Failed to get session:', error);
+            console.error('[RedisStorageBackend] Failed to get session:', error);
             return null;
         }
     }
 
-    async listSessionIds(userId: string): Promise<string[]> {
-        const sessions = await this.listSessions(userId);
+    async listIds(userId: string): Promise<string[]> {
+        const sessions = await this.list(userId);
         return sessions.map((session) => session.sessionId);
     }
 
-    async listSessions(userId: string): Promise<SessionData[]> {
+    async list(userId: string): Promise<Session[]> {
         try {
             const userIdKey = this.getUserIdKey(userId);
             const sessionIds = await this.redis.smembers(userIdKey);
@@ -167,7 +167,7 @@ export class RedisStorageBackend implements StorageBackend {
             const results = await Promise.all(
                 sessionIds.map(async (sessionId) => {
                     const data = await this.redis.get(this.getSessionKey(userId, sessionId));
-                    return data ? (JSON.parse(data) as SessionData) : null;
+                    return data ? (JSON.parse(data) as Session) : null;
                 })
             );
 
@@ -176,14 +176,14 @@ export class RedisStorageBackend implements StorageBackend {
                 await this.redis.srem(userIdKey, ...staleSessionIds);
             }
 
-            return results.filter((session): session is SessionData => session !== null);
+            return results.filter((session): session is Session => session !== null);
         } catch (error) {
-            console.error(`[RedisStorage] Failed to get session data for ${userId}:`, error);
+            console.error(`[RedisStorageBackend] Failed to get session data for ${userId}:`, error);
             return [];
         }
     }
 
-    async deleteSession(userId: string, sessionId: string): Promise<void> {
+    async delete(userId: string, sessionId: string): Promise<void> {
         try {
             const sessionKey = this.getSessionKey(userId, sessionId);
             const userIdKey = this.getUserIdKey(userId);
@@ -191,11 +191,11 @@ export class RedisStorageBackend implements StorageBackend {
             await this.redis.srem(userIdKey, sessionId);
             await this.redis.del(sessionKey);
         } catch (error) {
-            console.error('[RedisStorage] Failed to remove session:', error);
+            console.error('[RedisStorageBackend] Failed to remove session:', error);
         }
     }
 
-    async listGlobalSessionIds(): Promise<string[]> {
+    async listAllIds(): Promise<string[]> {
         try {
             const keys = await this.scanKeys(`${this.KEY_PREFIX}*`);
             const sessions = await Promise.all(
@@ -206,9 +206,9 @@ export class RedisStorageBackend implements StorageBackend {
                     }
 
                     try {
-                        return (JSON.parse(data) as SessionData).sessionId;
+                        return (JSON.parse(data) as Session).sessionId;
                     } catch (error) {
-                        console.error('[RedisStorage] Failed to parse session while listing all session IDs:', error);
+                        console.error('[RedisStorageBackend] Failed to parse session while listing all session IDs:', error);
                         return null;
                     }
                 })
@@ -216,12 +216,12 @@ export class RedisStorageBackend implements StorageBackend {
 
             return sessions.filter((sessionId): sessionId is string => sessionId !== null);
         } catch (error) {
-            console.error('[RedisStorage] Failed to get all sessions:', error);
+            console.error('[RedisStorageBackend] Failed to get all sessions:', error);
             return [];
         }
     }
 
-    async clearGlobalSessions(): Promise<void> {
+    async clearAll(): Promise<void> {
         try {
             const keys = await this.scanKeys(`${this.KEY_PREFIX}*`);
             const userIdKeys = await this.scanKeys(`${this.USER_ID_KEY_PREFIX}*${this.USER_ID_KEY_SUFFIX}`);
@@ -230,11 +230,11 @@ export class RedisStorageBackend implements StorageBackend {
                 await this.redis.del(...allKeys);
             }
         } catch (error) {
-            console.error('[RedisStorage] Failed to clear sessions:', error);
+            console.error('[RedisStorageBackend] Failed to clear sessions:', error);
         }
     }
 
-    async cleanupExpiredSessions(): Promise<void> {
+    async cleanupExpired(): Promise<void> {
         try {
             const userIdKeys = await this.scanKeys(`${this.USER_ID_KEY_PREFIX}*${this.USER_ID_KEY_SUFFIX}`);
 
@@ -262,7 +262,7 @@ export class RedisStorageBackend implements StorageBackend {
                 }
             }
         } catch (error) {
-            console.error('[RedisStorage] Failed to cleanup expired sessions:', error);
+            console.error('[RedisStorageBackend] Failed to cleanup expired sessions:', error);
         }
     }
 
@@ -270,7 +270,7 @@ export class RedisStorageBackend implements StorageBackend {
         try {
             await this.redis.quit();
         } catch (error) {
-            console.error('[RedisStorage] Failed to disconnect:', error);
+            console.error('[RedisStorageBackend] Failed to disconnect:', error);
         }
     }
 }

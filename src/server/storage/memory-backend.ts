@@ -1,13 +1,13 @@
-import { StorageBackend, SessionData, SetClientOptions } from './types.js';
+import type { SessionStore, Session, SetClientOptions } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
 
 /**
- * In-memory implementation of StorageBackend
+ * In-memory implementation of SessionStore
  * Useful for local development or testing
  */
-export class MemoryStorageBackend implements StorageBackend {
-    // Map<userId:sessionId, SessionData>
-    private sessions = new Map<string, SessionData>();
+export class MemoryStorageBackend implements SessionStore {
+    // Map<userId:sessionId, Session>
+    private sessions = new Map<string, Session>();
 
     // Map<userId, Set<sessionId>>
     private userIdSessions = new Map<string, Set<string>>();
@@ -26,7 +26,7 @@ export class MemoryStorageBackend implements StorageBackend {
         return generateSessionId();
     }
 
-    async createSession(session: SessionData, ttl?: number): Promise<void> {
+    async create(session: Session, ttl?: number): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
@@ -45,7 +45,7 @@ export class MemoryStorageBackend implements StorageBackend {
         // Note: TTL is ignored in memory backend - sessions don't auto-expire
     }
 
-    async updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
         if (!userId || !sessionId) throw new Error('userId and sessionId required');
 
         const sessionKey = this.getSessionKey(userId, sessionId);
@@ -65,21 +65,21 @@ export class MemoryStorageBackend implements StorageBackend {
     }
 
 
-    async getSession(userId: string, sessionId: string): Promise<SessionData | null> {
+    async get(userId: string, sessionId: string): Promise<Session | null> {
         const sessionKey = this.getSessionKey(userId, sessionId);
         return this.sessions.get(sessionKey) || null;
     }
 
-    async listSessionIds(userId: string): Promise<string[]> {
+    async listIds(userId: string): Promise<string[]> {
         const set = this.userIdSessions.get(userId);
         return set ? Array.from(set) : [];
     }
 
-    async listSessions(userId: string): Promise<SessionData[]> {
+    async list(userId: string): Promise<Session[]> {
         const set = this.userIdSessions.get(userId);
         if (!set) return [];
 
-        const results: SessionData[] = [];
+        const results: Session[] = [];
         for (const sessionId of set) {
             const session = this.sessions.get(this.getSessionKey(userId, sessionId));
             if (session) {
@@ -89,7 +89,7 @@ export class MemoryStorageBackend implements StorageBackend {
         return results;
     }
 
-    async deleteSession(userId: string, sessionId: string): Promise<void> {
+    async delete(userId: string, sessionId: string): Promise<void> {
         const sessionKey = this.getSessionKey(userId, sessionId);
         this.sessions.delete(sessionKey);
 
@@ -102,16 +102,16 @@ export class MemoryStorageBackend implements StorageBackend {
         }
     }
 
-    async listGlobalSessionIds(): Promise<string[]> {
+    async listAllIds(): Promise<string[]> {
         return Array.from(this.sessions.values()).map(s => s.sessionId);
     }
 
-    async clearGlobalSessions(): Promise<void> {
+    async clearAll(): Promise<void> {
         this.sessions.clear();
         this.userIdSessions.clear();
     }
 
-    async cleanupExpiredSessions(): Promise<void> {
+    async cleanupExpired(): Promise<void> {
         // In-memory doesn't implement TTL automatically, 
         // but we could check createdAt + TTL here if needed.
         // For now, no-op.

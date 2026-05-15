@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { MCPClient } from '../src/server/mcp/oauth-client';
-import { storage, _setStorageInstanceForTesting } from '../src/server/storage';
+import { sessions, _setStorageInstanceForTesting } from '../src/server/storage';
 import { MemoryStorageBackend } from '../src/server/storage/memory-backend';
 
 test.describe('MCPClient.getMcpServerConfig', () => {
@@ -54,7 +54,7 @@ test.describe('MCPClient.getMcpServerConfig', () => {
 
         // Mock storage
         const mockStorage = new MemoryStorageBackend();
-        mockStorage.listSessions = async (id: string) => {
+        mockStorage.list = async (id: string) => {
             if (id === userId) return [session1, session2] as any;
             return [];
         };
@@ -86,21 +86,21 @@ test.describe('MCPClient.getMcpServerConfig', () => {
             callbackUrl: 'http://callback1',
         };
 
-        let deleteSessionCalledWith: any[] = [];
+        let deleteCalledWith: any[] = [];
 
         // Mock storage
         const mockStorage = new MemoryStorageBackend();
-        mockStorage.listSessions = async (id: string) => {
+        mockStorage.list = async (id: string) => {
             return [session1] as any;
         };
-        mockStorage.deleteSession = async (id: string, sId: string) => {
-            deleteSessionCalledWith = [id, sId];
+        mockStorage.delete = async (id: string, sId: string) => {
+            deleteCalledWith = [id, sId];
         };
         _setStorageInstanceForTesting(mockStorage);
 
         const config = await MCPClient.getMcpServerConfig(userId);
 
-        expect(deleteSessionCalledWith).toEqual([userId, 's1']);
+        expect(deleteCalledWith).toEqual([userId, 's1']);
         expect(config).toEqual({});
     });
 });

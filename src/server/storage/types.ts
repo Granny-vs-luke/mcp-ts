@@ -5,7 +5,7 @@ import type {
     OAuthClientInformationMixed,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 
-export interface SessionData {
+export interface Session {
     sessionId: string;
     serverId?: string; // Database server ID for mapping
     serverName?: string;
@@ -42,9 +42,9 @@ export interface SetClientOptions {
 }
 
 /**
- * Interface for MCP Session Storage Backends
+ * Interface for MCP session stores.
  */
-export interface StorageBackend {
+export interface SessionStore {
     /**
      * Optional initialization (e.g., database connection)
      */
@@ -56,58 +56,55 @@ export interface StorageBackend {
     generateSessionId(): string;
 
     /**
-     * Stores or updates a session
-     */
-    /**
      * Creates a new session. Throws if session already exists.
      * @param session - Session data to create
      * @param ttl - Optional TTL in seconds (defaults to backend's default)
      */
-    createSession(session: SessionData, ttl?: number): Promise<void>;
+    create(session: Session, ttl?: number): Promise<void>;
 
     /**
      * Updates an existing session with partial data. Throws if session does not exist.
-     * @param userId - User userId
+     * @param userId - User identifier
      * @param sessionId - Session identifier
      * @param data - Partial session data to update
      * @param ttl - Optional TTL in seconds (defaults to backend's default)
      */
-    updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void>;
+    update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void>;
 
     /**
      * Retrieves a session
      */
-    getSession(userId: string, sessionId: string): Promise<SessionData | null>;
+    get(userId: string, sessionId: string): Promise<Session | null>;
 
     /**
-     * Gets full session data for all of a userId's sessions
+     * Gets full session data for all sessions owned by a user
      */
-    listSessions(userId: string): Promise<SessionData[]>;
+    list(userId: string): Promise<Session[]>;
 
     /**
      * Removes a session
      */
-    deleteSession(userId: string, sessionId: string): Promise<void>;
+    delete(userId: string, sessionId: string): Promise<void>;
 
     /**
-     * Gets all sessions IDs of an userId
+     * Gets all session IDs owned by a user
      */
-    listSessionIds(userId: string): Promise<string[]>;
+    listIds(userId: string): Promise<string[]>;
 
     /**
      * Gets all session IDs across all users (Admin)
      */
-    listGlobalSessionIds(): Promise<string[]>;
+    listAllIds(): Promise<string[]>;
 
     /**
      * Clears all sessions (Admin)
      */
-    clearGlobalSessions(): Promise<void>;
+    clearAll(): Promise<void>;
 
     /**
      * Clean up expired sessions
      */
-    cleanupExpiredSessions(): Promise<void>;
+    cleanupExpired(): Promise<void>;
 
     /**
      * Disconnect from storage backend

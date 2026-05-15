@@ -25,7 +25,7 @@
   </qa_pair>
   <qa_pair>
     <question>How do I use the useMcp hook in React?</question>
-    <answer>Import { useMcp } from '@mcp-ts/sdk/client' and call it with a server URL and identity.</answer>
+    <answer>Import { useMcp } from '@mcp-ts/sdk/client' and call it with a server URL and userId.</answer>
   </qa_pair>
   <qa_pair>
     <question>Can I use mcp-ts with Vue.js?</answer>

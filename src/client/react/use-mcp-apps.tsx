@@ -72,7 +72,7 @@ export interface McpAppRendererProps extends Pick<UseAppHostOptions, 'sandbox' |
 
 type McpAppViewProps = McpAppRendererProps & {
   /**
-   * Ref avoids tying `McpAppRenderer` identity to `mcpClient`: when `connections` updates, `useMcp()` still
+   * Ref avoids tying `McpAppRenderer` userId to `mcpClient`: when `connections` updates, `useMcp()` still
    * returns a new object (correct for `useEffect` deps), but the iframe must not remount.
    */
   clientRef: MutableRefObject<McpClient | null>;

@@ -1,5 +1,5 @@
 import type { Database } from 'better-sqlite3';
-import { StorageBackend, SessionData } from './types.js'; // Ensure .js extension
+import type { SessionStore, Session } from './types.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { generateSessionId } from '../../shared/utils.js';
@@ -9,7 +9,7 @@ export interface SqliteStorageOptions {
     table?: string;
 }
 
-export class SqliteStorage implements StorageBackend {
+export class SqliteStorage implements SessionStore {
     private db: Database | null = null;
     private table: string;
     private initialized = false;
@@ -66,7 +66,7 @@ export class SqliteStorage implements StorageBackend {
         return generateSessionId();
     }
 
-    async createSession(session: SessionData, ttl?: number): Promise<void> {
+    async create(session: Session, ttl?: number): Promise<void> {
         this.ensureInitialized();
         const { sessionId, userId } = session;
 
@@ -89,13 +89,13 @@ export class SqliteStorage implements StorageBackend {
         }
     }
 
-    async updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
         this.ensureInitialized();
         if (!sessionId || !userId) {
             throw new Error('userId and sessionId required');
         }
 
-        const currentSession = await this.getSession(userId, sessionId);
+        const currentSession = await this.get(userId, sessionId);
         if (!currentSession) {
             throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
@@ -110,7 +110,7 @@ export class SqliteStorage implements StorageBackend {
         stmt.run(JSON.stringify(updatedSession), expiresAt, sessionId, userId);
     }
 
-    async getSession(userId: string, sessionId: string): Promise<SessionData | null> {
+    async get(userId: string, sessionId: string): Promise<Session | null> {
         this.ensureInitialized();
 
         const stmt = this.db!.prepare(
@@ -119,10 +119,10 @@ export class SqliteStorage implements StorageBackend {
         const row = stmt.get(sessionId, userId) as { data: string } | undefined;
 
         if (!row) return null;
-        return JSON.parse(row.data) as SessionData;
+        return JSON.parse(row.data) as Session;
     }
 
-    async listSessions(userId: string): Promise<SessionData[]> {
+    async list(userId: string): Promise<Session[]> {
         this.ensureInitialized();
 
         const stmt = this.db!.prepare(
@@ -130,10 +130,10 @@ export class SqliteStorage implements StorageBackend {
         );
         const rows = stmt.all(userId) as { data: string }[];
 
-        return rows.map(row => JSON.parse(row.data) as SessionData);
+        return rows.map(row => JSON.parse(row.data) as Session);
     }
 
-    async listSessionIds(userId: string): Promise<string[]> {
+    async listIds(userId: string): Promise<string[]> {
         this.ensureInitialized();
 
         const stmt = this.db!.prepare(
@@ -144,7 +144,7 @@ export class SqliteStorage implements StorageBackend {
         return rows.map(row => row.sessionId);
     }
 
-    async deleteSession(userId: string, sessionId: string): Promise<void> {
+    async delete(userId: string, sessionId: string): Promise<void> {
         this.ensureInitialized();
         const stmt = this.db!.prepare(
             `DELETE FROM ${this.table} WHERE sessionId = ? AND userId = ?`
@@ -152,20 +152,20 @@ export class SqliteStorage implements StorageBackend {
         stmt.run(sessionId, userId);
     }
 
-    async listGlobalSessionIds(): Promise<string[]> {
+    async listAllIds(): Promise<string[]> {
         this.ensureInitialized();
         const stmt = this.db!.prepare(`SELECT sessionId FROM ${this.table}`);
         const rows = stmt.all() as { sessionId: string }[];
         return rows.map(row => row.sessionId);
     }
 
-    async clearGlobalSessions(): Promise<void> {
+    async clearAll(): Promise<void> {
         this.ensureInitialized();
         const stmt = this.db!.prepare(`DELETE FROM ${this.table}`);
         stmt.run();
     }
 
-    async cleanupExpiredSessions(): Promise<void> {
+    async cleanupExpired(): Promise<void> {
         this.ensureInitialized();
         const now = Date.now();
         const stmt = this.db!.prepare(

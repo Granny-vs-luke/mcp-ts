@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { storage, _setStorageInstanceForTesting } from '../../src/server/storage';
+import { sessions, _setStorageInstanceForTesting } from '../../src/server/storage';
 import { createMockSession } from '../test-utils';
 
 test.describe('storage index bootstrap', () => {
@@ -25,7 +25,7 @@ test.describe('storage index bootstrap', () => {
 
     test.afterEach(async () => {
         try {
-            await storage.disconnect();
+            await sessions.disconnect();
         } catch {
             // Storage may not have been initialized for a given test.
         }
@@ -54,9 +54,9 @@ test.describe('storage index bootstrap', () => {
             transportType: 'streamable-http',
         });
 
-        await storage.createSession(session);
+        await sessions.create(session);
 
-        const retrieved = await storage.getSession(session.userId, session.sessionId);
+        const retrieved = await sessions.get(session.userId, session.sessionId);
         expect(retrieved?.sessionId).toBe(session.sessionId);
         expect(retrieved?.transportType).toBe('streamable-http');
     });
@@ -69,9 +69,9 @@ test.describe('storage index bootstrap', () => {
             transportType: 'streamable-http',
         });
 
-        await storage.createSession(session);
+        await sessions.create(session);
 
-        const retrieved = await storage.getSession(session.userId, session.sessionId);
+        const retrieved = await sessions.get(session.userId, session.sessionId);
         expect(retrieved?.sessionId).toBe(session.sessionId);
         expect(retrieved?.transportType).toBe('streamable-http');
     });

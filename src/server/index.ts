@@ -6,7 +6,7 @@
 /** Core MCP client and session management */
 export { MCPClient } from './mcp/oauth-client.js';
 export { UnauthorizedError } from '../shared/errors.js';
-export { storage, type StorageBackend } from './storage/index.js';
+export { sessions, type SessionStore } from './storage/index.js';
 export { StorageOAuthClientProvider } from './mcp/storage-oauth-provider.js';
 export { MultiSessionClient } from './mcp/multi-session-client.js';
 

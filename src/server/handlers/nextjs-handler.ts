@@ -45,7 +45,7 @@ export interface NextMcpHandlerOptions {
 
 export function createNextMcpHandler(options: NextMcpHandlerOptions = {}) {
   const {
-    getUserId = (request: Request) => request.headers.get('x-mcp-identity'),
+    getUserId = (request: Request) => request.headers.get('x-mcp-user-id'),
     getAuthToken = (request: Request) => {
       const authHeader = request.headers.get('authorization');
       if (authHeader?.toLowerCase().startsWith('bearer ')) {

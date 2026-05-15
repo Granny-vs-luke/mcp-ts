@@ -16,19 +16,19 @@ If the user denies a tool call, acknowledge their decision and suggest alternati
 `;
 
 // ----------------------------------------------------------------------
-// 2. Client Management (Singleton per identity)
+// 2. Client Management (Singleton per userId)
 // ----------------------------------------------------------------------
 const globalForMcp = globalThis as unknown as { mcpClientMap?: Map<string, MultiSessionClient> };
 
-function getMcpClient(identity: string): MultiSessionClient {
+function getMcpClient(userId: string): MultiSessionClient {
   if (!globalForMcp.mcpClientMap) {
     globalForMcp.mcpClientMap = new Map();
   }
   
-  let client = globalForMcp.mcpClientMap.get(identity);
+  let client = globalForMcp.mcpClientMap.get(userId);
   if (!client) {
-    client = new MultiSessionClient(identity);
-    globalForMcp.mcpClientMap.set(identity, client);
+    client = new MultiSessionClient(userId);
+    globalForMcp.mcpClientMap.set(userId, client);
   }
   
   return client;
@@ -65,8 +65,8 @@ function requiresApproval(tool: any, args: any, router: any): boolean {
 // ----------------------------------------------------------------------
 // 4. Agent Initialization
 // ----------------------------------------------------------------------
-export async function createMcpAgent(identity: string = process.env.NEXT_PUBLIC_MCP_IDENTITY!) {
-  const client = getMcpClient(identity);
+export async function createMcpAgent(userId: string = process.env.NEXT_PUBLIC_MCP_USER_ID!) {
+  const client = getMcpClient(userId);
 
   // Always call connect to synchronize with the database.
   // MultiSessionClient safely skips already-connected sessions.

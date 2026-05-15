@@ -1,24 +1,24 @@
 import { test, expect } from '@playwright/test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { MCPClient } from '../src/server/mcp/oauth-client';
-import { _setStorageInstanceForTesting, storage } from '../src/server/storage';
+import { _setStorageInstanceForTesting, sessions } from '../src/server/storage';
 import { MemoryStorageBackend } from '../src/server/storage/memory-backend';
 import { SESSION_TTL_SECONDS, STATE_EXPIRATION_MS } from '../src/shared/constants';
-import type { SessionData } from '../src/server/storage/types';
+import type { Session } from '../src/server/storage/types';
 import { UnauthorizedError } from '../src/shared/errors';
 
 class TrackingMemoryStorage extends MemoryStorageBackend {
-  public createCalls: Array<{ session: SessionData; ttl?: number }> = [];
-  public updateCalls: Array<{ userId: string; sessionId: string; data: Partial<SessionData>; ttl?: number }> = [];
+  public createCalls: Array<{ session: Session; ttl?: number }> = [];
+  public updateCalls: Array<{ userId: string; sessionId: string; data: Partial<Session>; ttl?: number }> = [];
 
-  async createSession(session: SessionData, ttl?: number): Promise<void> {
+  async create(session: Session, ttl?: number): Promise<void> {
     this.createCalls.push({ session, ttl });
-    return super.createSession(session, ttl);
+    return super.create(session, ttl);
   }
 
-  async updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
+  async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
     this.updateCalls.push({ userId, sessionId, data, ttl });
-    return super.updateSession(userId, sessionId, data, ttl);
+    return super.update(userId, sessionId, data, ttl);
   }
 }
 
@@ -48,10 +48,10 @@ test.describe('MCPClient session TTL lifecycle', () => {
 
       const userId = (this as any).userId;
       const sessionId = (this as any).sessionId;
-      const existing = await storage.getSession(userId, sessionId);
+      const existing = await sessions.get(userId, sessionId);
 
       if (!existing) {
-        await storage.createSession({
+        await sessions.create({
           sessionId,
           userId,
           serverId: (this as any).serverId,
@@ -87,7 +87,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
     expect(shortCreates).toHaveLength(1);
     expect(longUpdates).toHaveLength(2);
 
-    const session = await storage.getSession('user-1', 's-1');
+    const session = await sessions.get('user-1', 's-1');
     expect(session?.active).toBe(true);
   });
 
@@ -101,10 +101,10 @@ test.describe('MCPClient session TTL lifecycle', () => {
 
       const userId = (this as any).userId;
       const sessionId = (this as any).sessionId;
-      const existing = await storage.getSession(userId, sessionId);
+      const existing = await sessions.get(userId, sessionId);
 
       if (!existing) {
-        await storage.createSession({
+        await sessions.create({
           sessionId,
           userId,
           serverId: (this as any).serverId,
@@ -138,7 +138,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
     const shortUpdates = mockStorage.updateCalls.filter(c => c.ttl === shortTtlSeconds);
     expect(shortUpdates.length).toBeGreaterThan(0);
 
-    const session = await storage.getSession('user-2', 's-2');
+    const session = await sessions.get('user-2', 's-2');
     expect(session?.active).toBe(false);
   });
 
@@ -151,10 +151,10 @@ test.describe('MCPClient session TTL lifecycle', () => {
 
       const userId = (this as any).userId;
       const sessionId = (this as any).sessionId;
-      const existing = await storage.getSession(userId, sessionId);
+      const existing = await sessions.get(userId, sessionId);
 
       if (!existing) {
-        await storage.createSession({
+        await sessions.create({
           sessionId,
           userId,
           serverId: (this as any).serverId,
@@ -191,7 +191,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
     const longUpdates = mockStorage.updateCalls.filter(c => c.ttl === SESSION_TTL_SECONDS);
     expect(longUpdates.length).toBeGreaterThan(0);
 
-    const session = await storage.getSession('user-3', 's-3');
+    const session = await sessions.get('user-3', 's-3');
     expect(session?.active).toBe(true);
   });
 
@@ -204,10 +204,10 @@ test.describe('MCPClient session TTL lifecycle', () => {
 
       const userId = (this as any).userId;
       const sessionId = (this as any).sessionId;
-      const existing = await storage.getSession(userId, sessionId);
+      const existing = await sessions.get(userId, sessionId);
 
       if (!existing) {
-        await storage.createSession({
+        await sessions.create({
           sessionId,
           userId,
           serverId: (this as any).serverId,

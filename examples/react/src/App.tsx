@@ -6,7 +6,7 @@ import './App.css';
 
 function App() {
   const [sseUrl] = useState('https://mcp.deepwiki.com/mcp');
-  const [identity] = useState('test-user'); // In production, get from your auth system
+  const [userId] = useState('test-user'); // In production, get from your auth system
   const [authToken] = useState(''); // In production, get from your auth system
 
   const {
@@ -16,7 +16,7 @@ function App() {
     disconnect,
   } = useMcp({
     url: sseUrl,
-    identity,
+    userId,
     authToken,
     autoConnect: true,
   });

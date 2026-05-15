@@ -52,9 +52,9 @@ interface ToolInfo {
 ### Session Types
 
 ```typescript
-interface SessionData {
+interface Session {
   sessionId: string;
-  identity?: string;
+  userId: string;
   serverId?: string;
   serverName?: string;
   serverUrl: string;

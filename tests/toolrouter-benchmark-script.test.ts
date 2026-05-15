@@ -106,14 +106,14 @@ test.describe('ToolRouter benchmark script', () => {
     const liveBenchmark = await import('../benchmarks/toolrouter-live.mjs');
 
     const parsed = liveBenchmark.parseEnvContent(`
-NEXT_PUBLIC_MCP_IDENTITY=real-user
+NEXT_PUBLIC_MCP_USER_ID=real-user
 SUPABASE_URL="https://example.supabase.co"
 # ignored
 EMPTY=
 `);
 
     expect(parsed).toEqual({
-      NEXT_PUBLIC_MCP_IDENTITY: 'real-user',
+      NEXT_PUBLIC_MCP_USER_ID: 'real-user',
       SUPABASE_URL: 'https://example.supabase.co',
       EMPTY: '',
     });

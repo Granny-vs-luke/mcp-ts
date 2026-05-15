@@ -108,28 +108,35 @@ EXECUTE FUNCTION public.set_current_timestamp_updated_at();
 
 ## Usage
 
-```typescript
-import { storage } from '@mcp-ts/sdk/server';
+### Option 1: Automatic Detection (Recommended)
 
-// Storage automatically uses Neon when configured with:
-// MCP_TS_STORAGE_TYPE=neon
-const sessions = await storage.listSessions('user-123');
+When `MCP_TS_STORAGE_TYPE=neon` and `NEON_DATABASE_URL` are present in your environment, the global `sessions` proxy automatically uses the Neon backend.
+
+```typescript
+import { sessions } from '@mcp-ts/sdk/server';
+
+// This will use Neon automatically if env vars are set
+const sessionList = await sessions.list('user-123');
 ```
 
-You can also create the backend directly:
+### Option 2: Manual Instantiation
+
+If you want to manage the Neon SQL client yourself or use multiple storage backends:
 
 ```typescript
 import { neon } from '@neondatabase/serverless';
 import { createNeonStorageBackend } from '@mcp-ts/sdk/server';
 
 const sql = neon(process.env.NEON_DATABASE_URL!);
-const storage = createNeonStorageBackend(sql);
-await storage.init();
+const neonBackend = createNeonStorageBackend(sql);
+await neonBackend.init(); // Optional but recommended to verify connection
+
+const sessionList = await neonBackend.list('user-123');
 ```
 
 ## Cleanup
 
-Expired sessions are removed when `storage.cleanupExpiredSessions()` runs. Schedule that call from your application or platform cron if you want cleanup without database cron support.
+Expired sessions are removed when `sessions.cleanupExpired()` runs. Schedule that call from your application or platform cron if you want cleanup without database cron support.
 
 If your Neon project has `pg_cron` enabled, you can also run the optional migration at `migrations/neon/20260513020000_add_session_cleanup_cron.sql`. Neon requires endpoint-level `cron.database_name` configuration before `pg_cron` can be installed and used. After that setup, the migration schedules:
 

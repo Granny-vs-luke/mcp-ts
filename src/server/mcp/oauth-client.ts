@@ -33,7 +33,7 @@ import { StorageOAuthClientProvider, type AgentsOAuthProvider } from './storage-
 import { sanitizeServerLabel } from '../../shared/utils.js';
 import { Emitter, type McpConnectionEvent, type McpObservabilityEvent, type McpConnectionState } from '../../shared/events.js';
 import { UnauthorizedError } from '../../shared/errors.js';
-import { storage } from '../storage/index.js';
+import { sessions } from '../storage/index.js';
 import {
   MCP_CLIENT_NAME,
   MCP_CLIENT_VERSION,
@@ -283,7 +283,7 @@ export class MCPClient {
     this.emitProgress('Loading session configuration...');
 
     if (!this.serverUrl || !this.callbackUrl || !this.serverId) {
-      const sessionData = await storage.getSession(this.userId, this.sessionId);
+      const sessionData = await sessions.get(this.userId, this.sessionId);
       if (!sessionData) {
         throw new Error(`Session not found: ${this.sessionId}`);
       }
@@ -346,14 +346,14 @@ export class MCPClient {
       );
     }
 
-    // Create session in storage if it doesn't exist yet
+    // Create session in the session store if it doesn't exist yet
     // This is needed BEFORE OAuth flow starts because the OAuth provider
     // will call saveCodeVerifier() which requires the session to exist
-    const existingSession = await storage.getSession(this.userId, this.sessionId);
+    const existingSession = await sessions.get(this.userId, this.sessionId);
     if (!existingSession && this.serverId && this.serverUrl && this.callbackUrl) {
       this.createdAt = Date.now();
       console.log(`[MCPClient] Creating initial session ${this.sessionId} for OAuth flow`);
-      await storage.createSession({
+      await sessions.create({
         sessionId: this.sessionId,
         userId: this.userId,
         serverId: this.serverId,
@@ -369,7 +369,7 @@ export class MCPClient {
   }
 
   /**
-   * Saves current session state to storage
+   * Saves current session state to the session store
    * Creates new session if it doesn't exist, updates if it does
    * @param ttl - Time-to-live in seconds (defaults to 12hr for connected sessions)
    * @param active - Session status marker used to avoid unnecessary TTL rewrites
@@ -397,11 +397,11 @@ export class MCPClient {
     };
 
     // Try to update first, create if doesn't exist
-    const existingSession = await storage.getSession(this.userId, this.sessionId);
+    const existingSession = await sessions.get(this.userId, this.sessionId);
     if (existingSession) {
-      await storage.updateSession(this.userId, this.sessionId, sessionData, ttl);
+      await sessions.update(this.userId, this.sessionId, sessionData, ttl);
     } else {
-      await storage.createSession(sessionData, ttl);
+      await sessions.create(sessionData, ttl);
     }
   }
 
@@ -505,7 +505,7 @@ export class MCPClient {
       this.emitProgress('Connected successfully');
 
       // Refresh session metadata on every successful connect so active sessions
-      // record ongoing usage and don't look dormant to storage cleanup jobs.
+      // record ongoing usage and don't look dormant to session cleanup jobs.
       console.log(`[MCPClient] Saving session ${this.sessionId} with 12hr TTL (connect success)`);
       await this.saveSession(SESSION_TTL_SECONDS, true);
     } catch (error) {
@@ -540,7 +540,7 @@ export class MCPClient {
           // We remove it now to ensure the database remains lean, bypassing the 
           // automated lifecycle sweep.
           try {
-            await storage.deleteSession(this.userId, this.sessionId);
+            await sessions.delete(this.userId, this.sessionId);
           } catch {
             // Non-blocking: Proactive cleanup failures are suppressed to prioritize 
             // the original error context.
@@ -579,9 +579,9 @@ export class MCPClient {
       // Terminal Handshake Failure: only purge transient sessions. Active
       // sessions may still hold valid credentials for a later reconnect.
       try {
-        const existingSession = await storage.getSession(this.userId, this.sessionId);
+        const existingSession = await sessions.get(this.userId, this.sessionId);
         if (!existingSession || existingSession.active !== true) {
-          await storage.deleteSession(this.userId, this.sessionId);
+          await sessions.delete(this.userId, this.sessionId);
         }
       } catch {
         // Non-blocking: Cleanup is performed on a best-effort basis and should
@@ -1041,7 +1041,7 @@ export class MCPClient {
       await (this.oauthProvider as any).invalidateCredentials('all');
     }
 
-    await storage.deleteSession(this.userId, this.sessionId);
+    await sessions.delete(this.userId, this.sessionId);
     this.disconnect();
   }
 
@@ -1162,10 +1162,10 @@ export class MCPClient {
    */
   static async getMcpServerConfig(userId: string): Promise<Record<string, any>> {
     const mcpConfig: Record<string, any> = {};
-    const sessions = await storage.listSessions(userId);
+    const sessionList = await sessions.list(userId);
 
     await Promise.all(
-      sessions.map(async (sessionData) => {
+      sessionList.map(async (sessionData) => {
         const { sessionId } = sessionData;
 
         try {
@@ -1176,14 +1176,14 @@ export class MCPClient {
             !sessionData.serverUrl ||
             !sessionData.callbackUrl
           ) {
-            await storage.deleteSession(userId, sessionId);
+            await sessions.delete(userId, sessionId);
             return;
           }
 
           // Get OAuth headers if session requires authentication
           let headers: Record<string, string> | undefined;
           try {
-            // Inject existing session data to avoid redundant storage reads in initialize()
+            // Inject existing session data to avoid redundant session store reads in initialize()
             const client = new MCPClient({
               userId,
               sessionId,
@@ -1223,7 +1223,7 @@ export class MCPClient {
             ...(headers && { headers }),
           };
         } catch (error) {
-          await storage.deleteSession(userId, sessionId);
+          await sessions.delete(userId, sessionId);
           console.warn(`[MCP] Failed to process session ${sessionId}:`, error);
         }
       })

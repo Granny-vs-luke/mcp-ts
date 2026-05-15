@@ -9,7 +9,7 @@ import { Connection, ConnectConfig } from './types';
 import { Wifi, WifiOff } from 'lucide-react';
 
 interface McpSidebarProps {
-  identity?: string;
+  userId?: string;
   authToken?: string;
 }
 

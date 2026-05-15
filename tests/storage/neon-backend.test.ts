@@ -194,9 +194,9 @@ test.describe('NeonStorageBackend', () => {
             headers: { Authorization: 'Bearer test' },
         });
 
-        await storage.createSession(session);
+        await storage.create(session);
 
-        const retrieved = await storage.getSession(session.userId, session.sessionId);
+        const retrieved = await storage.get(session.userId, session.sessionId);
         expect(retrieved?.sessionId).toBe(session.sessionId);
         expect(retrieved?.userId).toBe(session.userId);
         expect(retrieved?.tokens).toEqual(session.tokens);
@@ -205,23 +205,23 @@ test.describe('NeonStorageBackend', () => {
 
     test('throws if a session already exists', async () => {
         const session = createMockSession();
-        await storage.createSession(session);
+        await storage.create(session);
 
-        await expect(storage.createSession(session)).rejects.toThrow('already exists');
+        await expect(storage.create(session)).rejects.toThrow('already exists');
     });
 
     test('updates partial session data while preserving unchanged fields', async () => {
         const session = createMockSession();
-        await storage.createSession(session);
+        await storage.create(session);
 
         const tokens = createMockTokens({ access_token: 'refreshed-token' });
-        await storage.updateSession(session.userId, session.sessionId, {
+        await storage.update(session.userId, session.sessionId, {
             active: false,
             tokens,
             transportType: 'streamable-http',
         });
 
-        const retrieved = await storage.getSession(session.userId, session.sessionId);
+        const retrieved = await storage.get(session.userId, session.sessionId);
         expect(retrieved?.active).toBe(false);
         expect(retrieved?.tokens).toEqual(tokens);
         expect(retrieved?.transportType).toBe('streamable-http');
@@ -230,26 +230,26 @@ test.describe('NeonStorageBackend', () => {
 
     test('throws when updating a missing session', async () => {
         await expect(
-            storage.updateSession('missing-user', 'missing-session', { active: true })
+            storage.update('missing-user', 'missing-session', { active: true })
         ).rejects.toThrow('not found');
     });
 
     test('lists, removes, clears, and cleans up sessions', async () => {
-        await storage.createSession(createMockSession({ sessionId: 'a', userId: 'user-a' }), 3600);
-        await storage.createSession(createMockSession({ sessionId: 'b', userId: 'user-a' }), -1);
-        await storage.createSession(createMockSession({ sessionId: 'c', userId: 'user-b' }), 3600);
+        await storage.create(createMockSession({ sessionId: 'a', userId: 'user-a' }), 3600);
+        await storage.create(createMockSession({ sessionId: 'b', userId: 'user-a' }), -1);
+        await storage.create(createMockSession({ sessionId: 'c', userId: 'user-b' }), 3600);
 
-        expect((await storage.listSessionIds('user-a')).sort()).toEqual(['a', 'b']);
-        expect((await storage.listGlobalSessionIds()).sort()).toEqual(['a', 'b', 'c']);
+        expect((await storage.listIds('user-a')).sort()).toEqual(['a', 'b']);
+        expect((await storage.listAllIds()).sort()).toEqual(['a', 'b', 'c']);
 
-        await storage.cleanupExpiredSessions();
-        expect((await storage.listGlobalSessionIds()).sort()).toEqual(['a', 'c']);
+        await storage.cleanupExpired();
+        expect((await storage.listAllIds()).sort()).toEqual(['a', 'c']);
 
-        await storage.deleteSession('user-a', 'a');
-        expect(await storage.getSession('user-a', 'a')).toBeNull();
+        await storage.delete('user-a', 'a');
+        expect(await storage.get('user-a', 'a')).toBeNull();
 
-        await storage.clearGlobalSessions();
-        expect(await storage.listSessions('user-b')).toEqual([]);
+        await storage.clearAll();
+        expect(await storage.list('user-b')).toEqual([]);
         expect(mockNeon.listSessions()).toEqual([]);
     });
 });

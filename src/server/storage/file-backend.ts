@@ -1,15 +1,15 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import { StorageBackend, SessionData, SetClientOptions } from './types.js';
+import type { SessionStore, Session, SetClientOptions } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
 
 /**
- * File system implementation of StorageBackend
+ * File system implementation of SessionStore
  * Persists sessions to a JSON file
  */
-export class FileStorageBackend implements StorageBackend {
+export class FileStorageBackend implements SessionStore {
     private filePath: string;
-    private memoryCache: Map<string, SessionData> | null = null;
+    private memoryCache: Map<string, Session> | null = null;
     private initialized = false;
 
     /**
@@ -36,7 +36,7 @@ export class FileStorageBackend implements StorageBackend {
 
             this.memoryCache = new Map();
             if (Array.isArray(json)) {
-                json.forEach((s: SessionData) => {
+                json.forEach((s: Session) => {
                     this.memoryCache!.set(this.getSessionKey(s.userId || 'unknown', s.sessionId), s);
                 });
             }
@@ -73,7 +73,7 @@ export class FileStorageBackend implements StorageBackend {
         return generateSessionId();
     }
 
-    async createSession(session: SessionData, ttl?: number): Promise<void> {
+    async create(session: Session, ttl?: number): Promise<void> {
         await this.ensureInitialized();
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
@@ -88,7 +88,7 @@ export class FileStorageBackend implements StorageBackend {
         // Note: TTL is ignored in file backend - sessions don't auto-expire
     }
 
-    async updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
         await this.ensureInitialized();
         if (!userId || !sessionId) throw new Error('userId and sessionId required');
 
@@ -109,25 +109,25 @@ export class FileStorageBackend implements StorageBackend {
         // Note: TTL is ignored in file backend - sessions don't auto-expire
     }
 
-    async getSession(userId: string, sessionId: string): Promise<SessionData | null> {
+    async get(userId: string, sessionId: string): Promise<Session | null> {
         await this.ensureInitialized();
         const sessionKey = this.getSessionKey(userId, sessionId);
         return this.memoryCache!.get(sessionKey) || null;
     }
 
-    async listSessions(userId: string): Promise<SessionData[]> {
+    async list(userId: string): Promise<Session[]> {
         await this.ensureInitialized();
         return Array.from(this.memoryCache!.values()).filter(s => s.userId === userId);
     }
 
-    async listSessionIds(userId: string): Promise<string[]> {
+    async listIds(userId: string): Promise<string[]> {
         await this.ensureInitialized();
         return Array.from(this.memoryCache!.values())
             .filter(s => s.userId === userId)
             .map(s => s.sessionId);
     }
 
-    async deleteSession(userId: string, sessionId: string): Promise<void> {
+    async delete(userId: string, sessionId: string): Promise<void> {
         await this.ensureInitialized();
         const sessionKey = this.getSessionKey(userId, sessionId);
         if (this.memoryCache!.delete(sessionKey)) {
@@ -135,18 +135,18 @@ export class FileStorageBackend implements StorageBackend {
         }
     }
 
-    async listGlobalSessionIds(): Promise<string[]> {
+    async listAllIds(): Promise<string[]> {
         await this.ensureInitialized();
         return Array.from(this.memoryCache!.values()).map(s => s.sessionId);
     }
 
-    async clearGlobalSessions(): Promise<void> {
+    async clearAll(): Promise<void> {
         await this.ensureInitialized();
         this.memoryCache!.clear();
         await this.flush();
     }
 
-    async cleanupExpiredSessions(): Promise<void> {
+    async cleanupExpired(): Promise<void> {
         // Could implement TTL check here using createdAt
         await this.ensureInitialized();
     }

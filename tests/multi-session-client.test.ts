@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { MultiSessionClient } from '../src/server/mcp/multi-session-client';
 import { MCPClient } from '../src/server/mcp/oauth-client';
-import { storage, _setStorageInstanceForTesting } from '../src/server/storage';
+import { sessions, _setStorageInstanceForTesting } from '../src/server/storage';
 import { MemoryStorageBackend } from '../src/server/storage/memory-backend';
 
 test.describe('MultiSessionClient', () => {
@@ -54,7 +54,7 @@ test.describe('MultiSessionClient', () => {
             active: true   // mark as fully established sessions
         }));
         
-        mockStorage.listSessions = async () => mockSessions as any;
+        mockStorage.list = async () => mockSessions as any;
         _setStorageInstanceForTesting(mockStorage);
 
         const multiClient = new MultiSessionClient(userId);

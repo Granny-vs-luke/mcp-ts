@@ -318,7 +318,7 @@ export class SSEClient {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Accept': 'text/event-stream',
-      'x-mcp-identity': this.options.userId,
+      'x-mcp-user-id': this.options.userId,
     };
 
     if (this.options.authToken) {

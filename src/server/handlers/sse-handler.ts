@@ -37,7 +37,7 @@ import { RpcErrorCodes } from '../../shared/errors.js';
 import { UnauthorizedError } from '../../shared/errors.js';
 import { isConnectionEvent, isRpcResponseEvent } from '../../shared/event-routing.js';
 import { MCPClient } from '../mcp/oauth-client.js';
-import { storage } from '../storage/index.js';
+import { sessions } from '../storage/index.js';
 
 // ============================================
 // Types & Interfaces
@@ -228,10 +228,10 @@ export class SSEConnectionManager {
    * Get all sessions for the current userId
    */
   private async listSessions(): Promise<SessionListResult> {
-    const sessions = await storage.listSessions(this.userId);
+    const sessionList = await sessions.list(this.userId);
 
     return {
-      sessions: sessions.map((s) => ({
+      sessions: sessionList.map((s) => ({
         sessionId: s.sessionId,
         serverId: s.serverId,
         serverName: s.serverName,
@@ -254,10 +254,10 @@ export class SSEConnectionManager {
     // Tool name format: tool_<serverId>_<toolName> - with 12 char serverId leaves 46 chars for tool name
     const serverId = params.serverId && params.serverId.length <= 12
       ? params.serverId
-      : await storage.generateSessionId();
+      : await sessions.generateSessionId();
 
     // Check for existing connections
-    const existingSessions = await storage.listSessions(this.userId);
+    const existingSessions = await sessions.list(this.userId);
     const duplicate = existingSessions.find(s =>
       s.serverId === serverId || s.serverUrl === serverUrl
     );
@@ -276,7 +276,7 @@ export class SSEConnectionManager {
     }
 
     // Generate session ID
-    const sessionId = await storage.generateSessionId();
+    const sessionId = await sessions.generateSessionId();
 
     try {
       // Get resolved client metadata
@@ -360,7 +360,7 @@ export class SSEConnectionManager {
     } else {
       // Handle orphaned sessions (e.g., OAuth flow failed before client was stored)
       // Directly remove from storage since there's no active client
-      await storage.deleteSession(this.userId, sessionId);
+      await sessions.delete(this.userId, sessionId);
     }
 
     return { success: true };
@@ -375,7 +375,7 @@ export class SSEConnectionManager {
       return existing;
     }
 
-    const session = await storage.getSession(this.userId, sessionId);
+    const session = await sessions.get(this.userId, sessionId);
     if (!session) {
       throw new Error('Session not found');
     }
@@ -442,7 +442,7 @@ export class SSEConnectionManager {
   private async getSession(params: SessionParams): Promise<GetSessionResult> {
     const { sessionId } = params;
 
-    const session = await storage.getSession(this.userId, sessionId);
+    const session = await sessions.get(this.userId, sessionId);
     if (!session) {
       throw new Error('Session not found');
     }
@@ -506,7 +506,7 @@ export class SSEConnectionManager {
   private async finishAuth(params: FinishAuthParams): Promise<FinishAuthResult> {
     const { sessionId, code } = params;
 
-    const session = await storage.getSession(this.userId, sessionId);
+    const session = await sessions.get(this.userId, sessionId);
     if (!session) {
       throw new Error('Session not found');
     }

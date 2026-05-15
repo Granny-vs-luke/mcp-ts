@@ -1,10 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { StorageBackend, SessionData } from './types.js';
+import type { SessionStore, Session } from './types.js';
 import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
 
-export class SupabaseStorageBackend implements StorageBackend {
+export class SupabaseStorageBackend implements SessionStore {
     private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
 
     constructor(private supabase: SupabaseClient) {}
@@ -34,7 +34,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         return generateSessionId();
     }
 
-    private mapRowToSessionData(row: any): SessionData {
+    private mapRowToSessionData(row: any): Session {
         return {
             sessionId: row.session_id,
             serverId: row.server_id,
@@ -53,7 +53,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         };
     }
 
-    async createSession(session: SessionData, ttl?: number): Promise<void> {
+    async create(session: Session, ttl?: number): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
@@ -89,7 +89,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         }
     }
 
-    async updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
         const expiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
 
@@ -127,7 +127,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         }
     }
 
-    async getSession(userId: string, sessionId: string): Promise<SessionData | null> {
+    async get(userId: string, sessionId: string): Promise<Session | null> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('*')
@@ -145,7 +145,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         return this.mapRowToSessionData(data);
     }
 
-    async listSessions(userId: string): Promise<SessionData[]> {
+    async list(userId: string): Promise<Session[]> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('*')
@@ -159,7 +159,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         return data.map(row => this.mapRowToSessionData(row));
     }
 
-    async deleteSession(userId: string, sessionId: string): Promise<void> {
+    async delete(userId: string, sessionId: string): Promise<void> {
         const { error } = await this.supabase
             .from('mcp_sessions')
             .delete()
@@ -171,7 +171,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         }
     }
 
-    async listSessionIds(userId: string): Promise<string[]> {
+    async listIds(userId: string): Promise<string[]> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('session_id')
@@ -185,7 +185,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         return data.map(row => row.session_id);
     }
 
-    async listGlobalSessionIds(): Promise<string[]> {
+    async listAllIds(): Promise<string[]> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('session_id');
@@ -198,7 +198,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         return data.map(row => row.session_id);
     }
 
-    async clearGlobalSessions(): Promise<void> {
+    async clearAll(): Promise<void> {
         // Warning: This deletes everything. Typically only used in testing.
         const { error } = await this.supabase
             .from('mcp_sessions')
@@ -210,7 +210,7 @@ export class SupabaseStorageBackend implements StorageBackend {
         }
     }
 
-    async cleanupExpiredSessions(): Promise<void> {
+    async cleanupExpired(): Promise<void> {
         const { error } = await this.supabase
             .from('mcp_sessions')
             .delete()

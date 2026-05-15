@@ -40,14 +40,40 @@ REDIS_URL=rediss://default:password@host.upstash.io:6379
 
 ## Usage
 
+### Option 1: Automatic Detection (Recommended)
+
+When `REDIS_URL` is present in your environment, the global `sessions` proxy automatically uses the Redis backend.
+
 ```typescript
-import { storage } from '@mcp-ts/sdk/server';
+import { sessions } from '@mcp-ts/sdk/server';
 
-// Storage automatically uses Redis when REDIS_URL is set
-const sessionId = storage.generateSessionId();
+// This will use Redis automatically if env vars are set
+const sessionId = sessions.generateSessionId();
 
-await storage.createSession({
+await sessions.create({
   sessionId,
+  userId: 'user-123',
+  serverUrl: 'https://mcp.example.com',
+  callbackUrl: 'https://app.com/callback',
+  transportType: 'sse',
+  active: true,
+  createdAt: Date.now(),
+});
+```
+
+### Option 2: Manual Instantiation
+
+If you want to manage the Redis client yourself or use multiple storage backends:
+
+```typescript
+import Redis from 'ioredis';
+import { RedisStorageBackend } from '@mcp-ts/sdk/server';
+
+const redis = new Redis(process.env.REDIS_URL!);
+const redisBackend = new RedisStorageBackend(redis);
+
+await redisBackend.create({
+  sessionId: 'test-session',
   userId: 'user-123',
   serverUrl: 'https://mcp.example.com',
   callbackUrl: 'https://app.com/callback',

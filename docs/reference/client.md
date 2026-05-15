@@ -34,7 +34,7 @@ const {
   getTools,
 } = useMcp({
   url: string,
-  identity: string,
+  userId: string,
   authToken?: string,
   autoConnect?: boolean,
   autoInitialize?: boolean,
@@ -45,7 +45,7 @@ const {
 
 **Options:**
 - `url` - SSE endpoint URL (required)
-- `identity` - User/Client identifier (required)
+- `userId` - User/client identifier (required)
 - `authToken` - Authentication token (optional)
 - `autoConnect` - Auto-connect SSE on mount (default: true)
 - `autoInitialize` - Auto-load sessions on mount (default: true)
@@ -237,7 +237,7 @@ import { SSEClient } from '@mcp-ts/sdk/client';
 
 const client = new SSEClient({
   url: string,
-  identity: string,
+  userId: string,
   authToken?: string,
   onConnectionEvent?: (event) => void,
   onStatusChange?: (status) => void,

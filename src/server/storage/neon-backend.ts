@@ -1,4 +1,4 @@
-import { StorageBackend, SessionData } from './types.js';
+import type { SessionStore, Session } from './types.js';
 import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
@@ -29,7 +29,7 @@ type NeonSessionRow = {
     client_id?: string | null;
 };
 
-export class NeonStorageBackend implements StorageBackend {
+export class NeonStorageBackend implements SessionStore {
     private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
     private readonly tableName: string;
 
@@ -69,7 +69,7 @@ export class NeonStorageBackend implements StorageBackend {
         return `"${identifier}"`;
     }
 
-    private mapRowToSessionData(row: NeonSessionRow): SessionData {
+    private mapRowToSessionData(row: NeonSessionRow): Session {
         return {
             sessionId: row.session_id,
             serverId: row.server_id ?? undefined,
@@ -81,14 +81,14 @@ export class NeonStorageBackend implements StorageBackend {
             userId: row.user_id,
             headers: decryptObject(row.headers),
             active: row.active ?? false,
-            clientInformation: row.client_information as SessionData['clientInformation'],
+            clientInformation: row.client_information as Session['clientInformation'],
             tokens: decryptObject(row.tokens),
             codeVerifier: row.code_verifier ?? undefined,
             clientId: row.client_id ?? undefined,
         };
     }
 
-    async createSession(session: SessionData, ttl?: number): Promise<void> {
+    async create(session: Session, ttl?: number): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
@@ -143,8 +143,8 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async updateSession(userId: string, sessionId: string, data: Partial<SessionData>, ttl?: number): Promise<void> {
-        const currentSession = await this.getSession(userId, sessionId);
+    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
+        const currentSession = await this.get(userId, sessionId);
         if (!currentSession) {
             throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
@@ -194,7 +194,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async getSession(userId: string, sessionId: string): Promise<SessionData | null> {
+    async get(userId: string, sessionId: string): Promise<Session | null> {
         try {
             const rows = await this.sql.query(
                 `SELECT * FROM ${this.tableName} WHERE user_id = $1 AND session_id = $2`,
@@ -207,7 +207,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async listSessions(userId: string): Promise<SessionData[]> {
+    async list(userId: string): Promise<Session[]> {
         try {
             const rows = await this.sql.query(
                 `SELECT * FROM ${this.tableName} WHERE user_id = $1`,
@@ -220,7 +220,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async deleteSession(userId: string, sessionId: string): Promise<void> {
+    async delete(userId: string, sessionId: string): Promise<void> {
         try {
             await this.sql.query(
                 `DELETE FROM ${this.tableName} WHERE user_id = $1 AND session_id = $2`,
@@ -231,7 +231,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async listSessionIds(userId: string): Promise<string[]> {
+    async listIds(userId: string): Promise<string[]> {
         try {
             const rows = await this.sql.query(
                 `SELECT session_id FROM ${this.tableName} WHERE user_id = $1`,
@@ -244,7 +244,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async listGlobalSessionIds(): Promise<string[]> {
+    async listAllIds(): Promise<string[]> {
         try {
             const rows = await this.sql.query(
                 `SELECT session_id FROM ${this.tableName}`
@@ -256,7 +256,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async clearGlobalSessions(): Promise<void> {
+    async clearAll(): Promise<void> {
         try {
             await this.sql.query(`DELETE FROM ${this.tableName}`);
         } catch (error) {
@@ -264,7 +264,7 @@ export class NeonStorageBackend implements StorageBackend {
         }
     }
 
-    async cleanupExpiredSessions(): Promise<void> {
+    async cleanupExpired(): Promise<void> {
         try {
             await this.sql.query(
                 `DELETE FROM ${this.tableName} WHERE expires_at < $1`,

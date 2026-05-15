@@ -13,7 +13,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
 
-    await storage.createSession({
+    await storage.create({
       sessionId: 'existing-session',
       userId: 'user-1',
       serverId: 'srv-1',
@@ -61,7 +61,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
 
-    await storage.createSession({
+    await storage.create({
       sessionId: 'existing-active',
       userId: 'user-2',
       serverId: 'srv-2',
@@ -99,7 +99,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
 
-    await storage.createSession({
+    await storage.create({
       sessionId: 'resource-session',
       userId: 'user-3',
       serverId: 'srv-3',

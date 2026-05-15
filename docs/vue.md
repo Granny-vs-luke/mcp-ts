@@ -15,7 +15,7 @@ import { useMcp } from '@mcp-ts/sdk/client/vue';
 
 const { connections, connect, status } = useMcp({
   url: '/api/mcp',
-  identity: 'user-123',
+  userId: 'user-123',
 });
 </script>
 
@@ -38,7 +38,7 @@ useMcp({
   url: '/api/mcp',
 
   // Required: User identifier
-  identity: 'user-123',
+  userId: 'user-123',
 
   // Optional: Authentication token
   authToken: 'your-auth-token',
@@ -80,7 +80,7 @@ const {
 import { useMcp } from '@mcp-ts/sdk/client/vue';
 import { ref } from 'vue';
 
-const props = defineProps<{ identity: string }>();
+const props = defineProps<{ userId: string }>();
 
 const { 
   connections, 
@@ -88,8 +88,8 @@ const {
   connect, 
   callTool 
 } = useMcp({
-  url: `/api/mcp?identity=${props.identity}`,
-  identity: props.identity
+  url: `/api/mcp?userId=${props.userId}`,
+  userId: props.userId
 });
 
 const handleConnect = async () => {
