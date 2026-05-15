@@ -1,7 +1,7 @@
 ---
 title: "Storage Overview"
 sidebarTitle: "Overview"
-description: "Configure persistence for MCP sessions across multiple backends."
+description: "Compare the mcp-ts storage backends — in-memory, file system, SQLite, Redis, Supabase, and Neon — and choose the right session persistence for your stack."
 ---
 
 The library supports multiple storage backends for session persistence, allowing you to choose the best option for your deployment environment.

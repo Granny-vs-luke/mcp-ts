@@ -1,7 +1,7 @@
 ---
 title: "Mastra"
 sidebarTitle: "Mastra"
-description: "High-performance MCP integration for the Mastra framework."
+description: "Convert MCP tools into Mastra-compatible tool definitions with MastraAdapter so your Mastra agents can call any MCP server through one client."
 ---
 
 The `MastraAdapter` converts MCP tools into the format expected by the [Mastra](https://mastra.ai) framework.

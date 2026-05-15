@@ -1,7 +1,7 @@
 ---
 title: "In-Memory"
 sidebarTitle: "In-Memory"
-description: "Fast, ephemeral session storage for testing and local development."
+description: "Use the in-memory storage backend for fast, ephemeral MCP session storage in unit tests, integration tests, and local prototypes (lost on restart)."
 ---
 
 **Fast ephemeral storage, ideal for testing. Sessions are lost on restart.**

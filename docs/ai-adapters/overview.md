@@ -1,7 +1,7 @@
 ---
 title: "Adapters Overview"
 sidebarTitle: "Overview"
-description: "Seamlessly integrate MCP into your favorite AI frameworks."
+description: "Compare the mcp-ts adapters for Vercel AI SDK, LangChain, Mastra, and AG-UI and pick the right integration for your AI framework or agent runtime."
 ---
 
 Adapters transforms MCP tools into framework-specific formats for seamless integration with AI frameworks.

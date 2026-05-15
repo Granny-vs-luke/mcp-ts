@@ -1,7 +1,7 @@
 ---
 title: "Supabase"
 sidebarTitle: "Supabase"
-description: "Scalable session storage using Supabase/PostgreSQL."
+description: "Use Supabase Postgres as the mcp-ts session storage backend, including service_role configuration, Row Level Security setup, and the required schema migration."
 ---
 
 **Cloud-native PostgreSQL storage with built-in security and row-level security (RLS).**

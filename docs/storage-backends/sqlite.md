@@ -1,7 +1,7 @@
 ---
 title: "SQLite"
 sidebarTitle: "SQLite"
-description: "Single-file persistent session storage powered by SQLite."
+description: "Use SQLite via better-sqlite3 for zero-configuration, single-file persistent MCP session storage with ACID transactions and no external service required."
 ---
 
 **Zero-configuration persistent storage, faster than file-based JSON storage.**

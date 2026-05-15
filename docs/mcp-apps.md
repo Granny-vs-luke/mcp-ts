@@ -1,7 +1,7 @@
 ---
 title: "MCP Apps"
 sidebarTitle: "MCP Apps"
-description: "Rendering interactive tool UIs for MCP tools."
+description: "Render interactive tool UIs inside sandboxed iframes with useMcpApps and McpAppRenderer, using the AppBridge protocol to sync input, results, and context."
 icon: "window"
 ---
 

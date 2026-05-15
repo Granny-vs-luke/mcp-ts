@@ -1,7 +1,7 @@
 ---
 title: "Neon"
 sidebarTitle: "Neon"
-description: "Serverless Postgres session storage powered by Neon."
+description: "Configure Neon serverless Postgres as a storage backend for MCP sessions, including pooled connection strings, dedicated roles, and HTTP query setup."
 ---
 
 **Serverless Postgres storage for production deployments.**

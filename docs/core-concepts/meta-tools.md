@@ -1,7 +1,7 @@
 ---
 title: "Meta Tools"
 sidebarTitle: "Meta Tools"
-description: "Technical reference for the system tools that power on-demand tool discovery."
+description: "Reference for the Tool Router meta-tools that let LLMs search, list, and execute tools on demand to keep large MCP catalogs out of the context window."
 ---
 
 When the `ToolRouter` is set to the `search` strategy, it hides your real MCP tools and instead exposes a small set of **Meta-Tools**. 

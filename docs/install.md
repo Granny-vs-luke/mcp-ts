@@ -1,7 +1,7 @@
 ---
 title: "Installation"
 sidebarTitle: "Installation"
-description: "Get started with mcp-ts in your JavaScript or TypeScript project."
+description: "Install the @mcp-ts/sdk package with npm, yarn, or pnpm and configure a storage backend (Redis, file system, Supabase, or SQLite) for MCP sessions."
 icon: "download"
 ---
 

@@ -1,7 +1,7 @@
 ---
 title: "Quickstart Guide"
 sidebarTitle: "Quickstart"
-description: "Get up and running with mcp-ts in 5 minutes."
+description: "Quickstart for mcp-ts: install the SDK, wire up a Next.js MCP route, and connect from React with the useMcp hook to call your first MCP tool."
 icon: "rocket"
 ---
 

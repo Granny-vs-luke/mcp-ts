@@ -2,7 +2,7 @@
 title: "Starter Templates"
 sidebarTitle: "Starter Templates"
 icon: "vial"
-description: "Runnable example apps in this repo."
+description: "Browse runnable mcp-ts starter templates including CopilotKit agents, Next.js, and React examples you can clone, run locally, and adapt to your project."
 ---
 
 This repo includes a few end-to-end example projects you can run locally:

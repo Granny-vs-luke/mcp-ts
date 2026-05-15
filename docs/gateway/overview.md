@@ -1,7 +1,7 @@
 ---
 title: "Gateway Overview"
 sidebarTitle: "Overview"
-description: "Bridge local MCP servers to cloud clients like ChatGPT and Claude."
+description: "Learn how the mcp-ts MCP Gateway bridges local stdio MCP servers to remote clients like ChatGPT and Claude through a single secure tunnel."
 icon: "network-wired"
 ---
 

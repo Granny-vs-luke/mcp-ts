@@ -1,7 +1,7 @@
 ---
 title: "React"
 sidebarTitle: "React"
-description: "Managing MCP connections in React applications with the useMcp hook."
+description: "Manage MCP connections in React applications with the useMcp hook: connect to servers, list and call tools, handle OAuth, and stream tool results."
 icon: "react"
 ---
 

@@ -1,7 +1,7 @@
 ---
 title: "Storage API"
 sidebarTitle: "Storage"
-description: "Global storage API methods and custom backend integration."
+description: "API reference for the mcp-ts sessions storage proxy, supported backend drivers, and the StorageBackend interface for building custom session stores."
 icon: "database"
 ---
 

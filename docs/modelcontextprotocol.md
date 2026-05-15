@@ -1,7 +1,7 @@
 ---
-title: "MCP"
+title: "Docs as an MCP server"
 sidebarTitle: "MCP"
-description: "Access mcp-ts documentation directly within your LLM environment."
+description: "Connect Claude Desktop, Cursor, and other MCP clients to the mcp-ts documentation server to search and read guides without leaving your AI assistant."
 icon: "puzzle-piece"
 ---
 

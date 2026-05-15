@@ -1,7 +1,7 @@
 ---
 title: "Gateway Configuration"
 sidebarTitle: "Configuration"
-description: "Configure your local MCP servers for cloud access."
+description: "Configure the MCP Gateway to expose local MCP servers to cloud clients like ChatGPT and Claude, including server lists, auth, and connection settings."
 icon: "gear"
 ---
 

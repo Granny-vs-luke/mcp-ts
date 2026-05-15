@@ -1,7 +1,7 @@
 ---
 title: "Showcase"
 sidebarTitle: "Showcase"
-description: "A featured walkthrough followed by focused examples for agent UIs, middleware, and MCP-powered app experiences."
+description: "Featured mcp-ts walkthroughs and demos showcasing agent UIs, Tool Router middleware, MCP Apps integrations, and production-ready MCP-powered experiences."
 icon: "video"
 ---
 

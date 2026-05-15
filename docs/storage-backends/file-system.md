@@ -1,7 +1,7 @@
 ---
 title: "File System"
 sidebarTitle: "File System"
-description: "Local persistence using the standard file system."
+description: "Persist MCP sessions to a local JSON file with the file system storage backend, ideal for local development and single-instance deployments without Redis."
 ---
 
 **Perfect for local development with persistent sessions across restarts.**
