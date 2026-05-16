@@ -1,15 +1,21 @@
 import { ToolLoopAgent, InferAgentUIMessage, stepCountIs } from "ai";
 import { MultiSessionClient } from "@mcp-ts/sdk/server";
-import { AIAdapter } from "@mcp-ts/sdk/adapters/ai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-
-const { ToolRouter } = await import("@mcp-ts/sdk/shared");
+import { createToolRouter, mcpSources, createAISDKTools } from "@mcp-ts/toolrouter";
+import { createCodeModeRuntime } from "@mcp-ts/codemode";
+import { z } from "zod";
 
 // ----------------------------------------------------------------------
 // 1. Agent Instructions
 // ----------------------------------------------------------------------
 const INSTRUCTIONS = `
 You are an expert assistant, an AI assistant that helps users with their tasks using the available MCP tools.
+
+You have access to a tool catalog. Instead of seeing all tools at once, you can:
+1. Search for tools using 'toolrouter_search_tools'.
+2. Fetch the schema for a tool using 'toolrouter_get_tool_schema'.
+3. Call a tool using 'toolrouter_call_tool'.
+4. Run complex multi-step JavaScript programs using 'codemode_run' when you need to combine results from multiple tools, loop, or transform data.
 
 IMPORTANT: When a tool requires user approval, explain what you intend to do and why before calling it.
 If the user denies a tool call, acknowledge their decision and suggest alternatives.
@@ -42,23 +48,22 @@ function getMcpClient(userId: string): MultiSessionClient {
  * For testing purposes, we require approval on `readOnly` tools instead of `destructive` ones.
  */
 function requiresApproval(tool: any, args: any, router: any): boolean {
-  // Handle meta-tool proxy calls: If the LLM uses mcp_execute_tool, 
-  // we must look up the annotations on the actual target tool.
-  if (tool.name === 'mcp_execute_tool') {
+  // Handle meta-tool proxy calls
+  if (tool.name === 'toolrouter_call_tool') {
     const targetToolName = String(args?.toolName ?? "");
-    const targetNamespace = String(args?.serverId ?? "") || undefined;
+    const targetSourceId = String(args?.sourceId ?? "") || undefined;
     
     if (!targetToolName) return false;
     
     try {
-      const targetTool = router.getToolSchema(targetToolName, targetNamespace);
+      const targetTool = router.getToolSchema({ toolName: targetToolName, sourceId: targetSourceId });
       return (targetTool as any)?.annotations?.readOnlyHint === true;
     } catch {
       return false; // Tool not found, let execution fail normally
     }
   }
 
-  // Handle direct tool calls (when not using search/meta-tool routing)
+  // Handle direct tool calls (if any)
   return (tool.annotations as any)?.readOnlyHint === true;
 }
 
@@ -68,27 +73,56 @@ function requiresApproval(tool: any, args: any, router: any): boolean {
 export async function createMcpAgent(userId: string = process.env.NEXT_PUBLIC_MCP_USER_ID!) {
   const client = getMcpClient(userId);
 
-  // Always call connect to synchronize with the database.
-  // MultiSessionClient safely skips already-connected sessions.
   try {
     await client.connect();
   } catch (error) {
     console.error("[McpAgent] Failed to connect MCP client:", error);
   }
 
-  // Set up Tool Router and Adapter
-  const router = new ToolRouter(client, { strategy: "search", maxTools: 5 });
-  const adapter = new AIAdapter(client, {
-    toolRouter: router,
-    needsApproval: (tool, args) => requiresApproval(tool, args, router),
+  // Set up Tool Router from @mcp-ts/toolrouter
+  const router = await createToolRouter({
+    sources: mcpSources(client),
+    maxSearchResults: 8
   });
 
-  const tools = await adapter.getTools();
+  // Set up Codemode Runtime
+  const codemode = createCodeModeRuntime({ router });
+
+  // Convert router meta-tools to AI SDK tools
+  const routerTools = await createAISDKTools(router);
+
+  // Define the codemode_run tool
+  const codemodeTool = {
+    description: "Run sandboxed JavaScript code for multi-step tool workflows. Use return to provide the final value.",
+    parameters: z.object({
+      code: z.string().describe("Async JavaScript body. Access tools via callTool(sourceId, toolName, args) and searchTools(query)."),
+      input: z.unknown().optional().describe("Serializable input exposed as `input` in the sandbox.")
+    }),
+    execute: async ({ code, input }: { code: string; input?: unknown }) => {
+      const result = await codemode.run(code, input);
+      if (result.error) {
+        throw new Error(`Codemode failed: ${result.error.message}`);
+      }
+      return result.value;
+    }
+  };
+
+  // Combine all tools
+  const allTools = {
+    ...routerTools,
+    codemode_run: codemodeTool
+  };
+
+  // Apply HITL approval to meta-tools
+  Object.keys(allTools).forEach(name => {
+    const tool = (allTools as any)[name];
+    tool.needsApproval = (args: any) => requiresApproval({ name, annotations: tool.annotations }, args, router);
+  });
 
   return new ToolLoopAgent({
     model: createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY })("deepseek-chat"),
     instructions: INSTRUCTIONS,
-    tools: tools as any,
+    tools: allTools as any,
     stopWhen: stepCountIs(20),
   });
 }
