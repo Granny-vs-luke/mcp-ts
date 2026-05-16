@@ -26,8 +26,10 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@mcp-ts/toolrouter": "file:../toolrouter",
-    "isolated-vm": "^5.0.4"
+    "@mcp-ts/toolrouter": "file:../toolrouter"
+  },
+  "optionalDependencies": {
+    "isolated-vm": "^6.1.2"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
