@@ -72,6 +72,7 @@ export interface ToolRouterMetaTool {
   name: string;
   description: string;
   inputSchema: unknown;
+  annotations?: ToolAnnotations;
 }
 
 export interface ToolRouterCallResult {

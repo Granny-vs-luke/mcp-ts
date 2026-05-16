@@ -5,6 +5,7 @@ export type AISDKToolSet = Record<string, {
   description?: string;
   inputSchema: unknown;
   execute: (args: Record<string, unknown>) => Promise<unknown>;
+  annotations?: any;
 }>;
 
 export async function createAISDKTools(router: ToolRouter): Promise<AISDKToolSet> {
@@ -21,6 +22,7 @@ export async function createAISDKTools(router: ToolRouter): Promise<AISDKToolSet
       {
         description: tool.description,
         inputSchema: jsonSchema!(tool.inputSchema),
+        annotations: tool.annotations,
         execute: async (args: Record<string, unknown>) => {
           if (!isToolRouterMetaTool(tool.name)) {
             throw new Error(`Unknown toolrouter meta tool "${tool.name}".`);

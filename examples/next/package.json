@@ -14,7 +14,7 @@
     "@mcp-ts/sdk": "file:../..",
     "@mcp-ts/toolrouter": "file:../../packages/toolrouter",
     "@mcp-ts/codemode": "file:../../packages/codemode",
-    "isolated-vm": "latest",
+    "isolated-vm": "^6.1.2",
     "@radix-ui/react-slot": "^1.2.4",
     "@streamdown/cjk": "^1.0.3",
     "@streamdown/code": "^1.1.1",

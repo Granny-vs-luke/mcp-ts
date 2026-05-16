@@ -22,7 +22,7 @@ export function createCodeModeMcpServer(options: CodeModeMcpServerOptions): McpS
         "Run sandboxed JavaScript code that can search and call routed MCP tools through controlled helpers.",
       inputSchema: {
         code: z.string().describe("Async JavaScript body. Use return to provide the final value."),
-        input: z.unknown().optional().describe("Serializable input exposed as `input` in the sandbox."),
+        input: z.any().optional().describe("Serializable input exposed as `input` in the sandbox."),
         timeoutMs: z.number().optional().describe("Optional per-run timeout in milliseconds.")
       }
     },
