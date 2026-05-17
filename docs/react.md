@@ -332,7 +332,7 @@ The popup helpers are optional convenience utilities on top of that. You can:
 - bring your own popup UI
 - skip popups entirely and use a normal callback page
 
-### Turnkey popup flow
+### Turnkey Popup Flow
 
 ```tsx
 'use client';
@@ -399,7 +399,7 @@ export function OAuthPopupCallbackPage() {
 Use this when you want branded popup visuals without rebuilding the
 `postMessage` / `finishAuth` coordination yourself.
 
-### Full-page redirect flow
+### Full-Page Redirect Flow
 
 ```tsx
 'use client';

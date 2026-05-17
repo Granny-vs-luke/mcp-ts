@@ -5,7 +5,7 @@ description: 'How to migrate your application to mcp-ts v2.0.0'
 
 v2.0.0 introduces some breaking changes to standardize the API and improve maintainability. This guide will help you upgrade your application from v1.x to v2.x.
 
-## 1. Storage API changes
+## 1. Storage API Changes
 
 In previous versions, session and connection management was handled through the `storage` object. This has been renamed to `sessions` to better reflect its purpose and provide a more intuitive API.
 
@@ -28,7 +28,7 @@ const session = await sessions.get(sessionId);
 await sessions.update(sessionId, updates);
 ```
 
-## 2. useMcp hook update
+## 2. `useMcp` Hook Update
 
 The `useMcp` React hook has been updated to use `userId` instead of `identity`, standardizing how we refer to user identifiers across the SDK.
 
