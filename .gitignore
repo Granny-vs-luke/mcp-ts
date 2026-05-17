@@ -32,6 +32,3 @@ build/
 .agents/
 skills-lock.json
 .vercel
-
-workflow-automation-engine/
-code-mode/

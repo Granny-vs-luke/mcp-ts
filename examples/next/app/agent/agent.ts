@@ -1,28 +1,18 @@
 import { ToolLoopAgent, InferAgentUIMessage, stepCountIs } from "ai";
 import { MultiSessionClient } from "@mcp-ts/sdk/server";
+import { AIAdapter } from "@mcp-ts/sdk/adapters/ai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import { createCodeModeRuntime, mcpSources, createCodemodeAITools } from "@mcp-ts/codemode";
+
+const { ToolRouter } = await import("@mcp-ts/sdk/shared");
 
 // ----------------------------------------------------------------------
 // 1. Agent Instructions
 // ----------------------------------------------------------------------
 const INSTRUCTIONS = `
-You are an expert assistant that helps users perform complex tasks using MCP tools. 
+You are an expert assistant, an AI assistant that helps users with their tasks using the available MCP tools.
 
-You have access to a sandboxed Code Mode environment where you can execute TypeScript/JavaScript to automate multi-step workflows.
-
-Available tools:
-1. 'codemode_search_tools': Find tools by natural language description.
-2. 'codemode_list_sources': See what systems are connected.
-3. 'codemode_tools_info': Fetch the exact TypeScript interfaces for tools before using them.
-4. 'call_tool_chain': Execute code to get things done.
-
-When writing code for 'call_tool_chain':
-- Tools are available directly as synchronous namespace functions. 
-  Example: \`const issue = github.get_issue({ issue_number: 42 });\`
-- Your code runs as the body of an async function. Use 'return' for the final value.
-- You have access to globals: 'console', 'JSON', 'Math', 'Date', and the optional 'input' object.
-- Console output is captured and returned with the result. Use console.log for debugging.
+IMPORTANT: When a tool requires user approval, explain what you intend to do and why before calling it.
+If the user denies a tool call, acknowledge their decision and suggest alternatives.
 `;
 
 // ----------------------------------------------------------------------
@@ -34,44 +24,71 @@ function getMcpClient(userId: string): MultiSessionClient {
   if (!globalForMcp.mcpClientMap) {
     globalForMcp.mcpClientMap = new Map();
   }
-  
+
   let client = globalForMcp.mcpClientMap.get(userId);
   if (!client) {
     client = new MultiSessionClient(userId);
     globalForMcp.mcpClientMap.set(userId, client);
   }
-  
+
   return client;
 }
 
 // ----------------------------------------------------------------------
-// 3. Agent Initialization
+// 3. HITL (Human-in-the-Loop) Approval Logic
+// ----------------------------------------------------------------------
+/**
+ * Determines if a tool call requires explicit user approval.
+ * For testing purposes, we require approval on `readOnly` tools instead of `destructive` ones.
+ */
+function requiresApproval(tool: any, args: any, router: any): boolean {
+  // Handle meta-tool proxy calls: If the LLM uses mcp_execute_tool, 
+  // we must look up the annotations on the actual target tool.
+  if (tool.name === 'mcp_execute_tool') {
+    const targetToolName = String(args?.toolName ?? "");
+    const targetNamespace = String(args?.serverId ?? "") || undefined;
+
+    if (!targetToolName) return false;
+
+    try {
+      const targetTool = router.getToolSchema(targetToolName, targetNamespace);
+      return (targetTool as any)?.annotations?.readOnlyHint === true;
+    } catch {
+      return false; // Tool not found, let execution fail normally
+    }
+  }
+
+  // Handle direct tool calls (when not using search/meta-tool routing)
+  return (tool.annotations as any)?.readOnlyHint === true;
+}
+
+// ----------------------------------------------------------------------
+// 4. Agent Initialization
 // ----------------------------------------------------------------------
 export async function createMcpAgent(userId: string = process.env.NEXT_PUBLIC_MCP_USER_ID!) {
   const client = getMcpClient(userId);
 
+  // Always call connect to synchronize with the database.
+  // MultiSessionClient safely skips already-connected sessions.
   try {
     await client.connect();
   } catch (error) {
     console.error("[McpAgent] Failed to connect MCP client:", error);
   }
 
-  // Set up Codemode Runtime using MCP clients as sources
-  const runtime = await createCodeModeRuntime({
-    sources: mcpSources(client),
-    limits: {
-      timeoutMs: 30000, // 30 seconds for complex multi-tool workflows
-      maxToolCalls: 50,
-    }
+  // Set up Tool Router and Adapter
+  const router = new ToolRouter(client, { strategy: "search", maxTools: 5 });
+  const adapter = new AIAdapter(client, {
+    toolRouter: router,
+    needsApproval: (tool, args) => requiresApproval(tool, args, router),
   });
 
-  // Create AI SDK tools from the codemode runtime
-  const allTools = await createCodemodeAITools(runtime);
+  const tools = await adapter.getTools();
 
   return new ToolLoopAgent({
     model: createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY })("deepseek-chat"),
     instructions: INSTRUCTIONS,
-    tools: allTools as any,
+    tools: tools as any,
     stopWhen: stepCountIs(20),
   });
 }
@@ -79,4 +96,3 @@ export async function createMcpAgent(userId: string = process.env.NEXT_PUBLIC_MC
 export type McpAgentUIMessage = InferAgentUIMessage<
   Awaited<ReturnType<typeof createMcpAgent>>
 >;
-
