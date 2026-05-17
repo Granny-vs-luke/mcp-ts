@@ -1,5 +1,14 @@
+// Runtime
 export { createCodeModeRuntime, IsolatedVmCodeModeRuntime } from "./runtime/runtime.js";
-export { createCodeModeMcpServer } from "./server/index.js";
+
+// Sources
+export { mcpSource, mcpSources } from "./sources/index.js";
+export type { McpLikeClient, McpLikeProvider } from "./sources/index.js";
+
+// AI SDK adapter
+export { createCodemodeAITools } from "./adapters/ai-sdk.js";
+
+// Types
 export type {
   CodeModeError,
   CodeModeLimits,
@@ -8,5 +17,10 @@ export type {
   CodeModeRunOptions,
   CodeModeRuntime,
   CodeModeRuntimeOptions,
-  CodeModeToolCall
+  CodeModeToolCall,
+  IndexedTool,
+  ToolAnnotations,
+  ToolDefinition,
+  ToolSearchResult,
+  ToolSource,
 } from "./types.js";

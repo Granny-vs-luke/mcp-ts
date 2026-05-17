@@ -1,7 +1,10 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/server/index.ts"],
+  entry: [
+    "src/index.ts",
+    "src/server/index.ts",
+  ],
   format: ["esm"],
   clean: true,
   dts: true,
@@ -10,6 +13,6 @@ export default defineConfig({
   bundle: true,
   minify: false,
   sourcemap: true,
-  external: ["isolated-vm", "@mcp-ts/toolrouter", "@modelcontextprotocol/sdk", "zod"],
+  external: ["isolated-vm", "@modelcontextprotocol/sdk", "zod", "ai"],
   config: false
 });

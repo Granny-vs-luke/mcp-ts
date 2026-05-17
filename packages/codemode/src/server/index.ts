@@ -8,21 +8,71 @@ export interface CodeModeMcpServerOptions extends CodeModeRuntimeOptions {
   version?: string;
 }
 
-export function createCodeModeMcpServer(options: CodeModeMcpServerOptions): McpServer {
-  const runtime = createCodeModeRuntime(options);
+export async function createCodeModeMcpServer(options: CodeModeMcpServerOptions): Promise<McpServer> {
+  const runtime = await createCodeModeRuntime(options);
   const server = new McpServer({
     name: options.name ?? "mcp-ts-codemode",
     version: options.version ?? "0.1.0"
   });
 
   server.registerTool(
+    "codemode_search_tools",
+    {
+      description:
+        "Search connected tool sources by natural language description. Returns tool names, source IDs, and TypeScript interfaces.",
+      inputSchema: {
+        query: z.string().describe("Natural-language description of the task or tools you need."),
+        limit: z.number().optional().describe("Maximum number of results (default: 10).")
+      }
+    },
+    async ({ query, limit }) => {
+      const results = await runtime.searchTools(query, limit);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }]
+      };
+    }
+  );
+
+  server.registerTool(
+    "codemode_list_sources",
+    {
+      description: "List all connected tool sources and indexed tool counts.",
+      inputSchema: {}
+    },
+    async () => {
+      const result = runtime.listSources();
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }]
+      };
+    }
+  );
+
+  server.registerTool(
+    "codemode_tools_info",
+    {
+      description:
+        "Get detailed TypeScript interface definitions for specific tools. Use after search to understand exact input contracts.",
+      inputSchema: {
+        tool_names: z.array(z.string()).describe("Tool names in 'sourceId.toolName' format.")
+      }
+    },
+    async ({ tool_names }) => {
+      const result = runtime.getToolInterfaces(tool_names);
+      return {
+        content: [{ type: "text" as const, text: result }]
+      };
+    }
+  );
+
+  server.registerTool(
     "codemode_run",
     {
       description:
-        "Run sandboxed JavaScript code that can search and call routed MCP tools through controlled helpers.",
+        "Execute sandboxed JavaScript code with direct access to all tools as namespace functions (e.g. github.get_issue(args)). " +
+        "No await needed. Use return for the final value.",
       inputSchema: {
-        code: z.string().describe("Async JavaScript body. Use return to provide the final value."),
-        input: z.any().optional().describe("Serializable input exposed as `input` in the sandbox."),
+        code: z.string().describe("JavaScript code to execute with namespace tool access."),
+        input: z.any().optional().describe("Serializable input exposed as 'input' in the sandbox."),
         timeoutMs: z.number().optional().describe("Optional per-run timeout in milliseconds.")
       }
     },

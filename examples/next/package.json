@@ -12,7 +12,6 @@
     "@ai-sdk/deepseek": "^2.0.29",
     "@ai-sdk/react": "^3.0.170",
     "@mcp-ts/sdk": "file:../..",
-    "@mcp-ts/toolrouter": "file:../../packages/toolrouter",
     "@mcp-ts/codemode": "file:../../packages/codemode",
     "isolated-vm": "^6.1.2",
     "@radix-ui/react-slot": "^1.2.4",
