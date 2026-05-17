@@ -1,6 +1,6 @@
 ---
 title: 'v2.0 Migration Guide'
-description: 'How to migrate your application to mcp-ts v2.0.0'
+description: 'Upgrade your application from mcp-ts v1.x to v2.0, covering the renamed sessions API, useMcp userId changes, and other breaking API updates.'
 ---
 
 v2.0.0 introduces some breaking changes to standardize the API and improve maintainability. This guide will help you upgrade your application from v1.x to v2.x.
