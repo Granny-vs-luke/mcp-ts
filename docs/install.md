@@ -17,7 +17,7 @@ Before installing, ensure you have:
   - **Supabase** — Cloud-native PostgreSQL
   - **SQLite** — Native persistent database
 
-## Install the Package
+## Install the package
 
 Choose your preferred package manager:
 
@@ -25,15 +25,15 @@ Choose your preferred package manager:
 npm install @mcp-ts/sdk
 ```
 
-## Configure Storage Backend
+## Configure storage backend
 
 The library automatically selects a storage backend based on your environment variables. Choose the option that best fits your needs:
 
-### Option 1: Redis (Production)
+### Option 1: Redis (production)
 
 **Recommended for production and serverless deployments.**
 
-#### Local Redis Setup
+#### Local Redis setup
 
 ```bash
 # macOS (Homebrew)
@@ -48,7 +48,7 @@ sudo systemctl start redis
 docker run -d -p 6379:6379 redis:latest
 ```
 
-#### Environment Configuration
+#### Environment configuration
 
 ```bash
 # Explicit selection (optional)
@@ -60,7 +60,7 @@ REDIS_URL=redis://localhost:6379
 
 ---
 
-### Option 2: File System (Development)
+### Option 2: file system (development)
 
 **Perfect for local development with persistent sessions across restarts.**
 
@@ -74,7 +74,7 @@ MCP_TS_STORAGE_FILE=./sessions.json
 
 ---
 
-### Option 3: In-Memory (Testing)
+### Option 3: in-memory (testing)
 
 **Fast ephemeral storage, ideal for testing. Sessions are lost on restart.**
 
@@ -87,7 +87,7 @@ This is the **default** if no storage configuration is provided.
 
 ---
 
-## Storage Selection Logic
+## Storage selection logic
 
 The library uses the following priority:
 
@@ -100,7 +100,7 @@ The library uses the following priority:
 
 See [Storage Overview](/storage-backends/overview) for more details.
 
-## Verify Installation
+## Verify installation
 
 Test your setup with a simple script:
 
@@ -132,7 +132,7 @@ async function test() {
 test();
 ```
 
-## TypeScript Configuration
+## TypeScript configuration
 
 If using TypeScript, ensure your `tsconfig.json` includes:
 
@@ -146,7 +146,7 @@ If using TypeScript, ensure your `tsconfig.json` includes:
 }
 ```
 
-## Next Steps
+## Next steps
 
 - [Storage Overvew](/storage-backends/overview) - Detailed backend comparison
 - [Next.js Integration](/nextjs) - Set up with Next.js
