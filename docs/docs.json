@@ -80,7 +80,8 @@
                 "expanded": false,
                 "pages": [
                   "core-concepts/tool-router",
-                  "core-concepts/meta-tools"
+                  "core-concepts/meta-tools",
+                  "core-concepts/code-mode"
                 ]
               },
               {
@@ -168,6 +169,7 @@
           {
             "group": "Changelog",
             "pages": [
+              "changelog/2026-05-17",
               "changelog/2026-05-12",
               "changelog/2026-05-05",
               "changelog/2026-05-02",

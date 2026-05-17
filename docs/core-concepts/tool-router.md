@@ -10,6 +10,10 @@ When you connect to multiple MCP servers, the total number of tools can easily e
 
 The `ToolRouter` sits between your AI adapter and your MCP clients, allowing you to control exactly how and when tools are exposed to the model.
 
+<Note>
+  Looking for a standalone router that works outside the `@mcp-ts/sdk` server stack? See [`@mcp-ts/tool-router`](#standalone-package), a zero-dependency package that wraps any tool source — including non-MCP sources — with the same search-and-call flow.
+</Note>
+
 ## Strategies
 
 The `ToolRouter` supports three primary strategies for tool filtering:
@@ -71,6 +75,63 @@ export async function createMcpAgent(userId: string = "user-123") {
 | `groups` | `Record<string, string[]>` | `null` | Custom tool group definitions. |
 | `activeGroups`| `string[]` | `[]` | Groups to expose when using `groups` strategy. |
 | `compactSchemas`| `boolean` | `false` | Strips inputSchemas from all tools to save space. |
+
+---
+
+## Standalone package
+
+If you are not using `@mcp-ts/sdk` (for example, you are building a custom agent on top of the Vercel AI SDK or wrapping non-MCP HTTP APIs as tools), use the standalone [`@mcp-ts/tool-router`](https://www.npmjs.com/package/@mcp-ts/tool-router) package. It ships the same router pattern with zero coupling to the rest of the SDK.
+
+```bash npm2yarn
+npm install @mcp-ts/tool-router
+```
+
+```typescript
+import { createToolRouter, createAISDKTools, mcpSources } from "@mcp-ts/tool-router";
+
+const router = await createToolRouter({
+  sources: mcpSources(client),
+  policy: {
+    allowTools: ["github.*", "linear.*"],
+    denyDestructiveTools: true,
+  },
+});
+
+const tools = await createAISDKTools(router);
+```
+
+The router exposes four meta-tools to the LLM:
+
+- `toolrouter_search_tools` — search the tool index without fetching schemas.
+- `toolrouter_list_sources` — list registered sources and tool counts.
+- `toolrouter_get_tool_schema` — fetch the input schema for a specific tool.
+- `toolrouter_call_tool` — invoke a tool on a registered source.
+
+### Policy gates
+
+Restrict which tools the model can call:
+
+| Field | Type | Description |
+| :-- | :-- | :-- |
+| `allowTools` | `string[]` | Glob patterns of `sourceId.toolName` allowed to run. |
+| `denyTools` | `string[]` | Glob patterns blocked even if matched by `allowTools`. |
+| `denyDestructiveTools` | `boolean` | Block any tool with `annotations.destructiveHint === true`. |
+| `approveToolCall` | `(call) => boolean \| Promise<boolean>` | Custom per-call approval, useful for human-in-the-loop. |
+
+```typescript
+const router = await createToolRouter({
+  sources,
+  policy: {
+    allowTools: ["github.*"],
+    denyTools: ["github.delete_*"],
+    approveToolCall: async ({ tool, args }) => {
+      return tool.annotations?.destructiveHint !== true;
+    },
+  },
+});
+```
+
+When you need to chain several tool calls per turn, layer [Code Mode](/core-concepts/code-mode) on top of the same sources.
 
 ---
 
