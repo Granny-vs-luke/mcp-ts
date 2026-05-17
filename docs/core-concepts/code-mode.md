@@ -5,9 +5,9 @@ description: "Run LLM-generated JavaScript in a V8 sandbox to orchestrate multi-
 icon: "code"
 ---
 
-**Code Mode** is a sandboxed execution engine that lets an agent run JavaScript programs in a V8 isolate to orchestrate multiple MCP tool calls, loops, and data transformations in a single turn.
+**Code Mode** is a sandboxed execution engine for MCP agents. It lets the agent run JavaScript in a V8 isolate to orchestrate multiple tool calls, loops, and data transformations in a single turn.
 
-Instead of forcing the LLM to chain tool calls one at a time, you give it a sandbox where it can write and execute a short program that calls your tools as if they were ordinary async functions.
+Instead of chaining tool calls one at a time, the LLM writes a short program that calls your tools as if they were ordinary async functions.
 
 It ships as a standalone package, `@mcp-ts/code-mode`, with zero hard dependencies on the rest of the SDK.
 
