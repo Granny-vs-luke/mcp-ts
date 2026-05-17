@@ -49,6 +49,7 @@ export interface ToolRouterOptions {
   sources: ToolSource[];
   policy?: ToolRouterPolicy;
   maxSearchResults?: number;
+  excludeMetaTools?: string[];
 }
 
 export interface ToolSearchRequest {

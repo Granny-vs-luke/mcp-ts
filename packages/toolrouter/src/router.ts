@@ -54,7 +54,12 @@ export class ToolRouter {
   }
 
   getMetaTools(): ToolRouterMetaTool[] {
-    return createMetaTools();
+    const tools = createMetaTools();
+    if (!this.options.excludeMetaTools?.length) {
+      return tools;
+    }
+    const excluded = new Set(this.options.excludeMetaTools);
+    return tools.filter((tool) => !excluded.has(tool.name));
   }
 
   async searchTools(request: ToolSearchRequest): Promise<ToolSearchResult[]> {

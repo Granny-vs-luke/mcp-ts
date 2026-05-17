@@ -1,7 +1,7 @@
 import { ToolLoopAgent, InferAgentUIMessage, stepCountIs, jsonSchema } from "ai";
 import { MultiSessionClient } from "@mcp-ts/sdk/server";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import { createToolRouter, mcpSources, createAISDKTools } from "@mcp-ts/toolrouter";
+import { createToolRouter, mcpSources, createAISDKTools, TOOLROUTER_CALL_TOOL } from "@mcp-ts/toolrouter";
 import { createCodeModeRuntime } from "@mcp-ts/codemode";
 import { z } from "zod";
 
@@ -25,18 +25,20 @@ You are an expert assistant that helps users perform complex tasks using MCP too
 
 ### 3. Code Execution Guidelines
 **When writing code for 'codemode_run':**
+- **Atomic Workflows**: Aim to complete the entire requested multi-service workflow in a SINGLE 'codemode_run' call. Do not split search, transformation, and output into separate chat turns unless absolutely necessary for user feedback.
 - Your code runs as the body of an async function. Use 'return' for the final value.
-- Use 'await callTool(sourceId, toolName, args)' to execute tools.
+- Use 'await callTool(sourceId, toolName, args)' to execute tools. This is your ONLY way to execute tools.
+- **Data Chaining**: Capture the result of one 'callTool' and pass it directly to the next.
 - Use 'await searchTools(query)' to find tools dynamically from within code.
 - You have access to globals: 'console', 'JSON', 'Math', 'Date', and the optional 'input' object.
 - Console output is captured and returned with the result.
 - Handle errors with try/catch blocks for robustness.
-- Chain tool calls by passing outputs from one 'callTool' as inputs to the next.
 
 ### 4. Best Practices
+- **Minimize Turns**: One 'codemode_run' call should replace multiple 'toolrouter_call_tool' calls.
 - **Search -> Inspect -> Execute**: Never call a tool without knowing its source and schema.
-- **Source Specificity**: Always provide 'sourceId' to 'toolrouter_call_tool' or 'callTool' to avoid ambiguity.
-- **Transformation**: Use 'codemode_run' when you need to loop, filter, or combine data from multiple tools.
+- **Source Specificity**: Always provide 'sourceId' to 'callTool' to avoid ambiguity.
+- **Transformation**: Use standard JS (map, filter, reduce) inside the script to clean data before passing it to the next service.
 - **HITL Approval**: Explain your intent before calling tools that require user approval.
 
 Remember: Thorough discovery and schema inspection lead to reliable execution.
@@ -103,7 +105,8 @@ export async function createMcpAgent(userId: string = process.env.NEXT_PUBLIC_MC
   // Set up Tool Router from @mcp-ts/toolrouter
   const router = await createToolRouter({
     sources: mcpSources(client),
-    maxSearchResults: 8
+    maxSearchResults: 8,
+    excludeMetaTools: [TOOLROUTER_CALL_TOOL]
   });
 
   // Set up Codemode Runtime
