@@ -1,7 +1,7 @@
 {
-  "name": "@mcp-ts/toolrouter",
+  "name": "@mcp-ts/tool-router",
   "version": "0.1.0",
-  "description": "Protocol-neutral MCP tool discovery, schema lookup, and proxy execution for agent context optimization.",
+  "description": "ToolRouter lets agents discover tools, load schemas on-demand, and route tool calls across multiple MCP servers.",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",

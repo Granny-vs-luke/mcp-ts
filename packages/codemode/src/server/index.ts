@@ -65,13 +65,13 @@ export async function createCodeModeMcpServer(options: CodeModeMcpServerOptions)
   );
 
   server.registerTool(
-    "codemode_run",
+    "call_tool_chain",
     {
       description:
-        "Execute sandboxed JavaScript code with direct access to all tools as namespace functions (e.g. github.get_issue(args)). " +
+        "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool()). " +
         "No await needed. Use return for the final value.",
       inputSchema: {
-        code: z.string().describe("JavaScript code to execute with namespace tool access."),
+        code: z.string().describe("TypeScript code to execute with access to all registered tools."),
         input: z.any().optional().describe("Serializable input exposed as 'input' in the sandbox."),
         timeoutMs: z.number().optional().describe("Optional per-run timeout in milliseconds.")
       }

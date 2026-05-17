@@ -1,44 +1,39 @@
-# @mcp-ts/toolrouter
+# @mcp-ts/tool-router
 
-Protocol-neutral tool discovery and proxy execution for agent applications.
+Dynamically search, fetch schemas, and route tool calls across multiple MCP servers to optimize LLM context.
 
-`@mcp-ts/toolrouter` lets an agent work with many MCP servers without putting every tool schema into the model context. Instead, the model receives a small set of meta-tools, searches for relevant tools when needed, fetches only the schemas it needs, and calls the target tool through the router.
+`@mcp-ts/tool-router` lets an agent work with multiple MCP servers without loading every tool definition into the model context. Instead, the model receives a small set of meta-tools, searches for relevant tools, fetches schemas on demand, and calls tools through the router.
+
+---
 
 ## Why Use It
 
-Large MCP setups can expose dozens or hundreds of tools. Sending all of those definitions to the model is expensive, noisy, and often unnecessary. ToolRouter keeps the model context small while preserving access to the full tool catalog.
+When you have many tools, sending all schemas to the LLM is expensive and can exceed context limits. `ToolRouter` acts as an intermediary, keeping the active context small while preserving access to the full catalog.
 
-Use it when you want to:
+Use it to:
+- Index and search tools across multiple MCP servers or custom sources.
+- Expose a small set of meta-tools for dynamic schema loading.
+- Control tool calls with allow/deny rules and approval gates.
+- Integrate with Vercel AI SDK.
 
-- Search tools across multiple MCP servers or custom tool providers.
-- Expose only a few meta-tools to the model.
-- Fetch full schemas only after a tool is selected.
-- Proxy execution to the correct MCP server.
-- Add allow/deny and destructive-tool policy gates.
-- Integrate with AI SDK without depending on `@mcp-ts/sdk`.
+---
 
 ## Installation
 
 ```bash
-npm install @mcp-ts/toolrouter
+npm install @mcp-ts/tool-router
 ```
 
-For local development inside this repository:
-
-```bash
-cd packages/toolrouter
-npm install
-npm run build
-```
+---
 
 ## Core Concepts
 
 ### ToolSource
 
-ToolRouter is intentionally small and protocol-neutral. Anything that can list and call tools can be adapted into a `ToolSource`.
+Anything that can list and call tools can be adapted into a `ToolSource`.
 
-```ts
-import { createToolSource } from "@mcp-ts/toolrouter";
+```typescript
+import { createToolSource } from "@mcp-ts/tool-router";
 
 const github = createToolSource({
   id: "github",
@@ -67,59 +62,55 @@ const github = createToolSource({
 
 ### Meta-Tools
 
-The router exposes four meta-tools:
+The router exposes four meta-tools to LLMs:
 
-- `toolrouter_search_tools` - search the indexed catalog without returning full schemas.
-- `toolrouter_list_sources` - list connected sources and tool counts.
-- `toolrouter_get_tool_schema` - fetch the full schema for one selected tool.
-- `toolrouter_call_tool` - proxy a call to the correct source.
+- `toolrouter_search_tools`: Search the tool index without fetching full schemas.
+- `toolrouter_list_sources`: List registered sources and tool counts.
+- `toolrouter_get_tool_schema`: Fetch the input schema for a specific tool.
+- `toolrouter_call_tool`: Invoke a tool on a registered source.
 
-The intended model flow is:
-
-1. Search for candidate tools.
-2. Fetch the schema for the selected tool.
-3. Call the selected tool through the proxy.
+---
 
 ## Basic Usage
 
-```ts
-import { createToolRouter } from "@mcp-ts/toolrouter";
+```typescript
+import { createToolRouter } from "@mcp-ts/tool-router";
 
 const router = await createToolRouter({
-  sources: [github, linear, slack],
-  maxSearchResults: 8
+  sources: [github, linear, slack]
 });
 
+// Search tools
 const results = await router.searchTools({
-  query: "github open pull requests",
-  limit: 5
+  query: "github open pull requests"
 });
 
+// Get tool input schema
 const schema = router.getToolSchema({
   sourceId: "github",
   toolName: "list_pull_requests"
 });
 
+// Invoke tool
 const pullRequests = await router.callTool({
   sourceId: "github",
   toolName: "list_pull_requests",
   args: {
     owner: "zonlabs",
-    repo: "mcp-ts",
-    state: "open"
+    repo: "mcp-ts"
   }
 });
 ```
 
-Search results intentionally omit `inputSchema`. Fetch schemas only for tools the model actually plans to call.
+---
 
 ## AI SDK Integration
 
-Use `createAISDKTools` to expose only ToolRouter meta-tools to AI SDK.
+Use `createAISDKTools` to expose the router's meta-tools to the Vercel AI SDK:
 
-```ts
+```typescript
 import { generateText } from "ai";
-import { createToolRouter, createAISDKTools } from "@mcp-ts/toolrouter";
+import { createToolRouter, createAISDKTools } from "@mcp-ts/tool-router";
 
 const router = await createToolRouter({
   sources: [github, slack]
@@ -130,18 +121,20 @@ const tools = await createAISDKTools(router);
 const result = await generateText({
   model,
   tools,
-  prompt: "Find open GitHub PRs about authentication and summarize them."
+  prompt: "Find open GitHub PRs about authentication."
 });
 ```
 
-The model receives only the meta-tools, not the full MCP tool catalog.
+The model only sees the meta-tools rather than the entire tool catalog at start.
+
+---
 
 ## MCP Client Adapters
 
-If a client has `listTools()` and `callTool()`, wrap it with `mcpSource`.
+Wrap any compatible MCP client with `mcpSource`:
 
-```ts
-import { createToolRouter, mcpSource, mcpSources } from "@mcp-ts/toolrouter";
+```typescript
+import { createToolRouter, mcpSource, mcpSources } from "@mcp-ts/tool-router";
 
 const router = await createToolRouter({
   sources: [
@@ -151,21 +144,21 @@ const router = await createToolRouter({
 });
 ```
 
-For providers that expose multiple clients:
+If you have a client provider that manages multiple active clients:
 
-```ts
+```typescript
 const router = await createToolRouter({
   sources: mcpSources(multiSessionClient)
 });
 ```
 
-These helpers are structural. They do not require `@mcp-ts/sdk`; they also work with compatible custom MCP clients.
+---
 
 ## Policy Gates
 
-Use policy options to restrict what the router can execute.
+Restrict tool execution with policies:
 
-```ts
+```typescript
 const router = await createToolRouter({
   sources,
   policy: {
@@ -173,71 +166,26 @@ const router = await createToolRouter({
     denyTools: ["github.delete_*"],
     denyDestructiveTools: true,
     approveToolCall: async ({ tool, args }) => {
+      // Custom approval logic
       return tool.annotations?.destructiveHint !== true;
     }
   }
 });
 ```
 
-Tool patterns use `sourceId.toolName`, for example `github.list_pull_requests`.
-
-## Direct Meta-Tool Execution
-
-Frameworks can call `executeMetaTool` directly when building adapters.
-
-```ts
-const response = await router.executeMetaTool("toolrouter_search_tools", {
-  query: "slack send message"
-});
-
-if (!response.isError) {
-  console.log(response.structuredContent);
-}
-```
-
-Responses follow MCP-style content:
-
-```ts
-{
-  content: [{ type: "text", text: "..." }],
-  isError: false,
-  structuredContent: ...
-}
-```
+---
 
 ## API Reference
 
 Main exports:
+- `createToolRouter(options)`: Create and initialize a `ToolRouter`.
+- `createToolSource(source)`: Helper to type-check custom tool sources.
+- `createAISDKTools(router)`: Expose meta-tools as Vercel AI SDK tools.
+- `mcpSource(id, client, name?)`: Wrap an MCP-like client as a `ToolSource`.
+- `mcpSources(provider)`: Convert multiple client instances to `ToolSource[]`.
 
-- `createToolRouter(options)` - creates and initializes a router.
-- `ToolRouter` - router class with `searchTools`, `getToolSchema`, `callTool`, `getMetaTools`, `executeMetaTool`, and `refresh`.
-- `createToolSource(source)` - identity helper for typed tool sources.
-- `createAISDKTools(router)` - converts router meta-tools into AI SDK tools.
-- `mcpSource(id, client, name?)` - adapts a single MCP-like client.
-- `mcpSources(provider)` - adapts a provider with `getClients()`.
+---
 
-Important types:
+## License
 
-- `ToolSource`
-- `ToolDefinition`
-- `ToolSearchResult`
-- `IndexedTool`
-- `ToolRouterPolicy`
-- `ToolRouterMetaTool`
-
-## Development
-
-```bash
-cd packages/toolrouter
-npm run build
-npm run type-check
-npm test
-```
-
-The tests cover schema-less search, schema lookup, proxy execution, meta-tool execution, and destructive-tool policy enforcement.
-
-## Relationship To Codemode
-
-`@mcp-ts/codemode` builds on this package. ToolRouter handles discovery, schema loading, and tool execution; Codemode adds sandboxed multi-step JavaScript execution on top.
-
-Use ToolRouter alone when you want the model to call tools directly through meta-tools. Add Codemode when you want the model to write a small program that performs multiple tool calls, loops, transforms data, or combines results inside a controlled runtime.
+MIT License.

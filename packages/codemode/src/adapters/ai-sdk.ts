@@ -79,9 +79,9 @@ export async function createCodemodeAITools(runtime: CodeModeRuntime): Promise<A
       },
     },
 
-    codemode_run: {
+    call_tool_chain: {
       description:
-        "Execute sandboxed JavaScript code with direct access to all connected tools as namespace functions (e.g. github.get_issue({...}), exa.web_search({...})). " +
+        "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool()). " +
         "Tool calls are synchronous from the sandbox — no 'await' needed (but 'await' also works). " +
         "Use 'return' to provide the final value. Console output is captured. " +
         "Also available: callTool(sourceId, toolName, args), searchTools(query), __interfaces, __getToolInterface(name).",
@@ -91,7 +91,7 @@ export async function createCodemodeAITools(runtime: CodeModeRuntime): Promise<A
           code: {
             type: "string",
             description:
-              "JavaScript code to execute. Your code runs as an async function body. " +
+              "TypeScript code to execute with access to all registered tools. Your code runs as an async function body. " +
               "Call tools directly: source.tool(args). Use return for the final value.",
           },
           input: {
