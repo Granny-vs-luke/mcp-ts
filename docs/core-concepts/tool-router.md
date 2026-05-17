@@ -78,9 +78,9 @@ export async function createMcpAgent(userId: string = "user-123") {
 
 ---
 
-## Standalone package
+## Standalone Package
 
-If you are not using `@mcp-ts/sdk` (for example, you are building a custom agent on top of the Vercel AI SDK or wrapping non-MCP HTTP APIs as tools), use the standalone [`@mcp-ts/tool-router`](https://www.npmjs.com/package/@mcp-ts/tool-router) package. It ships the same router pattern with zero coupling to the rest of the SDK.
+Use the standalone [`@mcp-ts/tool-router`](https://www.npmjs.com/package/@mcp-ts/tool-router) package when you are not using `@mcp-ts/sdk` — for example, when you build a custom agent on the Vercel AI SDK or wrap non-MCP HTTP APIs as tools. It ships the same router pattern with zero coupling to the rest of the SDK.
 
 ```bash npm2yarn
 npm install @mcp-ts/tool-router
@@ -107,7 +107,7 @@ The router exposes four meta-tools to the LLM:
 - `toolrouter_get_tool_schema` — fetch the input schema for a specific tool.
 - `toolrouter_call_tool` — invoke a tool on a registered source.
 
-### Policy gates
+### Policy Gates
 
 Restrict which tools the model can call:
 

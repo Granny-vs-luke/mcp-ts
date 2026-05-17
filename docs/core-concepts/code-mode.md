@@ -1,13 +1,13 @@
 ---
 title: "Code Mode"
 sidebarTitle: "Overview"
-description: "Run agent-generated JavaScript in a V8 sandbox with @mcp-ts/codemode to orchestrate multi-step MCP tool workflows without exposing every tool schema to the LLM."
+description: "Run agent-generated JavaScript in a V8 sandbox with @mcp-ts/codemode to chain multiple MCP tool calls without exposing every tool schema to the LLM."
 icon: "code"
 ---
 
 **Code Mode** lets an agent write and execute JavaScript inside a sandboxed V8 isolate to orchestrate multiple MCP tool calls, loops, and data transformations in a single turn.
 
-Instead of asking the LLM to chain tool calls one at a time, you give it a tiny sandbox where it can write a short program that calls tools directly as namespaced functions — for example, `github.list_pull_requests({ owner, repo })`. The runtime executes the script in isolation, captures logs and tool calls, and returns the final value.
+Instead of asking the LLM to chain tool calls one at a time, you give it a tiny sandbox. The model writes a short program that calls tools directly as namespaced functions — for example, `github.list_pull_requests({ owner, repo })`. The runtime executes the script in isolation, captures logs and tool calls, and returns the final value.
 
 Code Mode is published as the standalone package [`@mcp-ts/codemode`](https://www.npmjs.com/package/@mcp-ts/codemode).
 
