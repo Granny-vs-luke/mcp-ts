@@ -1,0 +1,57 @@
+{
+  "name": "@mcp-ts/codemode",
+  "version": "0.1.0",
+  "description": "Standalone code-mode execution for MCP tools — sandboxed JS with namespace bridging, TypeScript interfaces, and tool discovery.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "optionalDependencies": {
+    "isolated-vm": "^6.1.2"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.23.0",
+    "ai": "^6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.10",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

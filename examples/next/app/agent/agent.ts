@@ -24,13 +24,13 @@ function getMcpClient(userId: string): MultiSessionClient {
   if (!globalForMcp.mcpClientMap) {
     globalForMcp.mcpClientMap = new Map();
   }
-  
+
   let client = globalForMcp.mcpClientMap.get(userId);
   if (!client) {
     client = new MultiSessionClient(userId);
     globalForMcp.mcpClientMap.set(userId, client);
   }
-  
+
   return client;
 }
 
@@ -47,9 +47,9 @@ function requiresApproval(tool: any, args: any, router: any): boolean {
   if (tool.name === 'mcp_execute_tool') {
     const targetToolName = String(args?.toolName ?? "");
     const targetNamespace = String(args?.serverId ?? "") || undefined;
-    
+
     if (!targetToolName) return false;
-    
+
     try {
       const targetTool = router.getToolSchema(targetToolName, targetNamespace);
       return (targetTool as any)?.annotations?.readOnlyHint === true;

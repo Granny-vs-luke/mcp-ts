@@ -12,6 +12,8 @@
     "@ai-sdk/deepseek": "^2.0.29",
     "@ai-sdk/react": "^3.0.170",
     "@mcp-ts/sdk": "file:../..",
+    "@mcp-ts/codemode": "file:../../packages/codemode",
+    "isolated-vm": "^6.1.2",
     "@radix-ui/react-slot": "^1.2.4",
     "@streamdown/cjk": "^1.0.3",
     "@streamdown/code": "^1.1.1",
