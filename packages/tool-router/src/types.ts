@@ -52,7 +52,9 @@ export interface ToolSchemaResult {
   inputSchema?: unknown;
 }
 
-export interface PinnedToolResult extends ToolSchemaResult {}
+export interface PinnedToolResult extends ToolSchemaResult {
+  annotations?: ToolAnnotations;
+}
 
 export interface VisibleTools {
   pinned: PinnedToolResult[];

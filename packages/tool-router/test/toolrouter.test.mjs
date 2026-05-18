@@ -377,3 +377,72 @@ test("unknown pinned tool names are silently omitted", async () => {
   assert.equal(pinned.length, 0);
 });
 
+test("policy-denied tools are excluded from search results", async () => {
+  const source = fakeSource("github", [
+    { name: "delete_repo", description: "Delete a repository" },
+    { name: "get_issue", description: "Get an issue" }
+  ]);
+
+  const router = await createToolRouter({
+    sources: [source.source],
+    policy: { denyTools: ["github.delete_repo"] }
+  });
+
+  const results = await router.searchTools({ query: "issue" });
+  assert.equal(results.find((r) => r.toolName === "delete_repo"), undefined);
+  assert.equal(results.find((r) => r.toolName === "get_issue")?.toolName, "get_issue");
+});
+
+test("policy-denied pinned tools are excluded from visible tools", async () => {
+  const source = fakeSource("github", [
+    { name: "delete_repo", description: "Delete a repository" },
+    { name: "get_issue", description: "Get an issue" }
+  ]);
+
+  const router = await createToolRouter({
+    sources: [source.source],
+    pinnedTools: ["delete_repo", "get_issue"],
+    policy: { denyTools: ["github.delete_repo"] }
+  });
+
+  const { pinned } = router.getVisibleTools();
+  assert.deepEqual(pinned.map((tool) => tool.toolName), ["get_issue"]);
+});
+
+test("listSources uses normalized source ids without duplicates", async () => {
+  const source = fakeSource("GitHub Server", [
+    { name: "get_issue", description: "Get issue" }
+  ]);
+
+  const router = await createToolRouter({ sources: [source.source] });
+  assert.deepEqual(router.listSources(), [
+    {
+      sourceId: "github_server",
+      sourceName: "GitHub Server",
+      toolCount: 1
+    }
+  ]);
+});
+
+test("pinned ai-sdk tools preserve annotations", async () => {
+  const source = fakeSource("github", [
+    {
+      name: "delete_repo",
+      description: "Delete a repository",
+      annotations: { destructiveHint: true, title: "Delete Repository" }
+    }
+  ]);
+
+  const { createAISDKTools } = await import("../dist/index.js");
+  const router = await createToolRouter({
+    sources: [source.source],
+    pinnedTools: ["delete_repo"]
+  });
+
+  const tools = await createAISDKTools(router);
+  assert.deepEqual(tools.delete_repo.annotations, {
+    destructiveHint: true,
+    title: "Delete Repository"
+  });
+});
+

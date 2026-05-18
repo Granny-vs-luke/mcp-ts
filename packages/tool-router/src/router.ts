@@ -50,10 +50,6 @@ export class ToolRouter {
       const duplicates = metaNames.filter((item, index) => metaNames.indexOf(item) !== index);
       throw new Error(`Invalid meta-tool configuration: duplicate names detected (${[...new Set(duplicates)].join(", ")}).`);
     }
-
-    for (const source of options.sources) {
-      this.sources.set(source.id, source);
-    }
   }
 
   async initialize(): Promise<void> {
@@ -81,6 +77,7 @@ export class ToolRouter {
     const next: IndexedTool[] = [];
     const seenSourceIds = new Set<string>();
     const activeMetaToolNames = new Set(this.getMetaTools().map((t) => t.name));
+    const nextSources = new Map<string, ToolSource>();
 
     try {
       for (const source of this.options.sources) {
@@ -89,7 +86,7 @@ export class ToolRouter {
           throw new Error(`Duplicate tool source id "${sourceId}".`);
         }
         seenSourceIds.add(sourceId);
-        this.sources.set(sourceId, { ...source, id: sourceId });
+        nextSources.set(sourceId, { ...source, id: sourceId });
 
         const listed = await source.listTools();
         for (const tool of listed.tools) {
@@ -99,6 +96,7 @@ export class ToolRouter {
           next.push(this.toIndexedTool(source, sourceId, tool));
         }
       }
+      this.sources = nextSources;
       this.indexedTools = next;
       this.initialized = true;
     } finally {
@@ -136,7 +134,8 @@ export class ToolRouter {
   async searchTools(request: ToolSearchRequest): Promise<ToolSearchResult[]> {
     await this.ensureInitialized();
     const limit = Math.min(request.limit ?? this.maxSearchResults, 100);
-    return this.searchStrategy.search(this.indexedTools, {
+    const visibleTools = this.indexedTools.filter((tool) => this.policyEnforcer.isToolVisible(tool));
+    return this.searchStrategy.search(visibleTools, {
       ...request,
       _pinnedTools: this.pinnedToolNames
     }, limit);
@@ -145,14 +144,17 @@ export class ToolRouter {
   /** Returns pinned tools resolved from the current index. Unknown names are silently omitted. */
   getPinnedTools(): PinnedToolResult[] {
     return [...this.pinnedToolNames].flatMap((name) => {
-      const tool = this.indexedTools.find((t) => t.toolName === name);
+      const tool = this.indexedTools.find(
+        (t) => t.toolName === name && this.policyEnforcer.isToolVisible(t)
+      );
       return tool
         ? [{
             sourceId: tool.sourceId,
             sourceName: tool.sourceName,
             toolName: tool.toolName,
             description: tool.description,
-            inputSchema: tool.inputSchema
+            inputSchema: tool.inputSchema,
+            annotations: tool.annotations
           }]
         : [];
     });

@@ -12,17 +12,32 @@ export function toolAddress(sourceId: string, toolName: string): string {
 export class PolicyEnforcer {
   constructor(private policy?: ToolRouterPolicy) {}
 
-  async assertToolAllowed(request: ToolCallRequest, tool: IndexedTool): Promise<void> {
+  isToolVisible(tool: IndexedTool): boolean {
     const address = toolAddress(tool.sourceId, tool.toolName);
 
     if (this.policy?.allowTools?.length) {
       const allowed = this.policy.allowTools.some((pattern) => wildcardMatch(pattern, address));
       if (!allowed) {
-        throw new Error(`Policy denied tool call to "${address}": not in allowTools.`);
+        return false;
       }
     }
 
     if (this.policy?.denyTools?.some((pattern) => wildcardMatch(pattern, address))) {
+      return false;
+    }
+
+    return true;
+  }
+
+  async assertToolAllowed(request: ToolCallRequest, tool: IndexedTool): Promise<void> {
+    const address = toolAddress(tool.sourceId, tool.toolName);
+    if (!this.isToolVisible(tool)) {
+      const deniedByAllowList = this.policy?.allowTools?.length
+        ? !this.policy.allowTools.some((pattern) => wildcardMatch(pattern, address))
+        : false;
+      if (deniedByAllowList) {
+        throw new Error(`Policy denied tool call to "${address}": not in allowTools.`);
+      }
       throw new Error(`Policy denied tool call to "${address}": matched denyTools.`);
     }
 
