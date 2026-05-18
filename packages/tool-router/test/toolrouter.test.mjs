@@ -273,6 +273,36 @@ test("refresh invalidates ai-sdk adapter tool cache", async () => {
   });
 });
 
+test("mcpServer supports object-style callTool runtimes", async () => {
+  const client = {
+    request(payload) {
+      return payload;
+    },
+    async listTools() {
+      return {
+        tools: [{ name: "web_search_exa", description: "Search the web" }]
+      };
+    },
+    async callTool({ name, args }) {
+      return this.request({ name, args });
+    }
+  };
+
+  const { ToolRouter, mcpServer } = await import("../dist/index.js");
+  const router = new ToolRouter({
+    servers: [mcpServer("exa", client)],
+    pinnedTools: ["web_search_exa"]
+  });
+
+  const tools = await import("../dist/index.js").then((mod) => mod.createAISDKTools(router));
+  const result = await tools.web_search_exa.execute({ query: "richest billionaire in 2026" });
+
+  assert.deepEqual(result, {
+    name: "web_search_exa",
+    args: { query: "richest billionaire in 2026" }
+  });
+});
+
 test("rejects duplicate meta-tool names in configuration", async () => {
   const { ToolRouter } = await import("../dist/index.js");
   assert.throws(

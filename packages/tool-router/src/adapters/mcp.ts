@@ -2,7 +2,13 @@ import type { ToolDefinition, ToolServer } from "../types.js";
 
 export interface ToolClient {
   listTools(): Promise<{ tools: ToolDefinition[] }>;
-  callTool?(name: string, args: Record<string, unknown>): Promise<unknown>;
+  callTool?:
+    | ((name: string, args: Record<string, unknown>) => Promise<unknown>)
+    | ((request: {
+        name: string;
+        args: Record<string, unknown>;
+        options?: unknown;
+      }) => Promise<unknown>);
   tools?(): Promise<Record<string, unknown>>;
   getServerId?(): string | undefined;
   getServerName?(): string | undefined;
@@ -21,7 +27,7 @@ export function mcpServer(id: string, client: ToolClient, name?: string): ToolSe
     listTools: () => client.listTools(),
     callTool: async (toolName, args) => {
       if (client.callTool) {
-        return client.callTool(toolName, args);
+        return callClientTool(client, client.callTool, toolName, args);
       }
 
       if (!client.tools) {
@@ -42,6 +48,30 @@ export function mcpServer(id: string, client: ToolClient, name?: string): ToolSe
       cachedToolsPromise = null;
     }
   };
+}
+
+function callClientTool(
+  client: ToolClient,
+  callTool: NonNullable<ToolClient["callTool"]>,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  if (callTool.length >= 2) {
+    return (callTool as (this: ToolClient, name: string, args: Record<string, unknown>) => Promise<unknown>).call(
+      client,
+      name,
+      args
+    );
+  }
+
+  return (callTool as (this: ToolClient, request: {
+    name: string;
+    args: Record<string, unknown>;
+    options?: unknown;
+  }) => Promise<unknown>).call(client, {
+    name,
+    args
+  });
 }
 
 export function mcpServers(provider: ToolClientProvider): ToolServer[] {
