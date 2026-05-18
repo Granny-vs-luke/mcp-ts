@@ -90,9 +90,9 @@ const router = new ToolRouter(client, {
 
 ---
 
-## Standalone package: `@mcp-ts/tool-router`
+## Standalone Package: `@mcp-ts/tool-router`
 
-The Tool Router also ships as a zero-dependency standalone package you can drop into any agent or framework — even when you are not using the rest of `mcp-ts`. It exposes the same meta-tool pattern (`search_tools`, `list_sources`, `get_tool_schema`, `call_tool`) over a generic `ToolSource` abstraction, so you can route across multiple MCP servers, custom tool sources, or a mix of both.
+The Tool Router also ships as a zero-dependency standalone package you can drop into any agent or framework — even when you are not using the rest of `mcp-ts`. It exposes the same meta-tool pattern (`search_tools`, `list_sources`, `get_tool_schema`, `call_tool`) over a generic `ToolSource` abstraction. You can route across multiple MCP servers, custom tool sources, or a mix of both.
 
 Use the standalone package when:
 
@@ -149,9 +149,9 @@ const agent = new ToolLoopAgent({
 });
 ```
 
-### Customizing meta-tool names
+### Customizing Meta-Tool Names
 
-By default the standalone router exposes meta-tools as `search_tools`, `list_sources`, `get_tool_schema`, and `call_tool`. If those names collide with your own tools — or you prefer a different convention — pass `metaToolNames` to override any subset:
+By default, the standalone router exposes meta-tools as `search_tools`, `list_sources`, `get_tool_schema`, and `call_tool`. If those names collide with your own tools — or you prefer a different convention — pass `metaToolNames` to override any subset:
 
 ```typescript
 const router = await createToolRouter({

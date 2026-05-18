@@ -94,7 +94,7 @@ console.log(listed.totalCount, listed.tools);
 
 ---
 
-## Standalone package API (`@mcp-ts/tool-router`)
+## Standalone Package API (`@mcp-ts/tool-router`)
 
 The standalone [`@mcp-ts/tool-router`](/core-concepts/tool-router#standalone-package-mcp-ts-tool-router) package exposes the Tool Router pattern over a generic `ToolSource` abstraction. Use it when you want meta-tool routing without the rest of the SDK.
 
@@ -168,7 +168,7 @@ import { createAISDKTools } from "@mcp-ts/tool-router";
 const tools = await createAISDKTools(router);
 ```
 
-### Other exports
+### Other Exports
 
 - `createToolSource(source)` — identity helper that type-checks a custom `ToolSource` implementation.
 - `mcpSource(id, client, name?)` / `mcpSources(provider)` — wrap MCP-style clients that expose `listTools` and `callTool` directly.
