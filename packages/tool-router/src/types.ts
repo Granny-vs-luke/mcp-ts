@@ -20,6 +20,7 @@ export interface ToolSource {
   name?: string;
   listTools(): Promise<{ tools: ToolDefinition[] }>;
   callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
+  refresh?(): Promise<void>;
 }
 
 export interface IndexedTool {

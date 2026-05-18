@@ -138,3 +138,129 @@ test("enforces destructive tool approval policy", async () => {
   );
   assert.equal(github.calls.length, 0);
 });
+
+test("normalizes source ids consistently during search", async () => {
+  const github = fakeSource("GitHub Server", [
+    {
+      name: "list_pull_requests",
+      description: "List GitHub pull requests"
+    }
+  ]);
+
+  const router = await createToolRouter({ sources: [github.source] });
+  const results = await router.searchTools({
+    sourceId: "GitHub Server",
+    query: "pull requests"
+  });
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].sourceId, "github_server");
+});
+
+test("initializes schema lookup when using the async meta-tool path", async () => {
+  const github = fakeSource("github", [
+    {
+      name: "get_issue",
+      description: "Get GitHub issue",
+      inputSchema: { type: "object", required: ["issue_number"] }
+    }
+  ]);
+
+  const { ToolRouter } = await import("../dist/index.js");
+  const router = new ToolRouter({ sources: [github.source] });
+  const schema = await router.executeMetaTool("get_tool_schema", {
+    sourceId: "github",
+    toolName: "get_issue"
+  });
+
+  assert.equal(schema.isError, false);
+  assert.match(schema.content[0].text, /issue_number/);
+});
+
+test("shares one initialization across concurrent first-use calls", async () => {
+  let listCalls = 0;
+  let releaseList;
+  const listed = new Promise((resolve) => {
+    releaseList = resolve;
+  });
+
+  const source = createToolSource({
+    id: "github",
+    name: "github",
+    listTools: async () => {
+      listCalls += 1;
+      await listed;
+      return {
+        tools: [{ name: "get_issue", description: "Get GitHub issue" }]
+      };
+    },
+    callTool: async (name, args) => ({ name, args })
+  });
+
+  const { ToolRouter } = await import("../dist/index.js");
+  const router = new ToolRouter({ sources: [source] });
+
+  const searchPromise = router.searchTools({ query: "issue" });
+  const callPromise = router.callTool({ sourceId: "github", toolName: "get_issue", args: {} });
+
+  releaseList();
+
+  const [results, call] = await Promise.all([searchPromise, callPromise]);
+  assert.equal(listCalls, 1);
+  assert.equal(results[0].toolName, "get_issue");
+  assert.deepEqual(call, { name: "get_issue", args: {} });
+});
+
+test("refresh invalidates ai-sdk adapter tool cache", async () => {
+  let phase = 1;
+  const client = {
+    async listTools() {
+      if (phase === 1) {
+        return {
+          tools: [{ name: "get_issue", description: "Get GitHub issue" }]
+        };
+      }
+      return {
+        tools: [{ name: "list_pull_requests", description: "List pull requests" }]
+      };
+    },
+    async tools() {
+      if (phase === 1) {
+        return {
+          get_issue: {
+            execute: async (args) => ({ tool: "get_issue", args })
+          }
+        };
+      }
+      return {
+        list_pull_requests: {
+          execute: async (args) => ({ tool: "list_pull_requests", args })
+        }
+      };
+    }
+  };
+
+  const { ToolRouter, asToolSource } = await import("../dist/index.js");
+  const router = new ToolRouter({
+    sources: [asToolSource("github", client)]
+  });
+
+  await router.searchTools({ query: "issue" });
+  await router.callTool({ sourceId: "github", toolName: "get_issue", args: { issue_number: 1 } });
+
+  phase = 2;
+  await router.refresh();
+
+  const results = await router.searchTools({ query: "pull requests" });
+  const call = await router.callTool({
+    sourceId: "github",
+    toolName: "list_pull_requests",
+    args: { state: "open" }
+  });
+
+  assert.equal(results[0].toolName, "list_pull_requests");
+  assert.deepEqual(call, {
+    tool: "list_pull_requests",
+    args: { state: "open" }
+  });
+});

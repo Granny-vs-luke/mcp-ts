@@ -17,7 +17,7 @@ export function toolAddress(sourceId: string, toolName: string): string {
 }
 
 export function matchesSearchScope(tool: IndexedTool, request: ToolSearchRequest): boolean {
-  if (request.sourceId && tool.sourceId !== request.sourceId) return false;
+  if (request.sourceId && tool.sourceId !== normalizeSourceId(request.sourceId)) return false;
   if (
     request.sourceName &&
     !tool.sourceName.toLowerCase().includes(request.sourceName.toLowerCase())

@@ -19,6 +19,8 @@ export class ToolRouter {
   private sources = new Map<string, ToolSource>();
   private indexedTools: IndexedTool[] = [];
   private initialized = false;
+  private initializePromise: Promise<void> | null = null;
+  private refreshPromise: Promise<void> | null = null;
   private maxSearchResults: number;
   private metaToolNames: ToolRouterMetaToolNames;
 
@@ -34,30 +36,67 @@ export class ToolRouter {
   }
 
   async initialize(): Promise<void> {
-    const next: IndexedTool[] = [];
-    const seenSourceIds = new Set<string>();
-
-    for (const source of this.options.sources) {
-      const sourceId = normalizeSourceId(source.id);
-      if (seenSourceIds.has(sourceId)) {
-        throw new Error(`Duplicate tool source id "${sourceId}".`);
-      }
-      seenSourceIds.add(sourceId);
-      this.sources.set(sourceId, { ...source, id: sourceId });
-
-      const listed = await source.listTools();
-      for (const tool of listed.tools) {
-        next.push(this.toIndexedTool(source, sourceId, tool));
-      }
+    if (this.initialized) {
+      return;
     }
-
-    this.indexedTools = next;
-    this.initialized = true;
+    if (this.refreshPromise) {
+      await this.refreshPromise;
+      return;
+    }
+    if (!this.initializePromise) {
+      this.initializePromise = this.rebuildIndex();
+    }
+    await this.initializePromise;
   }
 
   async refresh(): Promise<void> {
+    if (!this.refreshPromise) {
+      this.refreshPromise = this.performRefresh();
+    }
+    await this.refreshPromise;
+  }
+
+  private async rebuildIndex(): Promise<void> {
+    const next: IndexedTool[] = [];
+    const seenSourceIds = new Set<string>();
+
+    try {
+      for (const source of this.options.sources) {
+        const sourceId = normalizeSourceId(source.id);
+        if (seenSourceIds.has(sourceId)) {
+          throw new Error(`Duplicate tool source id "${sourceId}".`);
+        }
+        seenSourceIds.add(sourceId);
+        this.sources.set(sourceId, { ...source, id: sourceId });
+
+        const listed = await source.listTools();
+        for (const tool of listed.tools) {
+          next.push(this.toIndexedTool(source, sourceId, tool));
+        }
+      }
+      this.indexedTools = next;
+      this.initialized = true;
+    } finally {
+      this.initializePromise = null;
+    }
+  }
+
+  private async performRefresh(): Promise<void> {
+    if (this.initializePromise) {
+      await this.initializePromise;
+    }
     this.initialized = false;
-    await this.ensureInitialized();
+    try {
+      for (const source of this.options.sources) {
+        await source.refresh?.();
+      }
+      if (!this.initializePromise) {
+        this.initializePromise = this.rebuildIndex();
+      }
+      await this.initializePromise;
+    } finally {
+      this.refreshPromise = null;
+    }
   }
 
   getMetaTools(): ToolRouterMetaTool[] {
@@ -166,6 +205,7 @@ export class ToolRouter {
           return this.success(formatJson(result), result);
         }
         case this.metaToolNames.getToolSchema: {
+          await this.ensureInitialized();
           const schema = this.getToolSchema({
             sourceId: stringArg(args.sourceId),
             sourceName: stringArg(args.sourceName),
@@ -191,9 +231,14 @@ export class ToolRouter {
   }
 
   private async ensureInitialized(): Promise<void> {
-    if (!this.initialized) {
-      await this.initialize();
+    if (this.refreshPromise) {
+      await this.refreshPromise;
+      return;
     }
+    if (this.initialized) {
+      return;
+    }
+    await this.initialize();
   }
 
   private resolveTool(request: ToolSchemaRequest): IndexedTool | undefined {

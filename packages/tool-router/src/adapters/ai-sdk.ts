@@ -48,6 +48,9 @@ export function asToolSource(id: string, client: MCPClient, name?: string): Tool
         throw new Error(`Tool "${toolName}" not found on source "${id}".`);
       }
       return tool.execute(args);
+    },
+    refresh: async () => {
+      cachedToolsPromise = null;
     }
   };
 }
