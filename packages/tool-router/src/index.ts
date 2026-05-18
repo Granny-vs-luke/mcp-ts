@@ -5,8 +5,11 @@ export {
 } from "./meta-tools.js";
 export { createAISDKTools, asToolSource } from "./adapters/ai-sdk.js";
 export { mcpSource, mcpSources } from "./adapters/mcp.js";
+export { BM25SearchStrategy } from "./search.js";
+export { PolicyEnforcer } from "./policy.js";
 export type {
   IndexedTool,
+  SearchStrategy,
   ToolAnnotations,
   ToolCallRequest,
   ToolDefinition,

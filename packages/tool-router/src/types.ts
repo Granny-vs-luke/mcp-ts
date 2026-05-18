@@ -40,6 +40,10 @@ export interface ToolSearchResult {
   score: number;
 }
 
+export interface SearchStrategy {
+  search(tools: IndexedTool[], request: ToolSearchRequest, limit: number): ToolSearchResult[];
+}
+
 export interface ToolSchemaResult {
   sourceId: string;
   sourceName: string;
@@ -58,6 +62,7 @@ export interface ToolRouterPolicy {
 export interface ToolRouterOptions {
   sources: ToolSource[];
   policy?: ToolRouterPolicy;
+  searchStrategy?: SearchStrategy;
   maxSearchResults?: number;
   excludeMetaTools?: string[];
   metaToolNames?: Partial<{

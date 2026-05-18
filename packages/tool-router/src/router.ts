@@ -13,7 +13,9 @@ import type {
   ToolSearchResult,
   ToolSource
 } from "./types.js";
-import { assertToolAllowed, bm25Scores, matchesSearchScope, normalizeSourceId } from "./utils.js";
+import { normalizeSourceId } from "./utils.js";
+import { BM25SearchStrategy } from "./search.js";
+import { PolicyEnforcer } from "./policy.js";
 
 export class ToolRouter {
   private sources = new Map<string, ToolSource>();
@@ -23,9 +25,13 @@ export class ToolRouter {
   private refreshPromise: Promise<void> | null = null;
   private maxSearchResults: number;
   private metaToolNames: ToolRouterMetaToolNames;
+  private searchStrategy: import("./types.js").SearchStrategy;
+  private policyEnforcer: PolicyEnforcer;
 
   constructor(private options: ToolRouterOptions) {
     this.maxSearchResults = options.maxSearchResults ?? 10;
+    this.searchStrategy = options.searchStrategy ?? new BM25SearchStrategy();
+    this.policyEnforcer = new PolicyEnforcer(options.policy);
     this.metaToolNames = {
       ...DEFAULT_TOOLROUTER_META_TOOL_NAMES,
       ...(options.metaToolNames ?? {})
@@ -111,21 +117,7 @@ export class ToolRouter {
   async searchTools(request: ToolSearchRequest): Promise<ToolSearchResult[]> {
     await this.ensureInitialized();
     const limit = Math.min(request.limit ?? this.maxSearchResults, 100);
-    const candidates = this.indexedTools.filter((tool) => matchesSearchScope(tool, request));
-    const scores = bm25Scores(candidates, request.query ?? "");
-
-    return candidates
-      .map((tool, index) => ({ tool, score: scores[index] ?? 0 }))
-      .filter((entry) => !request.query || entry.score > 0)
-      .sort((a, b) => b.score - a.score || a.tool.toolName.localeCompare(b.tool.toolName))
-      .slice(0, limit)
-      .map(({ tool, score }) => ({
-        sourceId: tool.sourceId,
-        sourceName: tool.sourceName,
-        toolName: tool.toolName,
-        description: tool.description,
-        score
-      }));
+    return this.searchStrategy.search(this.indexedTools, request, limit);
   }
 
   listSources(query = ""): Array<{ sourceId: string; sourceName: string; toolCount: number }> {
@@ -177,7 +169,7 @@ export class ToolRouter {
       throw new Error(`Tool "${request.toolName}" was not found.`);
     }
 
-    await assertToolAllowed(this.options.policy, request, tool);
+    await this.policyEnforcer.assertToolAllowed(request, tool);
 
     const source = this.sources.get(tool.sourceId);
     if (!source) {
