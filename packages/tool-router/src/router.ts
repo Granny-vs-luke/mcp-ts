@@ -1,26 +1,33 @@
-import { createMetaTools, TOOLROUTER_CALL_TOOL, TOOLROUTER_GET_TOOL_SCHEMA, TOOLROUTER_LIST_SOURCES, TOOLROUTER_SEARCH_TOOLS } from "./meta-tools.js";
+import { createMetaTools, DEFAULT_TOOLROUTER_META_TOOL_NAMES } from "./meta-tools.js";
 import type {
   IndexedTool,
   ToolCallRequest,
   ToolDefinition,
+  ToolRouterMetaToolNames,
   ToolRouterCallResult,
   ToolRouterMetaTool,
   ToolRouterOptions,
+  ToolSchemaResult,
   ToolSchemaRequest,
   ToolSearchRequest,
   ToolSearchResult,
   ToolSource
 } from "./types.js";
-import { assertToolAllowed, matchesSearchScope, normalizeSourceId, scoreTool } from "./utils.js";
+import { assertToolAllowed, bm25Scores, matchesSearchScope, normalizeSourceId } from "./utils.js";
 
 export class ToolRouter {
   private sources = new Map<string, ToolSource>();
   private indexedTools: IndexedTool[] = [];
   private initialized = false;
   private maxSearchResults: number;
+  private metaToolNames: ToolRouterMetaToolNames;
 
   constructor(private options: ToolRouterOptions) {
     this.maxSearchResults = options.maxSearchResults ?? 10;
+    this.metaToolNames = {
+      ...DEFAULT_TOOLROUTER_META_TOOL_NAMES,
+      ...(options.metaToolNames ?? {})
+    };
     for (const source of options.sources) {
       this.sources.set(source.id, source);
     }
@@ -54,7 +61,7 @@ export class ToolRouter {
   }
 
   getMetaTools(): ToolRouterMetaTool[] {
-    const tools = createMetaTools();
+    const tools = createMetaTools(this.metaToolNames);
     if (!this.options.excludeMetaTools?.length) {
       return tools;
     }
@@ -65,10 +72,11 @@ export class ToolRouter {
   async searchTools(request: ToolSearchRequest): Promise<ToolSearchResult[]> {
     await this.ensureInitialized();
     const limit = Math.min(request.limit ?? this.maxSearchResults, 100);
+    const candidates = this.indexedTools.filter((tool) => matchesSearchScope(tool, request));
+    const scores = bm25Scores(candidates, request.query ?? "");
 
-    return this.indexedTools
-      .filter((tool) => matchesSearchScope(tool, request))
-      .map((tool) => ({ tool, score: scoreTool(tool, request.query) }))
+    return candidates
+      .map((tool, index) => ({ tool, score: scores[index] ?? 0 }))
       .filter((entry) => !request.query || entry.score > 0)
       .sort((a, b) => b.score - a.score || a.tool.toolName.localeCompare(b.tool.toolName))
       .slice(0, limit)
@@ -77,7 +85,6 @@ export class ToolRouter {
         sourceName: tool.sourceName,
         toolName: tool.toolName,
         description: tool.description,
-        annotations: tool.annotations,
         score
       }));
   }
@@ -85,6 +92,14 @@ export class ToolRouter {
   listSources(query = ""): Array<{ sourceId: string; sourceName: string; toolCount: number }> {
     const lowered = query.toLowerCase();
     const counts = new Map<string, { sourceId: string; sourceName: string; toolCount: number }>();
+
+    for (const [sourceId, source] of this.sources.entries()) {
+      counts.set(sourceId, {
+        sourceId,
+        sourceName: source.name ?? sourceId,
+        toolCount: 0
+      });
+    }
 
     for (const tool of this.indexedTools) {
       const current =
@@ -102,12 +117,18 @@ export class ToolRouter {
     );
   }
 
-  getToolSchema(request: ToolSchemaRequest): IndexedTool {
+  getToolSchema(request: ToolSchemaRequest): ToolSchemaResult {
     const tool = this.resolveTool(request);
     if (!tool) {
       throw new Error(`Tool "${request.toolName}" was not found.`);
     }
-    return { ...tool };
+    return {
+      sourceId: tool.sourceId,
+      sourceName: tool.sourceName,
+      toolName: tool.toolName,
+      description: tool.description,
+      inputSchema: tool.inputSchema
+    };
   }
 
   async callTool(request: ToolCallRequest): Promise<unknown> {
@@ -130,7 +151,7 @@ export class ToolRouter {
   async executeMetaTool(name: string, args: Record<string, unknown>): Promise<ToolRouterCallResult> {
     try {
       switch (name) {
-        case TOOLROUTER_SEARCH_TOOLS: {
+        case this.metaToolNames.searchTools: {
           const results = await this.searchTools({
             query: stringArg(args.query),
             sourceId: stringArg(args.sourceId),
@@ -139,12 +160,12 @@ export class ToolRouter {
           });
           return this.success(formatJson(results), results);
         }
-        case TOOLROUTER_LIST_SOURCES: {
+        case this.metaToolNames.listSources: {
           await this.ensureInitialized();
           const result = this.listSources(stringArg(args.query) ?? "");
           return this.success(formatJson(result), result);
         }
-        case TOOLROUTER_GET_TOOL_SCHEMA: {
+        case this.metaToolNames.getToolSchema: {
           const schema = this.getToolSchema({
             sourceId: stringArg(args.sourceId),
             sourceName: stringArg(args.sourceName),
@@ -152,7 +173,7 @@ export class ToolRouter {
           });
           return this.success(formatJson(schema), schema);
         }
-        case TOOLROUTER_CALL_TOOL: {
+        case this.metaToolNames.callTool: {
           const result = await this.callTool({
             sourceId: stringArg(args.sourceId),
             sourceName: stringArg(args.sourceName),

@@ -27,28 +27,70 @@ export function matchesSearchScope(tool: IndexedTool, request: ToolSearchRequest
   return true;
 }
 
-export function scoreTool(tool: IndexedTool, query = ""): number {
-  const terms = query
-    .toLowerCase()
-    .split(/\s+/)
-    .map((term) => term.trim())
-    .filter(Boolean);
+function tokenize(value: string): string[] {
+  return value.toLowerCase().match(/[a-z0-9_]+/g) ?? [];
+}
 
-  if (terms.length === 0) return 1;
+function documentTokens(tool: IndexedTool): string[] {
+  const name = tokenize(tool.toolName);
+  const source = tokenize(`${tool.sourceId} ${tool.sourceName}`);
+  const description = tokenize(tool.description);
 
-  const name = tool.toolName.toLowerCase();
-  const source = `${tool.sourceId} ${tool.sourceName}`.toLowerCase();
-  const description = tool.description.toLowerCase();
-  let score = 0;
+  // Keep prior weighting intent: name > source > description.
+  return [
+    ...name,
+    ...name,
+    ...name,
+    ...source,
+    ...source,
+    ...description
+  ];
+}
 
-  for (const term of terms) {
-    if (name === term) score += 10;
-    if (name.includes(term)) score += 6;
-    if (source.includes(term)) score += 4;
-    if (description.includes(term)) score += 2;
+export function bm25Scores(tools: IndexedTool[], query = ""): number[] {
+  const queryTerms = tokenize(query);
+  if (queryTerms.length === 0) {
+    return tools.map(() => 1);
   }
 
-  return score;
+  const docs = tools.map(documentTokens);
+  const docLengths = docs.map((d) => d.length);
+  const totalLength = docLengths.reduce((sum, n) => sum + n, 0);
+  const avgDocLength = tools.length > 0 ? totalLength / tools.length : 1;
+
+  const df = new Map<string, number>();
+  for (const doc of docs) {
+    for (const term of new Set(doc)) {
+      df.set(term, (df.get(term) ?? 0) + 1);
+    }
+  }
+
+  const k1 = 1.2;
+  const b = 0.75;
+  const n = tools.length;
+
+  return docs.map((doc, index) => {
+    const tf = new Map<string, number>();
+    for (const term of doc) {
+      tf.set(term, (tf.get(term) ?? 0) + 1);
+    }
+
+    const dl = docLengths[index] || 1;
+    let score = 0;
+
+    for (const term of queryTerms) {
+      const termFreq = tf.get(term) ?? 0;
+      if (termFreq === 0) continue;
+
+      const termDf = df.get(term) ?? 0;
+      const idf = Math.log(1 + (n - termDf + 0.5) / (termDf + 0.5));
+      const numerator = termFreq * (k1 + 1);
+      const denominator = termFreq + k1 * (1 - b + b * (dl / avgDocLength));
+      score += idf * (numerator / denominator);
+    }
+
+    return score;
+  });
 }
 
 export async function assertToolAllowed(

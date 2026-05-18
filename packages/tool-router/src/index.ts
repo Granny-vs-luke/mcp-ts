@@ -1,14 +1,9 @@
 export { ToolRouter, createToolRouter } from "./router.js";
 export {
-  TOOLROUTER_CALL_TOOL,
-  TOOLROUTER_GET_TOOL_SCHEMA,
-  TOOLROUTER_LIST_SOURCES,
-  TOOLROUTER_META_TOOL_NAMES,
-  TOOLROUTER_SEARCH_TOOLS,
   createMetaTools,
-  isToolRouterMetaTool
+  DEFAULT_TOOLROUTER_META_TOOL_NAMES
 } from "./meta-tools.js";
-export { createAISDKTools } from "./adapters/ai-sdk.js";
+export { createAISDKTools, asToolSource } from "./adapters/ai-sdk.js";
 export { mcpSource, mcpSources } from "./adapters/mcp.js";
 export type {
   IndexedTool,
@@ -17,13 +12,16 @@ export type {
   ToolDefinition,
   ToolRouterCallResult,
   ToolRouterMetaTool,
+  ToolRouterMetaToolNames,
   ToolRouterOptions,
   ToolRouterPolicy,
+  ToolSchemaResult,
   ToolSchemaRequest,
   ToolSearchRequest,
   ToolSearchResult,
   ToolSource
 } from "./types.js";
+export type { MCPClient } from "./adapters/ai-sdk.js";
 
 export function createToolSource(source: import("./types.js").ToolSource): import("./types.js").ToolSource {
   return source;
