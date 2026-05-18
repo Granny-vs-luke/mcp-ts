@@ -355,6 +355,52 @@ test("allows excluding meta-tools to resolve collisions", async () => {
   assert.equal(results[0].toolName, "search_tools");
 });
 
+test("excludeTools removes bare-name matches from the catalog", async () => {
+  const exa = fakeServer("exa", [
+    { name: "web_search_exa", description: "Search the web" },
+    { name: "deep_search_exa", description: "Run deep search" }
+  ]);
+  const grep = fakeServer("grep", [
+    { name: "web_search_exa", description: "Another web search" }
+  ]);
+
+  const router = await createToolRouter({
+    servers: [exa.server, grep.server],
+    excludeTools: ["web_search_exa"]
+  });
+
+  const searchResults = await router.searchTools({ query: "search" });
+
+  assert.equal(searchResults.find((tool) => tool.toolName === "web_search_exa"), undefined);
+  assert.deepEqual(router.getVisibleTools().pinned, []);
+  await assert.rejects(
+    router.callTool({ toolId: "exa.web_search_exa", args: {} }),
+    /was not found/
+  );
+});
+
+test("excludeTools supports canonical ids without excluding same-name tools on other servers", async () => {
+  const exa = fakeServer("exa", [
+    { name: "web_search_exa", description: "Search the web" }
+  ]);
+  const grep = fakeServer("grep", [
+    { name: "web_search_exa", description: "Grep search" }
+  ]);
+
+  const router = await createToolRouter({
+    servers: [exa.server, grep.server],
+    excludeTools: ["exa.web_search_exa"]
+  });
+
+  const searchResults = await router.searchTools({ query: "search" });
+
+  assert.equal(searchResults.find((tool) => tool.toolId === "exa.web_search_exa"), undefined);
+  assert.equal(
+    searchResults.find((tool) => tool.toolId === "grep.web_search_exa")?.toolId,
+    "grep.web_search_exa"
+  );
+});
+
 test("pinned tools appear in getVisibleTools alongside meta-tools", async () => {
   const github = fakeServer("github", [
     { name: "help", description: "Get help" },

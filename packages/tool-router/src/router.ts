@@ -17,7 +17,7 @@ import type {
 import type { PinnedToolResult, VisibleTools } from "./types.js";
 import { normalizeServerId } from "./utils.js";
 import { BM25SearchStrategy } from "./search.js";
-import { PolicyEnforcer } from "./policy.js";
+import { PolicyEnforcer, wildcardMatch } from "./policy.js";
 
 export class ToolRouter {
   private servers = new Map<string, ToolServer>();
@@ -30,12 +30,14 @@ export class ToolRouter {
   private searchStrategy: import("./types.js").SearchStrategy;
   private policyEnforcer: PolicyEnforcer;
   private pinnedToolNames: Set<string>;
+  private excludedToolPatterns: string[];
 
   constructor(private options: ToolRouterOptions) {
     this.maxSearchResults = options.maxSearchResults ?? 10;
     this.searchStrategy = options.searchStrategy ?? new BM25SearchStrategy();
     this.policyEnforcer = new PolicyEnforcer(options.policy);
     this.pinnedToolNames = new Set((options.pinnedTools ?? []).map(normalizeToolReference));
+    this.excludedToolPatterns = (options.excludeTools ?? []).map(normalizeToolReference);
     this.metaToolNames = {
       ...DEFAULT_TOOLROUTER_META_TOOL_NAMES,
       ...(options.metaToolNames ?? {})
@@ -93,6 +95,9 @@ export class ToolRouter {
 
         const listed = await server.listTools();
         for (const tool of listed.tools) {
+          if (this.isExcludedTool(serverId, tool.name)) {
+            continue;
+          }
           if (activeMetaToolNames.has(tool.name)) {
             throw new Error(
               `Tool collision: Server "${serverId}" exposes a tool named "${tool.name}" which conflicts with a configured meta-tool.`
@@ -313,6 +318,16 @@ export class ToolRouter {
       this.pinnedToolNames.has(makeToolId(tool.serverId, tool.toolName)) ||
       this.pinnedToolNames.has(tool.toolName)
     );
+  }
+
+  private isExcludedTool(serverId: string, toolName: string): boolean {
+    const address = makeToolId(serverId, toolName);
+    return this.excludedToolPatterns.some((pattern) => {
+      if (!pattern.includes(".")) {
+        return wildcardMatch(pattern, toolName);
+      }
+      return wildcardMatch(pattern, address);
+    });
   }
 
   private toIndexedTool(server: ToolServer, serverId: string, tool: ToolDefinition): IndexedTool {

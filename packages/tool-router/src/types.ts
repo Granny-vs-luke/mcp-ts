@@ -78,6 +78,8 @@ export interface ToolRouterOptions {
   searchStrategy?: SearchStrategy;
   /** Canonical tool ids (serverId.toolName) or legacy tool names always visible alongside meta-tools. */
   pinnedTools?: string[];
+  /** Canonical tool ids/patterns or legacy tool names/patterns to omit from the router catalog. */
+  excludeTools?: string[];
   maxSearchResults?: number;
   excludeMetaTools?: string[];
   metaToolNames?: Partial<{

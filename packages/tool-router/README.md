@@ -77,6 +77,15 @@ Use `pinnedTools` when a small number of tools should remain directly visible al
 
 The router owns canonical ids: server ids are normalized to lowercase slug-style ids before they appear in tool ids. For example, `u2tsgODpOrlF.toolname` is treated as `u2tsgodporlf.toolname`.
 
+### Excluded Tools
+
+Use `excludeTools` to omit tools from the router catalog entirely. Excluded tools are not indexed, not searchable, not pinnable, and not callable through router meta-tools.
+
+`excludeTools` supports the same matching ergonomics as `pinnedTools`:
+- Canonical ids such as `exa.web_search_exa` exclude a specific tool.
+- Bare names such as `web_search_exa` exclude matching tool names across all servers.
+- Wildcards work in both forms, for example `exa.deep_*` or `crawling_*`.
+
 ---
 
 ## Basic Usage
@@ -238,6 +247,7 @@ Restrict tool execution with policies:
 ```typescript
 const router = await createToolRouter({
   servers,
+  excludeTools: ["grep.internal_*"],
   policy: {
     allowTools: ["github.*", "linear.*"],
     denyTools: ["github.delete_*"],
