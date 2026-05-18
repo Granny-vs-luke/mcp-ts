@@ -75,6 +75,8 @@ Meta-tool calls return text content for compatibility and structured data in `st
 
 Use `pinnedTools` when a small number of tools should remain directly visible alongside the meta-tools. Prefer canonical ids such as `github.help`; legacy bare tool names such as `help` are still supported, but canonical ids avoid ambiguity when multiple servers expose the same tool name.
 
+The router owns canonical ids: server ids are normalized to lowercase slug-style ids before they appear in tool ids. For example, `u2tsgODpOrlF.toolname` is treated as `u2tsgodporlf.toolname`.
+
 ---
 
 ## Basic Usage

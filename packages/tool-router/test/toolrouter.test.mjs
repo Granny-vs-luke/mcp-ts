@@ -378,6 +378,23 @@ test("canonical pinned tool ids disambiguate duplicate tool names", async () => 
   assert.equal(results.find((tool) => tool.toolId === "github.status")?.toolId, "github.status");
 });
 
+test("canonical pinned tool ids normalize the server id", async () => {
+  const stable = fakeServer("u2tsgODpOrlF", [
+    { name: "toolname", description: "Stable generated server id tool" }
+  ]);
+
+  const router = await createToolRouter({
+    servers: [stable.server],
+    pinnedTools: ["u2tsgODpOrlF.toolname"]
+  });
+
+  const { pinned } = router.getVisibleTools();
+  const results = await router.searchTools({ query: "generated server id" });
+
+  assert.deepEqual(pinned.map((tool) => tool.toolId), ["u2tsgodporlf.toolname"]);
+  assert.equal(results.find((tool) => tool.toolId === "u2tsgodporlf.toolname"), undefined);
+});
+
 test("sync catalog methods require initialization when router is constructed directly", async () => {
   const github = fakeServer("github", [
     { name: "get_issue", description: "Get issue", inputSchema: { type: "object" } }

@@ -35,7 +35,7 @@ export class ToolRouter {
     this.maxSearchResults = options.maxSearchResults ?? 10;
     this.searchStrategy = options.searchStrategy ?? new BM25SearchStrategy();
     this.policyEnforcer = new PolicyEnforcer(options.policy);
-    this.pinnedToolNames = new Set(options.pinnedTools ?? []);
+    this.pinnedToolNames = new Set((options.pinnedTools ?? []).map(normalizeToolReference));
     this.metaToolNames = {
       ...DEFAULT_TOOLROUTER_META_TOOL_NAMES,
       ...(options.metaToolNames ?? {})
@@ -404,6 +404,15 @@ function parseToolId(toolId: string): { serverId: string; toolName: string } {
     serverId: toolId.slice(0, separatorIndex),
     toolName: toolId.slice(separatorIndex + 1)
   };
+}
+
+function normalizeToolReference(reference: string): string {
+  if (!reference.includes(".")) {
+    return reference;
+  }
+
+  const { serverId, toolName } = parseToolId(reference);
+  return makeToolId(normalizeServerId(serverId), toolName);
 }
 
 function renderSearchResults(results: ToolSearchResult[], detail: ToolRouterDetailLevel): string {
