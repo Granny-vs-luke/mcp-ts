@@ -9,13 +9,14 @@ import { createToolRouter, createAISDKTools, asToolSource } from "@mcp-ts/tool-r
 const INSTRUCTIONS = `
 You are an expert assistant that helps users with tasks using the available MCP tools.
 
-Use this flow:
+For most tools, use this flow:
 1) list_sources
 2) search_tools
 3) get_tool_schema
 4) call_tool
 
 Always search tools first before calling them.
+Exception: 'web_search_exa' is pinned and always visible, so you can call it directly without searching first!
 `;
 
 const EXA_MCP_URL =
@@ -43,6 +44,7 @@ async function getRouterTools(): Promise<Record<string, unknown>> {
           asToolSource("exa", exaClient),
           asToolSource("grep", grepClient)
         ],
+        pinnedTools: ["web_search_exa"],
         maxSearchResults: 8
       });
 
