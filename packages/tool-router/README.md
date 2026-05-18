@@ -28,14 +28,14 @@ npm install @mcp-ts/tool-router
 
 ## Core Concepts
 
-### ToolSource
+### ToolServer
 
-Anything that can list and call tools can be adapted into a `ToolSource`.
+Anything that can list and call tools can be adapted into a `ToolServer`.
 
 ```typescript
-import { createToolSource } from "@mcp-ts/tool-router";
+import { createToolServer } from "@mcp-ts/tool-router";
 
-const github = createToolSource({
+const github = createToolServer({
   id: "github",
   name: "GitHub",
   listTools: async () => ({
@@ -69,6 +69,12 @@ The router exposes four meta-tools to LLMs:
 - `get_tool_schemas`: Fetch input schemas for one or more specific tools.
 - `call_tool`: Invoke a tool on a registered server.
 
+Meta-tool calls return text content for compatibility and structured data in `structuredContent` for clients that can consume typed payloads.
+
+### Pinned Tools
+
+Use `pinnedTools` when a small number of tools should remain directly visible alongside the meta-tools. Prefer canonical ids such as `github.help`; legacy bare tool names such as `help` are still supported, but canonical ids avoid ambiguity when multiple servers expose the same tool name.
+
 ---
 
 ## Basic Usage
@@ -77,7 +83,7 @@ The router exposes four meta-tools to LLMs:
 import { createToolRouter } from "@mcp-ts/tool-router";
 
 const router = await createToolRouter({
-  sources: [github, linear, slack],
+  servers: [github, linear, slack],
   metaToolNames: {
     searchTools: "find_tools",
     listServers: "servers",
@@ -117,7 +123,7 @@ import { generateText } from "ai";
 import { createToolRouter, createAISDKTools } from "@mcp-ts/tool-router";
 
 const router = await createToolRouter({
-  sources: [github, slack]
+  servers: [github, slack]
 });
 
 const tools = await createAISDKTools(router);
@@ -141,7 +147,7 @@ This mirrors the pattern used in `examples/next/app/agent/agent.ts`.
 import { ToolLoopAgent, stepCountIs } from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import { createToolRouter, createAISDKTools, asToolSource } from "@mcp-ts/tool-router";
+import { createToolRouter, createAISDKTools, asToolServer } from "@mcp-ts/tool-router";
 
 const EXA_MCP_URL =
   "https://mcp.exa.ai/mcp?tools=web_search_exa,deep_search_exa,get_code_context_exa,crawling_exa";
@@ -164,9 +170,9 @@ async function createAgent() {
   ]);
 
   const router = await createToolRouter({
-    sources: [
-      asToolSource("exa", exaClient),
-      asToolSource("grep", grepClient)
+    servers: [
+      asToolServer("exa", exaClient),
+      asToolServer("grep", grepClient)
     ],
     maxSearchResults: 8
   });
@@ -186,15 +192,15 @@ async function createAgent() {
 
 ## MCP Client Adapters
 
-Wrap any compatible MCP client with `mcpSource`:
+Wrap any compatible MCP client with `mcpServer`:
 
 ```typescript
-import { createToolRouter, mcpSource, mcpSources } from "@mcp-ts/tool-router";
+import { createToolRouter, mcpServer, mcpServers } from "@mcp-ts/tool-router";
 
 const router = await createToolRouter({
-  sources: [
-    mcpSource("github", githubMcpClient),
-    mcpSource("linear", linearMcpClient)
+  servers: [
+    mcpServer("github", githubMcpClient),
+    mcpServer("linear", linearMcpClient)
   ]
 });
 ```
@@ -203,7 +209,7 @@ If you have a client provider that manages multiple active clients:
 
 ```typescript
 const router = await createToolRouter({
-  sources: mcpSources(multiSessionClient)
+  servers: mcpServers(multiSessionClient)
 });
 ```
 
@@ -211,13 +217,13 @@ Using Vercel AI SDK MCP clients (`@ai-sdk/mcp`):
 
 ```typescript
 import { createMCPClient } from "@ai-sdk/mcp";
-import { createToolRouter, asToolSource } from "@mcp-ts/tool-router";
+import { createToolRouter, asToolServer } from "@mcp-ts/tool-router";
 
 const exa = await createMCPClient({ transport: { type: "http", url: "https://mcp.exa.ai/mcp" } });
 const grep = await createMCPClient({ transport: { type: "http", url: "https://mcp.grep.app" } });
 
 const router = await createToolRouter({
-  sources: [asToolSource("exa", exa), asToolSource("grep", grep)]
+  servers: [asToolServer("exa", exa), asToolServer("grep", grep)]
 });
 ```
 
@@ -229,7 +235,7 @@ Restrict tool execution with policies:
 
 ```typescript
 const router = await createToolRouter({
-  sources,
+  servers,
   policy: {
     allowTools: ["github.*", "linear.*"],
     denyTools: ["github.delete_*"],
@@ -248,11 +254,11 @@ const router = await createToolRouter({
 
 Main exports:
 - `createToolRouter(options)`: Create and initialize a `ToolRouter`.
-- `createToolSource(source)`: Helper to type-check custom tool adapters.
+- `createToolServer(server)`: Helper to type-check custom tool adapters.
 - `createAISDKTools(router)`: Expose meta-tools as Vercel AI SDK tools.
-- `asToolSource(id, client, name?)`: Adapt a compatible MCP tool client (including `@ai-sdk/mcp`) to `ToolSource`.
-- `mcpSource(id, client, name?)`: Wrap an MCP-like client as a `ToolSource`.
-- `mcpSources(provider)`: Convert multiple client instances to `ToolSource[]`.
+- `asToolServer(id, client, name?)`: Adapt a compatible MCP tool client (including `@ai-sdk/mcp`) to `ToolServer`.
+- `mcpServer(id, client, name?)`: Wrap an MCP-like client as a `ToolServer`.
+- `mcpServers(provider)`: Convert multiple client instances to `ToolServer[]`.
 
 ---
 

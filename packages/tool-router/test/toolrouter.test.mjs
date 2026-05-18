@@ -102,14 +102,18 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
   });
   assert.equal(search.isError, false);
   assert.match(search.content[0].text, /list_pull_requests/);
-  assert.equal(search.structuredContent, undefined);
+  assert.deepEqual(search.structuredContent.results.map((tool) => tool.toolId), [
+    "github.list_pull_requests"
+  ]);
 
   const schema = await router.executeMetaTool("get_tool_schemas", {
     toolIds: ["github.list_pull_requests"]
   });
   assert.equal(schema.isError, false);
   assert.match(schema.content[0].text, /Parameters/);
-  assert.equal(schema.structuredContent, undefined);
+  assert.deepEqual(schema.structuredContent.results.map((tool) => tool.toolId), [
+    "github.list_pull_requests"
+  ]);
 
   const call = await router.executeMetaTool("call_tool", {
     toolId: "github.list_pull_requests",
@@ -117,7 +121,11 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
   });
   assert.equal(call.isError, false);
   assert.match(call.content[0].text, /open/);
-  assert.equal(call.structuredContent, undefined);
+  assert.deepEqual(call.structuredContent.result, {
+    server: "github",
+    name: "list_pull_requests",
+    args: { state: "open" }
+  });
 });
 
 test("enforces destructive tool approval policy", async () => {
@@ -349,6 +357,49 @@ test("pinned tools are excluded from search results", async () => {
   assert.equal(results.find((r) => r.toolName === "help"), undefined);
 });
 
+test("canonical pinned tool ids disambiguate duplicate tool names", async () => {
+  const github = fakeServer("github", [
+    { name: "status", description: "Get GitHub status" }
+  ]);
+  const slack = fakeServer("slack", [
+    { name: "status", description: "Get Slack status" }
+  ]);
+
+  const router = await createToolRouter({
+    servers: [github.server, slack.server],
+    pinnedTools: ["slack.status"]
+  });
+
+  const { pinned } = router.getVisibleTools();
+  const results = await router.searchTools({ query: "status" });
+
+  assert.deepEqual(pinned.map((tool) => tool.toolId), ["slack.status"]);
+  assert.equal(results.find((tool) => tool.toolId === "slack.status"), undefined);
+  assert.equal(results.find((tool) => tool.toolId === "github.status")?.toolId, "github.status");
+});
+
+test("sync catalog methods require initialization when router is constructed directly", async () => {
+  const github = fakeServer("github", [
+    { name: "get_issue", description: "Get issue", inputSchema: { type: "object" } }
+  ]);
+
+  const { ToolRouter } = await import("../dist/index.js");
+  const router = new ToolRouter({ servers: [github.server] });
+
+  assert.throws(
+    () => router.listServers(),
+    /ToolRouter is not initialized/
+  );
+  assert.throws(
+    () => router.getVisibleTools(),
+    /ToolRouter is not initialized/
+  );
+  assert.throws(
+    () => router.getToolSchemas({ toolIds: ["github.get_issue"] }),
+    /ToolRouter is not initialized/
+  );
+});
+
 test("pinned tools remain callable via callTool", async () => {
   const github = fakeServer("github", [
     { name: "help", description: "Get help" }
@@ -460,7 +511,7 @@ test("search meta tool does not expose annotations", async () => {
 
   assert.equal(search.isError, false);
   assert.doesNotMatch(search.content[0].text, /destructiveHint|Delete Repository/);
-  assert.equal(search.structuredContent, undefined);
+  assert.deepEqual(search.structuredContent.results.map((tool) => tool.toolId), ["github.delete_repo"]);
 });
 
 test("schema meta tool does not expose annotations", async () => {
@@ -481,7 +532,7 @@ test("schema meta tool does not expose annotations", async () => {
   assert.equal(schema.isError, false);
   assert.match(schema.content[0].text, /Parameters/);
   assert.doesNotMatch(schema.content[0].text, /destructiveHint|Delete Repository/);
-  assert.equal(schema.structuredContent, undefined);
+  assert.deepEqual(schema.structuredContent.results.map((tool) => tool.toolId), ["github.delete_repo"]);
 });
 
 test("search results expose canonical tool ids", async () => {

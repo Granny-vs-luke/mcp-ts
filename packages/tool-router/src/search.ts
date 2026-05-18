@@ -82,8 +82,7 @@ export class BM25SearchStrategy implements SearchStrategy {
   search(tools: IndexedTool[], request: ToolSearchRequest, limit: number): ToolSearchResult[] {
     const candidates = tools.filter(
       (tool) =>
-        matchesSearchScope(tool, request) &&
-        !request._pinnedTools?.has(tool.toolName)
+        matchesSearchScope(tool, request)
     );
     const scores = bm25Scores(candidates, request.query ?? "");
 

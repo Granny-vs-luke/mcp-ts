@@ -140,23 +140,15 @@ export class ToolRouter {
     await this.ensureInitialized();
     const limit = Math.min(request.limit ?? this.maxSearchResults, 100);
     const visibleTools = this.indexedTools.filter((tool) =>
-      this.policyEnforcer.isToolVisible(tool)
+      this.policyEnforcer.isToolVisible(tool) && !this.isPinnedTool(tool)
     );
-    return this.searchStrategy.search(
-      visibleTools,
-      {
-        ...request,
-        _pinnedTools: this.pinnedToolNames
-      },
-      limit
-    );
+    return this.searchStrategy.search(visibleTools, request, limit);
   }
 
   getPinnedTools(): PinnedToolResult[] {
+    this.assertInitialized();
     return [...this.pinnedToolNames].flatMap((name) => {
-      const tool = this.indexedTools.find(
-        (t) => t.toolName === name && this.policyEnforcer.isToolVisible(t)
-      );
+      const tool = this.resolvePinnedTool(name);
       return tool
         ? [
             {
@@ -174,10 +166,12 @@ export class ToolRouter {
   }
 
   getVisibleTools(): VisibleTools {
+    this.assertInitialized();
     return { pinned: this.getPinnedTools(), metaTools: this.getMetaTools() };
   }
 
   listServers(query = ""): Array<{ serverId: string; serverName: string; toolCount: number }> {
+    this.assertInitialized();
     const lowered = query.toLowerCase();
     const counts = new Map<string, { serverId: string; serverName: string; toolCount: number }>();
 
@@ -206,6 +200,7 @@ export class ToolRouter {
   }
 
   getToolSchemas(request: ToolSchemaRequest): ToolSchemaResult[] {
+    this.assertInitialized();
     return request.toolIds.map((toolId) => {
       const tool = this.resolveToolById(toolId);
       if (!tool) {
@@ -251,12 +246,12 @@ export class ToolRouter {
             limit: numberArg(args.limit),
             detail
           });
-          return this.success(renderSearchResults(results, detail));
+          return this.success(renderSearchResults(results, detail), { results });
         }
         case this.metaToolNames.listServers: {
           await this.ensureInitialized();
           const result = this.listServers(stringArg(args.query) ?? "");
-          return this.success(formatJson(result));
+          return this.success(formatJson(result), { servers: result });
         }
         case this.metaToolNames.getToolSchemas: {
           await this.ensureInitialized();
@@ -264,14 +259,14 @@ export class ToolRouter {
           const schema = this.getToolSchemas({
             toolIds: requiredStringArrayArg(args.toolIds, "toolIds")
           });
-          return this.success(renderSchemaResults(schema, detail));
+          return this.success(renderSchemaResults(schema, detail), { results: schema });
         }
         case this.metaToolNames.callTool: {
           const result = await this.callTool({
             toolId: requiredStringArg(args.toolId, "toolId"),
             args: objectArg(args.args)
           });
-          return this.success(formatJson(result));
+          return this.success(formatJson(result), { result });
         }
         default:
           return this.error(`Unknown toolrouter meta tool "${name}".`);
@@ -292,10 +287,31 @@ export class ToolRouter {
     await this.initialize();
   }
 
+  private assertInitialized(): void {
+    if (!this.initialized || this.initializePromise || this.refreshPromise) {
+      throw new Error("ToolRouter is not initialized. Call initialize() before reading the tool catalog.");
+    }
+  }
+
   private resolveToolById(toolId: string): IndexedTool | undefined {
     const { serverId, toolName } = parseToolId(toolId);
     return this.indexedTools.find(
       (tool) => tool.serverId === normalizeServerId(serverId) && tool.toolName === toolName
+    );
+  }
+
+  private resolvePinnedTool(reference: string): IndexedTool | undefined {
+    const tool = reference.includes(".")
+      ? this.resolveToolById(reference)
+      : this.indexedTools.find((t) => t.toolName === reference);
+
+    return tool && this.policyEnforcer.isToolVisible(tool) ? tool : undefined;
+  }
+
+  private isPinnedTool(tool: IndexedTool): boolean {
+    return (
+      this.pinnedToolNames.has(makeToolId(tool.serverId, tool.toolName)) ||
+      this.pinnedToolNames.has(tool.toolName)
     );
   }
 
@@ -310,9 +326,10 @@ export class ToolRouter {
     };
   }
 
-  private success(text: string): ToolRouterCallResult {
+  private success(text: string, structuredContent?: unknown): ToolRouterCallResult {
     return {
       content: [{ type: "text", text }],
+      ...(structuredContent === undefined ? {} : { structuredContent }),
       isError: false
     };
   }

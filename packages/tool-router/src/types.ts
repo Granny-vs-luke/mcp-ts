@@ -76,7 +76,8 @@ export interface ToolRouterOptions {
   servers: ToolServer[];
   policy?: ToolRouterPolicy;
   searchStrategy?: SearchStrategy;
-  pinnedTools?: string[];            // tool names always visible alongside meta-tools
+  /** Canonical tool ids (serverId.toolName) or legacy tool names always visible alongside meta-tools. */
+  pinnedTools?: string[];
   maxSearchResults?: number;
   excludeMetaTools?: string[];
   metaToolNames?: Partial<{
@@ -93,8 +94,6 @@ export interface ToolSearchRequest {
   serverName?: string;
   limit?: number;
   detail?: ToolRouterDetailLevel;
-  /** Internal: pinned tool names to exclude from search results (set by ToolRouter). */
-  _pinnedTools?: Set<string>;
 }
 
 export interface ToolSchemaRequest {
@@ -122,5 +121,6 @@ export interface ToolRouterMetaToolNames {
 
 export interface ToolRouterCallResult {
   content: Array<{ type: "text"; text: string }>;
+  structuredContent?: unknown;
   isError?: boolean;
 }
