@@ -73,7 +73,7 @@ export async function createAISDKTools(router: ToolRouter): Promise<AISDKToolSet
       inputSchema: jsonSchema!(tool.inputSchema ?? { type: "object" }),
       annotations: tool.annotations,
       execute: async (args: Record<string, unknown>) =>
-        router.callTool({ toolName: tool.toolName, sourceId: tool.sourceId, args })
+        router.callTool({ toolId: tool.toolId, args })
     }
   ]);
 

@@ -11,7 +11,7 @@ Dynamically search, fetch schemas, and route tool calls across multiple MCP serv
 When you have many tools, sending all schemas to the LLM is expensive and can exceed context limits. `ToolRouter` acts as an intermediary, keeping the active context small while preserving access to the full catalog.
 
 Use it to:
-- Index and search tools across multiple MCP servers or custom sources.
+- Index and search tools across multiple MCP servers or custom adapters.
 - Expose a small set of meta-tools for dynamic schema loading.
 - Control tool calls with allow/deny rules and approval gates.
 - Integrate with Vercel AI SDK.
@@ -65,9 +65,9 @@ const github = createToolSource({
 The router exposes four meta-tools to LLMs:
 
 - `search_tools`: Search the tool index without fetching full schemas.
-- `list_sources`: List registered sources and tool counts.
-- `get_tool_schema`: Fetch the input schema for a specific tool.
-- `call_tool`: Invoke a tool on a registered source.
+- `list_servers`: List registered servers and tool counts.
+- `get_tool_schemas`: Fetch input schemas for one or more specific tools.
+- `call_tool`: Invoke a tool on a registered server.
 
 ---
 
@@ -80,8 +80,8 @@ const router = await createToolRouter({
   sources: [github, linear, slack],
   metaToolNames: {
     searchTools: "find_tools",
-    listSources: "sources",
-    getToolSchema: "tool_schema",
+    listServers: "servers",
+    getToolSchemas: "tool_schemas",
     callTool: "run_tool"
   }
 });
@@ -92,15 +92,13 @@ const results = await router.searchTools({
 });
 
 // Get tool input schema
-const schema = router.getToolSchema({
-  sourceId: "github",
-  toolName: "list_pull_requests"
+const [schema] = router.getToolSchemas({
+  toolIds: ["github.list_pull_requests"]
 });
 
 // Invoke tool
 const pullRequests = await router.callTool({
-  sourceId: "github",
-  toolName: "list_pull_requests",
+  toolId: "github.list_pull_requests",
   args: {
     owner: "zonlabs",
     repo: "mcp-ts"
@@ -152,9 +150,9 @@ const GREP_MCP_URL = "https://mcp.grep.app";
 const instructions = `
 You are an expert assistant that helps users with tasks using available MCP tools.
 Use this flow:
-1) list_sources
+1) list_servers
 2) search_tools
-3) get_tool_schema
+3) get_tool_schemas
 4) call_tool
 Always search first before calling.
 `;
@@ -250,7 +248,7 @@ const router = await createToolRouter({
 
 Main exports:
 - `createToolRouter(options)`: Create and initialize a `ToolRouter`.
-- `createToolSource(source)`: Helper to type-check custom tool sources.
+- `createToolSource(source)`: Helper to type-check custom tool adapters.
 - `createAISDKTools(router)`: Expose meta-tools as Vercel AI SDK tools.
 - `asToolSource(id, client, name?)`: Adapt a compatible MCP tool client (including `@ai-sdk/mcp`) to `ToolSource`.
 - `mcpSource(id, client, name?)`: Wrap an MCP-like client as a `ToolSource`.

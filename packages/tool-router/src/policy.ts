@@ -5,15 +5,15 @@ export function wildcardMatch(pattern: string, value: string): boolean {
   return new RegExp(`^${escaped}$`, "i").test(value);
 }
 
-export function toolAddress(sourceId: string, toolName: string): string {
-  return `${sourceId}.${toolName}`;
+export function toolAddress(serverId: string, toolName: string): string {
+  return `${serverId}.${toolName}`;
 }
 
 export class PolicyEnforcer {
   constructor(private policy?: ToolRouterPolicy) {}
 
   isToolVisible(tool: IndexedTool): boolean {
-    const address = toolAddress(tool.sourceId, tool.toolName);
+    const address = toolAddress(tool.serverId, tool.toolName);
 
     if (this.policy?.allowTools?.length) {
       const allowed = this.policy.allowTools.some((pattern) => wildcardMatch(pattern, address));
@@ -30,7 +30,7 @@ export class PolicyEnforcer {
   }
 
   async assertToolAllowed(request: ToolCallRequest, tool: IndexedTool): Promise<void> {
-    const address = toolAddress(tool.sourceId, tool.toolName);
+    const address = toolAddress(tool.serverId, tool.toolName);
     if (!this.isToolVisible(tool)) {
       const deniedByAllowList = this.policy?.allowTools?.length
         ? !this.policy.allowTools.some((pattern) => wildcardMatch(pattern, address))

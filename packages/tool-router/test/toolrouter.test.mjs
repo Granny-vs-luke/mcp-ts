@@ -46,12 +46,13 @@ test("searches tools without exposing full schemas", async () => {
   const router = await createToolRouter({ sources: [github.source, slack.source] });
   const results = await router.searchTools({ query: "github pull requests" });
 
-  assert.equal(results[0].sourceId, "github");
+  assert.equal(results[0].toolId, "github.list_pull_requests");
+  assert.equal(results[0].serverId, "github");
   assert.equal(results[0].toolName, "list_pull_requests");
   assert.equal(results[0].inputSchema, undefined);
 });
 
-test("returns schemas and proxies calls to the selected source", async () => {
+test("returns schemas and proxies calls to the selected server", async () => {
   const github = fakeSource("github", [
     {
       name: "get_issue",
@@ -61,13 +62,13 @@ test("returns schemas and proxies calls to the selected source", async () => {
   ]);
 
   const router = await createToolRouter({ sources: [github.source] });
-  const schema = router.getToolSchema({ sourceId: "github", toolName: "get_issue" });
+  const [schema] = router.getToolSchemas({ toolIds: ["github.get_issue"] });
   const result = await router.callTool({
-    sourceId: "github",
-    toolName: "get_issue",
+    toolId: "github.get_issue",
     args: { issue_number: 7 }
   });
 
+  assert.equal(schema.toolId, "github.get_issue");
   assert.deepEqual(schema.inputSchema, { type: "object", required: ["issue_number"] });
   assert.deepEqual(result, {
     source: "github",
@@ -91,8 +92,8 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
 
   assert.deepEqual(names, [
     "search_tools",
-    "list_sources",
-    "get_tool_schema",
+    "list_servers",
+    "get_tool_schemas",
     "call_tool"
   ]);
 
@@ -103,17 +104,15 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
   assert.match(search.content[0].text, /list_pull_requests/);
   assert.equal(search.structuredContent, undefined);
 
-  const schema = await router.executeMetaTool("get_tool_schema", {
-    sourceId: "github",
-    toolName: "list_pull_requests"
+  const schema = await router.executeMetaTool("get_tool_schemas", {
+    toolIds: ["github.list_pull_requests"]
   });
   assert.equal(schema.isError, false);
-  assert.match(schema.content[0].text, /inputSchema/);
+  assert.match(schema.content[0].text, /Parameters/);
   assert.equal(schema.structuredContent, undefined);
 
   const call = await router.executeMetaTool("call_tool", {
-    sourceId: "github",
-    toolName: "list_pull_requests",
+    toolId: "github.list_pull_requests",
     args: { state: "open" }
   });
   assert.equal(call.isError, false);
@@ -136,13 +135,13 @@ test("enforces destructive tool approval policy", async () => {
   });
 
   await assert.rejects(
-    router.callTool({ sourceId: "github", toolName: "delete_issue", args: {} }),
+    router.callTool({ toolId: "github.delete_issue", args: {} }),
     /Policy denied/
   );
   assert.equal(github.calls.length, 0);
 });
 
-test("normalizes source ids consistently during search", async () => {
+test("normalizes server ids consistently during search", async () => {
   const github = fakeSource("GitHub Server", [
     {
       name: "list_pull_requests",
@@ -152,12 +151,12 @@ test("normalizes source ids consistently during search", async () => {
 
   const router = await createToolRouter({ sources: [github.source] });
   const results = await router.searchTools({
-    sourceId: "GitHub Server",
+    serverId: "GitHub Server",
     query: "pull requests"
   });
 
   assert.equal(results.length, 1);
-  assert.equal(results[0].sourceId, "github_server");
+  assert.equal(results[0].serverId, "github_server");
 });
 
 test("initializes schema lookup when using the async meta-tool path", async () => {
@@ -171,9 +170,8 @@ test("initializes schema lookup when using the async meta-tool path", async () =
 
   const { ToolRouter } = await import("../dist/index.js");
   const router = new ToolRouter({ sources: [github.source] });
-  const schema = await router.executeMetaTool("get_tool_schema", {
-    sourceId: "github",
-    toolName: "get_issue"
+  const schema = await router.executeMetaTool("get_tool_schemas", {
+    toolIds: ["github.get_issue"]
   });
 
   assert.equal(schema.isError, false);
@@ -204,7 +202,7 @@ test("shares one initialization across concurrent first-use calls", async () => 
   const router = new ToolRouter({ sources: [source] });
 
   const searchPromise = router.searchTools({ query: "issue" });
-  const callPromise = router.callTool({ sourceId: "github", toolName: "get_issue", args: {} });
+  const callPromise = router.callTool({ toolId: "github.get_issue", args: {} });
 
   releaseList();
 
@@ -249,15 +247,14 @@ test("refresh invalidates ai-sdk adapter tool cache", async () => {
   });
 
   await router.searchTools({ query: "issue" });
-  await router.callTool({ sourceId: "github", toolName: "get_issue", args: { issue_number: 1 } });
+  await router.callTool({ toolId: "github.get_issue", args: { issue_number: 1 } });
 
   phase = 2;
   await router.refresh();
 
   const results = await router.searchTools({ query: "pull requests" });
   const call = await router.callTool({
-    sourceId: "github",
-    toolName: "list_pull_requests",
+    toolId: "github.list_pull_requests",
     args: { state: "open" }
   });
 
@@ -297,7 +294,7 @@ test("rejects discovered tools that collide with active meta-tool names", async 
 
   await assert.rejects(
     router.initialize(),
-    /Tool collision: Source "github" exposes a tool named "search_tools" which conflicts/
+    /Tool collision: Server "github" exposes a tool named "search_tools" which conflicts/
   );
 });
 
@@ -362,7 +359,7 @@ test("pinned tools remain callable via callTool", async () => {
     pinnedTools: ["help"]
   });
 
-  const result = await router.callTool({ toolName: "help", args: {} });
+  const result = await router.callTool({ toolId: "github.help", args: {} });
   assert.deepEqual(result, { source: "github", name: "help", args: {} });
 });
 
@@ -412,16 +409,16 @@ test("policy-denied pinned tools are excluded from visible tools", async () => {
   assert.deepEqual(pinned.map((tool) => tool.toolName), ["get_issue"]);
 });
 
-test("listSources uses normalized source ids without duplicates", async () => {
+test("listServers uses normalized server ids without duplicates", async () => {
   const source = fakeSource("GitHub Server", [
     { name: "get_issue", description: "Get issue" }
   ]);
 
   const router = await createToolRouter({ sources: [source.source] });
-  assert.deepEqual(router.listSources(), [
+  assert.deepEqual(router.listServers(), [
     {
-      sourceId: "github_server",
-      sourceName: "GitHub Server",
+      serverId: "github_server",
+      serverName: "GitHub Server",
       toolCount: 1
     }
   ]);
@@ -477,14 +474,41 @@ test("schema meta tool does not expose annotations", async () => {
   ]);
 
   const router = await createToolRouter({ sources: [source.source] });
-  const schema = await router.executeMetaTool("get_tool_schema", {
-    sourceId: "github",
-    toolName: "delete_repo"
+  const schema = await router.executeMetaTool("get_tool_schemas", {
+    toolIds: ["github.delete_repo"]
   });
 
   assert.equal(schema.isError, false);
-  assert.match(schema.content[0].text, /inputSchema/);
+  assert.match(schema.content[0].text, /Parameters/);
   assert.doesNotMatch(schema.content[0].text, /destructiveHint|Delete Repository/);
   assert.equal(schema.structuredContent, undefined);
+});
+
+test("search results expose canonical tool ids", async () => {
+  const source = fakeSource("github", [
+    { name: "get_issue", description: "Get an issue" }
+  ]);
+
+  const router = await createToolRouter({ sources: [source.source] });
+  const [result] = await router.searchTools({ query: "issue" });
+
+  assert.equal(result.toolId, "github.get_issue");
+});
+
+test("getToolSchemas supports batch tool ids", async () => {
+  const source = fakeSource("github", [
+    { name: "get_issue", description: "Get issue", inputSchema: { type: "object" } },
+    { name: "list_pull_requests", description: "List pull requests", inputSchema: { type: "object" } }
+  ]);
+
+  const router = await createToolRouter({ sources: [source.source] });
+  const schemas = router.getToolSchemas({
+    toolIds: ["github.get_issue", "github.list_pull_requests"]
+  });
+
+  assert.deepEqual(schemas.map((schema) => schema.toolId), [
+    "github.get_issue",
+    "github.list_pull_requests"
+  ]);
 });
 

@@ -1,4 +1,4 @@
-export function normalizeSourceId(value: string): string {
+export function normalizeServerId(value: string): string {
   return value
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "_")

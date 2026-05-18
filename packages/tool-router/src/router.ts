@@ -3,20 +3,21 @@ import type {
   IndexedTool,
   ToolCallRequest,
   ToolDefinition,
-  ToolRouterMetaToolNames,
   ToolRouterCallResult,
+  ToolRouterDetailLevel,
   ToolRouterMetaTool,
+  ToolRouterMetaToolNames,
   ToolRouterOptions,
-  ToolSchemaResult,
   ToolSchemaRequest,
+  ToolSchemaResult,
   ToolSearchRequest,
   ToolSearchResult,
   ToolSource
 } from "./types.js";
-import { normalizeSourceId } from "./utils.js";
+import type { PinnedToolResult, VisibleTools } from "./types.js";
+import { normalizeServerId } from "./utils.js";
 import { BM25SearchStrategy } from "./search.js";
 import { PolicyEnforcer } from "./policy.js";
-import type { PinnedToolResult, VisibleTools } from "./types.js";
 
 export class ToolRouter {
   private sources = new Map<string, ToolSource>();
@@ -42,13 +43,15 @@ export class ToolRouter {
 
     const metaNames = [
       this.metaToolNames.searchTools,
-      this.metaToolNames.listSources,
-      this.metaToolNames.getToolSchema,
+      this.metaToolNames.listServers,
+      this.metaToolNames.getToolSchemas,
       this.metaToolNames.callTool
     ];
     if (new Set(metaNames).size !== metaNames.length) {
       const duplicates = metaNames.filter((item, index) => metaNames.indexOf(item) !== index);
-      throw new Error(`Invalid meta-tool configuration: duplicate names detected (${[...new Set(duplicates)].join(", ")}).`);
+      throw new Error(
+        `Invalid meta-tool configuration: duplicate names detected (${[...new Set(duplicates)].join(", ")}).`
+      );
     }
   }
 
@@ -75,25 +78,27 @@ export class ToolRouter {
 
   private async rebuildIndex(): Promise<void> {
     const next: IndexedTool[] = [];
-    const seenSourceIds = new Set<string>();
+    const seenServerIds = new Set<string>();
     const activeMetaToolNames = new Set(this.getMetaTools().map((t) => t.name));
     const nextSources = new Map<string, ToolSource>();
 
     try {
       for (const source of this.options.sources) {
-        const sourceId = normalizeSourceId(source.id);
-        if (seenSourceIds.has(sourceId)) {
-          throw new Error(`Duplicate tool source id "${sourceId}".`);
+        const serverId = normalizeServerId(source.id);
+        if (seenServerIds.has(serverId)) {
+          throw new Error(`Duplicate tool server id "${serverId}".`);
         }
-        seenSourceIds.add(sourceId);
-        nextSources.set(sourceId, { ...source, id: sourceId });
+        seenServerIds.add(serverId);
+        nextSources.set(serverId, { ...source, id: serverId });
 
         const listed = await source.listTools();
         for (const tool of listed.tools) {
           if (activeMetaToolNames.has(tool.name)) {
-            throw new Error(`Tool collision: Source "${sourceId}" exposes a tool named "${tool.name}" which conflicts with a configured meta-tool.`);
+            throw new Error(
+              `Tool collision: Server "${serverId}" exposes a tool named "${tool.name}" which conflicts with a configured meta-tool.`
+            );
           }
-          next.push(this.toIndexedTool(source, sourceId, tool));
+          next.push(this.toIndexedTool(source, serverId, tool));
         }
       }
       this.sources = nextSources;
@@ -134,91 +139,101 @@ export class ToolRouter {
   async searchTools(request: ToolSearchRequest): Promise<ToolSearchResult[]> {
     await this.ensureInitialized();
     const limit = Math.min(request.limit ?? this.maxSearchResults, 100);
-    const visibleTools = this.indexedTools.filter((tool) => this.policyEnforcer.isToolVisible(tool));
-    return this.searchStrategy.search(visibleTools, {
-      ...request,
-      _pinnedTools: this.pinnedToolNames
-    }, limit);
+    const visibleTools = this.indexedTools.filter((tool) =>
+      this.policyEnforcer.isToolVisible(tool)
+    );
+    return this.searchStrategy.search(
+      visibleTools,
+      {
+        ...request,
+        _pinnedTools: this.pinnedToolNames
+      },
+      limit
+    );
   }
 
-  /** Returns pinned tools resolved from the current index. Unknown names are silently omitted. */
   getPinnedTools(): PinnedToolResult[] {
     return [...this.pinnedToolNames].flatMap((name) => {
       const tool = this.indexedTools.find(
         (t) => t.toolName === name && this.policyEnforcer.isToolVisible(t)
       );
       return tool
-        ? [{
-            sourceId: tool.sourceId,
-            sourceName: tool.sourceName,
-            toolName: tool.toolName,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-            annotations: tool.annotations
-          }]
+        ? [
+            {
+              toolId: makeToolId(tool.serverId, tool.toolName),
+              serverId: tool.serverId,
+              serverName: tool.serverName,
+              toolName: tool.toolName,
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+              annotations: tool.annotations
+            }
+          ]
         : [];
     });
   }
 
-  /** Combined view: pinned real tools + synthetic meta-tools. Use this as the public tool listing. */
   getVisibleTools(): VisibleTools {
     return { pinned: this.getPinnedTools(), metaTools: this.getMetaTools() };
   }
 
-  listSources(query = ""): Array<{ sourceId: string; sourceName: string; toolCount: number }> {
+  listServers(query = ""): Array<{ serverId: string; serverName: string; toolCount: number }> {
     const lowered = query.toLowerCase();
-    const counts = new Map<string, { sourceId: string; sourceName: string; toolCount: number }>();
+    const counts = new Map<string, { serverId: string; serverName: string; toolCount: number }>();
 
-    for (const [sourceId, source] of this.sources.entries()) {
-      counts.set(sourceId, {
-        sourceId,
-        sourceName: source.name ?? sourceId,
+    for (const [serverId, source] of this.sources.entries()) {
+      counts.set(serverId, {
+        serverId,
+        serverName: source.name ?? serverId,
         toolCount: 0
       });
     }
 
     for (const tool of this.indexedTools) {
       const current =
-        counts.get(tool.sourceId) ??
-        { sourceId: tool.sourceId, sourceName: tool.sourceName, toolCount: 0 };
+        counts.get(tool.serverId) ??
+        { serverId: tool.serverId, serverName: tool.serverName, toolCount: 0 };
       current.toolCount += 1;
-      counts.set(tool.sourceId, current);
+      counts.set(tool.serverId, current);
     }
 
     return [...counts.values()].filter(
-      (source) =>
+      (server) =>
         !lowered ||
-        source.sourceId.toLowerCase().includes(lowered) ||
-        source.sourceName.toLowerCase().includes(lowered)
+        server.serverId.toLowerCase().includes(lowered) ||
+        server.serverName.toLowerCase().includes(lowered)
     );
   }
 
-  getToolSchema(request: ToolSchemaRequest): ToolSchemaResult {
-    const tool = this.resolveTool(request);
-    if (!tool) {
-      throw new Error(`Tool "${request.toolName}" was not found.`);
-    }
-    return {
-      sourceId: tool.sourceId,
-      sourceName: tool.sourceName,
-      toolName: tool.toolName,
-      description: tool.description,
-      inputSchema: tool.inputSchema
-    };
+  getToolSchemas(request: ToolSchemaRequest): ToolSchemaResult[] {
+    return request.toolIds.map((toolId) => {
+      const tool = this.resolveToolById(toolId);
+      if (!tool) {
+        throw new Error(`Tool "${toolId}" was not found.`);
+      }
+      return {
+        toolId: makeToolId(tool.serverId, tool.toolName),
+        serverId: tool.serverId,
+        serverName: tool.serverName,
+        toolName: tool.toolName,
+        description: tool.description,
+        inputSchema: tool.inputSchema
+      };
+    });
   }
 
   async callTool(request: ToolCallRequest): Promise<unknown> {
     await this.ensureInitialized();
-    const tool = this.resolveTool(request);
+    const tool = this.resolveToolById(request.toolId);
     if (!tool) {
-      throw new Error(`Tool "${request.toolName}" was not found.`);
+      throw new Error(`Tool "${request.toolId}" was not found.`);
     }
 
     await this.policyEnforcer.assertToolAllowed(request, tool);
 
-    const source = this.sources.get(tool.sourceId);
+    const source = this.sources.get(tool.serverId);
     if (!source) {
-      throw new Error(`Source "${tool.sourceId}" is no longer registered.`);
+      throw new Error(`Server "${tool.serverId}" is no longer registered.`);
     }
 
     return source.callTool(tool.toolName, request.args ?? {});
@@ -228,33 +243,32 @@ export class ToolRouter {
     try {
       switch (name) {
         case this.metaToolNames.searchTools: {
+          const detail = detailArg(args.detail) ?? "brief";
           const results = await this.searchTools({
             query: stringArg(args.query),
-            sourceId: stringArg(args.sourceId),
-            sourceName: stringArg(args.sourceName),
-            limit: numberArg(args.limit)
+            serverId: stringArg(args.serverId),
+            serverName: stringArg(args.serverName),
+            limit: numberArg(args.limit),
+            detail
           });
-          return this.success(formatJson(results));
+          return this.success(renderSearchResults(results, detail));
         }
-        case this.metaToolNames.listSources: {
+        case this.metaToolNames.listServers: {
           await this.ensureInitialized();
-          const result = this.listSources(stringArg(args.query) ?? "");
+          const result = this.listServers(stringArg(args.query) ?? "");
           return this.success(formatJson(result));
         }
-        case this.metaToolNames.getToolSchema: {
+        case this.metaToolNames.getToolSchemas: {
           await this.ensureInitialized();
-          const schema = this.getToolSchema({
-            sourceId: stringArg(args.sourceId),
-            sourceName: stringArg(args.sourceName),
-            toolName: requiredStringArg(args.toolName, "toolName")
+          const detail = detailArg(args.detail) ?? "detailed";
+          const schema = this.getToolSchemas({
+            toolIds: requiredStringArrayArg(args.toolIds, "toolIds")
           });
-          return this.success(formatJson(schema));
+          return this.success(renderSchemaResults(schema, detail));
         }
         case this.metaToolNames.callTool: {
           const result = await this.callTool({
-            sourceId: stringArg(args.sourceId),
-            sourceName: stringArg(args.sourceName),
-            toolName: requiredStringArg(args.toolName, "toolName"),
+            toolId: requiredStringArg(args.toolId, "toolId"),
             args: objectArg(args.args)
           });
           return this.success(formatJson(result));
@@ -278,33 +292,17 @@ export class ToolRouter {
     await this.initialize();
   }
 
-  private resolveTool(request: ToolSchemaRequest): IndexedTool | undefined {
-    const matches = this.indexedTools.filter((tool) => {
-      if (tool.toolName !== request.toolName) return false;
-      if (request.sourceId && tool.sourceId !== normalizeSourceId(request.sourceId)) return false;
-      if (
-        request.sourceName &&
-        !tool.sourceName.toLowerCase().includes(request.sourceName.toLowerCase())
-      ) {
-        return false;
-      }
-      return true;
-    });
-
-    if (matches.length > 1) {
-      const sources = matches.map((tool) => tool.sourceId).join(", ");
-      throw new Error(
-        `Tool "${request.toolName}" exists on multiple sources: ${sources}. Provide sourceId.`
-      );
-    }
-
-    return matches[0];
+  private resolveToolById(toolId: string): IndexedTool | undefined {
+    const { serverId, toolName } = parseToolId(toolId);
+    return this.indexedTools.find(
+      (tool) => tool.serverId === normalizeServerId(serverId) && tool.toolName === toolName
+    );
   }
 
-  private toIndexedTool(source: ToolSource, sourceId: string, tool: ToolDefinition): IndexedTool {
+  private toIndexedTool(source: ToolSource, serverId: string, tool: ToolDefinition): IndexedTool {
     return {
-      sourceId,
-      sourceName: source.name ?? sourceId,
+      serverId,
+      serverName: source.name ?? serverId,
       toolName: tool.name,
       description: tool.description ?? "",
       inputSchema: tool.inputSchema,
@@ -348,8 +346,23 @@ function requiredStringArg(value: unknown, name: string): string {
   return value;
 }
 
+function requiredStringArrayArg(value: unknown, name: string): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.some((item) => typeof item !== "string" || item.length === 0)
+  ) {
+    throw new Error(`Missing required parameter "${name}".`);
+  }
+  return value;
+}
+
 function numberArg(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function detailArg(value: unknown): ToolRouterDetailLevel | undefined {
+  return value === "brief" || value === "detailed" || value === "full" ? value : undefined;
 }
 
 function objectArg(value: unknown): Record<string, unknown> {
@@ -358,4 +371,130 @@ function objectArg(value: unknown): Record<string, unknown> {
     throw new Error('"args" must be an object.');
   }
   return value as Record<string, unknown>;
+}
+
+function makeToolId(serverId: string, toolName: string): string {
+  return `${serverId}.${toolName}`;
+}
+
+function parseToolId(toolId: string): { serverId: string; toolName: string } {
+  const separatorIndex = toolId.indexOf(".");
+  if (separatorIndex <= 0 || separatorIndex === toolId.length - 1) {
+    throw new Error(`Invalid toolId "${toolId}". Expected "serverId.toolName".`);
+  }
+
+  return {
+    serverId: toolId.slice(0, separatorIndex),
+    toolName: toolId.slice(separatorIndex + 1)
+  };
+}
+
+function renderSearchResults(results: ToolSearchResult[], detail: ToolRouterDetailLevel): string {
+  if (results.length === 0) {
+    return detail === "full" ? "[]" : "No tools matched the query.";
+  }
+
+  if (detail === "full") {
+    return formatJson(results);
+  }
+
+  if (detail === "detailed") {
+    return results
+      .map((tool, index) =>
+        [
+          `${index + 1}. ${tool.toolName}`,
+          `Tool ID: ${tool.toolId}`,
+          `Server: ${tool.serverId}${tool.serverName && tool.serverName !== tool.serverId ? ` (${tool.serverName})` : ""}`,
+          tool.description ? `Description: ${tool.description}` : null
+        ]
+          .filter(Boolean)
+          .join("\n")
+      )
+      .join("\n\n");
+  }
+
+  return results
+    .map((tool) => `- ${tool.toolId}: ${tool.description || "No description."}`)
+    .join("\n");
+}
+
+function renderSchemaResults(results: ToolSchemaResult[], detail: ToolRouterDetailLevel): string {
+  if (results.length === 0) {
+    return detail === "full" ? "[]" : "No tools matched the query.";
+  }
+
+  if (detail === "full") {
+    return formatJson(results);
+  }
+
+  return results
+    .map((tool) => {
+      const lines = [`### ${tool.toolName}`, `Tool ID: ${tool.toolId}`];
+      if (tool.description) {
+        lines.push("", tool.description);
+      }
+      if (detail === "brief") {
+        return lines.join("\n");
+      }
+      lines.push("", "**Parameters**");
+      lines.push(...renderSchemaFields(tool.inputSchema));
+      return lines.join("\n");
+    })
+    .join("\n\n");
+}
+
+function renderSchemaFields(schema: unknown): string[] {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+    return ["- `value` (any)"];
+  }
+
+  const record = schema as Record<string, unknown>;
+  const properties = record.properties;
+  const required = Array.isArray(record.required)
+    ? new Set(
+        record.required.filter((item): item is string => typeof item === "string")
+      )
+    : new Set<string>();
+
+  if (
+    (!properties || typeof properties !== "object" || Array.isArray(properties)) &&
+    required.size > 0
+  ) {
+    return [...required].map((name) => `- \`${name}\` (any, required)`);
+  }
+
+  if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
+    return ["- `value` (any)"];
+  }
+
+  const entries = Object.entries(properties as Record<string, unknown>);
+  if (entries.length === 0) {
+    return ["*(no parameters)*"];
+  }
+
+  return entries.map(([name, field]) => {
+    const fieldType = schemaType(field);
+    const suffix = required.has(name) ? ", required" : "";
+    return `- \`${name}\` (${fieldType}${suffix})`;
+  });
+}
+
+function schemaType(schema: unknown): string {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+    return "any";
+  }
+
+  const record = schema as Record<string, unknown>;
+  if (typeof record.type === "string" && record.type.length > 0) {
+    if (record.type === "array") {
+      return `${schemaType(record.items)}[]`;
+    }
+    return record.type;
+  }
+
+  if (record.properties && typeof record.properties === "object") {
+    return "object";
+  }
+
+  return "any";
 }

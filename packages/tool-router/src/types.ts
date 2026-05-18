@@ -24,8 +24,8 @@ export interface ToolSource {
 }
 
 export interface IndexedTool {
-  sourceId: string;
-  sourceName: string;
+  serverId: string;
+  serverName: string;
   toolName: string;
   description: string;
   annotations?: ToolAnnotations;
@@ -33,8 +33,9 @@ export interface IndexedTool {
 }
 
 export interface ToolSearchResult {
-  sourceId: string;
-  sourceName: string;
+  toolId: string;
+  serverId: string;
+  serverName: string;
   toolName: string;
   description: string;
   score: number;
@@ -45,8 +46,9 @@ export interface SearchStrategy {
 }
 
 export interface ToolSchemaResult {
-  sourceId: string;
-  sourceName: string;
+  toolId: string;
+  serverId: string;
+  serverName: string;
   toolName: string;
   description: string;
   inputSchema?: unknown;
@@ -55,6 +57,8 @@ export interface ToolSchemaResult {
 export interface PinnedToolResult extends ToolSchemaResult {
   annotations?: ToolAnnotations;
 }
+
+export type ToolRouterDetailLevel = "brief" | "detailed" | "full";
 
 export interface VisibleTools {
   pinned: PinnedToolResult[];
@@ -77,28 +81,28 @@ export interface ToolRouterOptions {
   excludeMetaTools?: string[];
   metaToolNames?: Partial<{
     searchTools: string;
-    listSources: string;
-    getToolSchema: string;
+    listServers: string;
+    getToolSchemas: string;
     callTool: string;
   }>;
 }
 
 export interface ToolSearchRequest {
   query?: string;
-  sourceId?: string;
-  sourceName?: string;
+  serverId?: string;
+  serverName?: string;
   limit?: number;
+  detail?: ToolRouterDetailLevel;
   /** Internal: pinned tool names to exclude from search results (set by ToolRouter). */
   _pinnedTools?: Set<string>;
 }
 
 export interface ToolSchemaRequest {
-  sourceId?: string;
-  sourceName?: string;
-  toolName: string;
+  toolIds: string[];
 }
 
-export interface ToolCallRequest extends ToolSchemaRequest {
+export interface ToolCallRequest {
+  toolId: string;
   args?: Record<string, unknown>;
 }
 
@@ -111,13 +115,12 @@ export interface ToolRouterMetaTool {
 
 export interface ToolRouterMetaToolNames {
   searchTools: string;
-  listSources: string;
-  getToolSchema: string;
+  listServers: string;
+  getToolSchemas: string;
   callTool: string;
 }
 
 export interface ToolRouterCallResult {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
-  structuredContent?: unknown;
 }

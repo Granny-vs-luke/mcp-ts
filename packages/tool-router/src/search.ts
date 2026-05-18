@@ -1,11 +1,11 @@
 import type { IndexedTool, SearchStrategy, ToolSearchRequest, ToolSearchResult } from "./types.js";
-import { normalizeSourceId } from "./utils.js";
+import { normalizeServerId } from "./utils.js";
 
 export function matchesSearchScope(tool: IndexedTool, request: ToolSearchRequest): boolean {
-  if (request.sourceId && tool.sourceId !== normalizeSourceId(request.sourceId)) return false;
+  if (request.serverId && tool.serverId !== normalizeServerId(request.serverId)) return false;
   if (
-    request.sourceName &&
-    !tool.sourceName.toLowerCase().includes(request.sourceName.toLowerCase())
+    request.serverName &&
+    !tool.serverName.toLowerCase().includes(request.serverName.toLowerCase())
   ) {
     return false;
   }
@@ -18,7 +18,7 @@ function tokenize(value: string): string[] {
 
 function documentTokens(tool: IndexedTool): string[] {
   const name = tokenize(tool.toolName);
-  const source = tokenize(`${tool.sourceId} ${tool.sourceName}`);
+  const server = tokenize(`${tool.serverId} ${tool.serverName}`);
   const description = tokenize(tool.description);
 
   // Keep prior weighting intent: name > source > description.
@@ -26,8 +26,8 @@ function documentTokens(tool: IndexedTool): string[] {
     ...name,
     ...name,
     ...name,
-    ...source,
-    ...source,
+    ...server,
+    ...server,
     ...description
   ];
 }
@@ -93,8 +93,9 @@ export class BM25SearchStrategy implements SearchStrategy {
       .sort((a, b) => b.score - a.score || a.tool.toolName.localeCompare(b.tool.toolName))
       .slice(0, limit)
       .map(({ tool, score }) => ({
-        sourceId: tool.sourceId,
-        sourceName: tool.sourceName,
+        toolId: `${tool.serverId}.${tool.toolName}`,
+        serverId: tool.serverId,
+        serverName: tool.serverName,
         toolName: tool.toolName,
         description: tool.description,
         score
