@@ -1,6 +1,9 @@
 {
   "name": "@mcp-ts/tool-router",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "ToolRouter lets agents discover tools, load schemas on-demand, and route tool calls across multiple MCP servers.",
   "type": "module",
   "main": "./dist/index.js",
