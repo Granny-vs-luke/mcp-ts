@@ -234,12 +234,12 @@ export class ToolRouter {
             sourceName: stringArg(args.sourceName),
             limit: numberArg(args.limit)
           });
-          return this.success(formatJson(results), results);
+          return this.success(formatJson(results));
         }
         case this.metaToolNames.listSources: {
           await this.ensureInitialized();
           const result = this.listSources(stringArg(args.query) ?? "");
-          return this.success(formatJson(result), result);
+          return this.success(formatJson(result));
         }
         case this.metaToolNames.getToolSchema: {
           await this.ensureInitialized();
@@ -248,7 +248,7 @@ export class ToolRouter {
             sourceName: stringArg(args.sourceName),
             toolName: requiredStringArg(args.toolName, "toolName")
           });
-          return this.success(formatJson(schema), schema);
+          return this.success(formatJson(schema));
         }
         case this.metaToolNames.callTool: {
           const result = await this.callTool({
@@ -257,7 +257,7 @@ export class ToolRouter {
             toolName: requiredStringArg(args.toolName, "toolName"),
             args: objectArg(args.args)
           });
-          return this.success(formatJson(result), result);
+          return this.success(formatJson(result));
         }
         default:
           return this.error(`Unknown toolrouter meta tool "${name}".`);
@@ -312,11 +312,10 @@ export class ToolRouter {
     };
   }
 
-  private success(text: string, structuredContent?: unknown): ToolRouterCallResult {
+  private success(text: string): ToolRouterCallResult {
     return {
       content: [{ type: "text", text }],
-      isError: false,
-      structuredContent
+      isError: false
     };
   }
 

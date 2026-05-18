@@ -101,6 +101,7 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
   });
   assert.equal(search.isError, false);
   assert.match(search.content[0].text, /list_pull_requests/);
+  assert.equal(search.structuredContent, undefined);
 
   const schema = await router.executeMetaTool("get_tool_schema", {
     sourceId: "github",
@@ -108,6 +109,7 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
   });
   assert.equal(schema.isError, false);
   assert.match(schema.content[0].text, /inputSchema/);
+  assert.equal(schema.structuredContent, undefined);
 
   const call = await router.executeMetaTool("call_tool", {
     sourceId: "github",
@@ -116,6 +118,7 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
   });
   assert.equal(call.isError, false);
   assert.match(call.content[0].text, /open/);
+  assert.equal(call.structuredContent, undefined);
 });
 
 test("enforces destructive tool approval policy", async () => {
@@ -444,5 +447,44 @@ test("pinned ai-sdk tools preserve annotations", async () => {
     destructiveHint: true,
     title: "Delete Repository"
   });
+});
+
+test("search meta tool does not expose annotations", async () => {
+  const source = fakeSource("github", [
+    {
+      name: "delete_repo",
+      description: "Delete a repository",
+      annotations: { destructiveHint: true, title: "Delete Repository" }
+    }
+  ]);
+
+  const router = await createToolRouter({ sources: [source.source] });
+  const search = await router.executeMetaTool("search_tools", { query: "delete" });
+
+  assert.equal(search.isError, false);
+  assert.doesNotMatch(search.content[0].text, /destructiveHint|Delete Repository/);
+  assert.equal(search.structuredContent, undefined);
+});
+
+test("schema meta tool does not expose annotations", async () => {
+  const source = fakeSource("github", [
+    {
+      name: "delete_repo",
+      description: "Delete a repository",
+      annotations: { destructiveHint: true, title: "Delete Repository" },
+      inputSchema: { type: "object", properties: { repo: { type: "string" } } }
+    }
+  ]);
+
+  const router = await createToolRouter({ sources: [source.source] });
+  const schema = await router.executeMetaTool("get_tool_schema", {
+    sourceId: "github",
+    toolName: "delete_repo"
+  });
+
+  assert.equal(schema.isError, false);
+  assert.match(schema.content[0].text, /inputSchema/);
+  assert.doesNotMatch(schema.content[0].text, /destructiveHint|Delete Repository/);
+  assert.equal(schema.structuredContent, undefined);
 });
 
