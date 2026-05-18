@@ -1,4 +1,4 @@
-import type { ToolDefinition, ToolSource } from "../types.js";
+import type { ToolDefinition, ToolServer } from "../types.js";
 
 export interface McpLikeClient {
   listTools(): Promise<{ tools: ToolDefinition[] }>;
@@ -11,7 +11,7 @@ export interface McpLikeProvider {
   getClients(): McpLikeClient[];
 }
 
-export function mcpSource(id: string, client: McpLikeClient, name?: string): ToolSource {
+export function mcpServer(id: string, client: McpLikeClient, name?: string): ToolServer {
   return {
     id,
     name: name ?? client.getServerName?.() ?? client.getServerId?.() ?? id,
@@ -20,12 +20,13 @@ export function mcpSource(id: string, client: McpLikeClient, name?: string): Too
   };
 }
 
-export function mcpSources(provider: McpLikeProvider): ToolSource[] {
+export function mcpServers(provider: McpLikeProvider): ToolServer[] {
   return provider.getClients().map((client, index) =>
-    mcpSource(
+    mcpServer(
       client.getServerId?.() ?? `mcp_${index + 1}`,
       client,
       client.getServerName?.()
     )
   );
 }
+

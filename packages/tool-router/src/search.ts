@@ -21,7 +21,7 @@ function documentTokens(tool: IndexedTool): string[] {
   const server = tokenize(`${tool.serverId} ${tool.serverName}`);
   const description = tokenize(tool.description);
 
-  // Keep prior weighting intent: name > source > description.
+  // Keep prior weighting intent: name > server > description.
   return [
     ...name,
     ...name,

@@ -12,7 +12,7 @@ import type {
   ToolSchemaResult,
   ToolSearchRequest,
   ToolSearchResult,
-  ToolSource
+  ToolServer
 } from "./types.js";
 import type { PinnedToolResult, VisibleTools } from "./types.js";
 import { normalizeServerId } from "./utils.js";
@@ -20,7 +20,7 @@ import { BM25SearchStrategy } from "./search.js";
 import { PolicyEnforcer } from "./policy.js";
 
 export class ToolRouter {
-  private sources = new Map<string, ToolSource>();
+  private servers = new Map<string, ToolServer>();
   private indexedTools: IndexedTool[] = [];
   private initialized = false;
   private initializePromise: Promise<void> | null = null;
@@ -80,28 +80,28 @@ export class ToolRouter {
     const next: IndexedTool[] = [];
     const seenServerIds = new Set<string>();
     const activeMetaToolNames = new Set(this.getMetaTools().map((t) => t.name));
-    const nextSources = new Map<string, ToolSource>();
+    const nextServers = new Map<string, ToolServer>();
 
     try {
-      for (const source of this.options.sources) {
-        const serverId = normalizeServerId(source.id);
+      for (const server of this.options.servers) {
+        const serverId = normalizeServerId(server.id);
         if (seenServerIds.has(serverId)) {
           throw new Error(`Duplicate tool server id "${serverId}".`);
         }
         seenServerIds.add(serverId);
-        nextSources.set(serverId, { ...source, id: serverId });
+        nextServers.set(serverId, { ...server, id: serverId });
 
-        const listed = await source.listTools();
+        const listed = await server.listTools();
         for (const tool of listed.tools) {
           if (activeMetaToolNames.has(tool.name)) {
             throw new Error(
               `Tool collision: Server "${serverId}" exposes a tool named "${tool.name}" which conflicts with a configured meta-tool.`
             );
           }
-          next.push(this.toIndexedTool(source, serverId, tool));
+          next.push(this.toIndexedTool(server, serverId, tool));
         }
       }
-      this.sources = nextSources;
+      this.servers = nextServers;
       this.indexedTools = next;
       this.initialized = true;
     } finally {
@@ -115,8 +115,8 @@ export class ToolRouter {
     }
     this.initialized = false;
     try {
-      for (const source of this.options.sources) {
-        await source.refresh?.();
+      for (const server of this.options.servers) {
+        await server.refresh?.();
       }
       if (!this.initializePromise) {
         this.initializePromise = this.rebuildIndex();
@@ -181,10 +181,10 @@ export class ToolRouter {
     const lowered = query.toLowerCase();
     const counts = new Map<string, { serverId: string; serverName: string; toolCount: number }>();
 
-    for (const [serverId, source] of this.sources.entries()) {
+    for (const [serverId, server] of this.servers.entries()) {
       counts.set(serverId, {
         serverId,
-        serverName: source.name ?? serverId,
+        serverName: server.name ?? serverId,
         toolCount: 0
       });
     }
@@ -231,12 +231,12 @@ export class ToolRouter {
 
     await this.policyEnforcer.assertToolAllowed(request, tool);
 
-    const source = this.sources.get(tool.serverId);
-    if (!source) {
+    const server = this.servers.get(tool.serverId);
+    if (!server) {
       throw new Error(`Server "${tool.serverId}" is no longer registered.`);
     }
 
-    return source.callTool(tool.toolName, request.args ?? {});
+    return server.callTool(tool.toolName, request.args ?? {});
   }
 
   async executeMetaTool(name: string, args: Record<string, unknown>): Promise<ToolRouterCallResult> {
@@ -299,10 +299,10 @@ export class ToolRouter {
     );
   }
 
-  private toIndexedTool(source: ToolSource, serverId: string, tool: ToolDefinition): IndexedTool {
+  private toIndexedTool(server: ToolServer, serverId: string, tool: ToolDefinition): IndexedTool {
     return {
       serverId,
-      serverName: source.name ?? serverId,
+      serverName: server.name ?? serverId,
       toolName: tool.name,
       description: tool.description ?? "",
       inputSchema: tool.inputSchema,
@@ -414,7 +414,7 @@ function renderSearchResults(results: ToolSearchResult[], detail: ToolRouterDeta
   }
 
   return results
-    .map((tool) => `- ${tool.toolId}: ${tool.description || "No description."}`)
+    .map((tool) => `- Tool ID: ${tool.toolId} - ${tool.description || "No description."}`)
     .join("\n");
 }
 

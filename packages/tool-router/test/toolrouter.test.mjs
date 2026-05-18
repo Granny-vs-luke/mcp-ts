@@ -2,27 +2,27 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createToolRouter,
-  createToolSource
+  createToolServer
 } from "../dist/index.js";
 
-function fakeSource(id, tools) {
+function fakeServer(id, tools) {
   const calls = [];
   return {
     calls,
-    source: createToolSource({
+    server: createToolServer({
       id,
       name: id,
       listTools: async () => ({ tools }),
       callTool: async (name, args) => {
         calls.push({ name, args });
-        return { source: id, name, args };
+        return { server: id, name, args };
       }
     })
   };
 }
 
 test("searches tools without exposing full schemas", async () => {
-  const github = fakeSource("github", [
+  const github = fakeServer("github", [
     {
       name: "list_pull_requests",
       description: "List GitHub pull requests for a repository",
@@ -35,7 +35,7 @@ test("searches tools without exposing full schemas", async () => {
       inputSchema: { type: "object", properties: { title: { type: "string" } } }
     }
   ]);
-  const slack = fakeSource("slack", [
+  const slack = fakeServer("slack", [
     {
       name: "send_message",
       description: "Send a Slack channel message",
@@ -43,7 +43,7 @@ test("searches tools without exposing full schemas", async () => {
     }
   ]);
 
-  const router = await createToolRouter({ sources: [github.source, slack.source] });
+  const router = await createToolRouter({ servers: [github.server, slack.server] });
   const results = await router.searchTools({ query: "github pull requests" });
 
   assert.equal(results[0].toolId, "github.list_pull_requests");
@@ -53,7 +53,7 @@ test("searches tools without exposing full schemas", async () => {
 });
 
 test("returns schemas and proxies calls to the selected server", async () => {
-  const github = fakeSource("github", [
+  const github = fakeServer("github", [
     {
       name: "get_issue",
       description: "Get GitHub issue",
@@ -61,7 +61,7 @@ test("returns schemas and proxies calls to the selected server", async () => {
     }
   ]);
 
-  const router = await createToolRouter({ sources: [github.source] });
+  const router = await createToolRouter({ servers: [github.server] });
   const [schema] = router.getToolSchemas({ toolIds: ["github.get_issue"] });
   const result = await router.callTool({
     toolId: "github.get_issue",
@@ -71,7 +71,7 @@ test("returns schemas and proxies calls to the selected server", async () => {
   assert.equal(schema.toolId, "github.get_issue");
   assert.deepEqual(schema.inputSchema, { type: "object", required: ["issue_number"] });
   assert.deepEqual(result, {
-    source: "github",
+    server: "github",
     name: "get_issue",
     args: { issue_number: 7 }
   });
@@ -79,14 +79,14 @@ test("returns schemas and proxies calls to the selected server", async () => {
 });
 
 test("exposes meta tools for search, schema lookup, and proxy execution", async () => {
-  const github = fakeSource("github", [
+  const github = fakeServer("github", [
     {
       name: "list_pull_requests",
       description: "List GitHub pull requests",
       inputSchema: { type: "object", properties: { state: { type: "string" } } }
     }
   ]);
-  const router = await createToolRouter({ sources: [github.source] });
+  const router = await createToolRouter({ servers: [github.server] });
   const metaTools = router.getMetaTools();
   const names = metaTools.map((tool) => tool.name);
 
@@ -121,7 +121,7 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
 });
 
 test("enforces destructive tool approval policy", async () => {
-  const github = fakeSource("github", [
+  const github = fakeServer("github", [
     {
       name: "delete_issue",
       description: "Delete GitHub issue",
@@ -130,7 +130,7 @@ test("enforces destructive tool approval policy", async () => {
     }
   ]);
   const router = await createToolRouter({
-    sources: [github.source],
+    servers: [github.server],
     policy: { denyDestructiveTools: true }
   });
 
@@ -142,14 +142,14 @@ test("enforces destructive tool approval policy", async () => {
 });
 
 test("normalizes server ids consistently during search", async () => {
-  const github = fakeSource("GitHub Server", [
+  const github = fakeServer("GitHub Server", [
     {
       name: "list_pull_requests",
       description: "List GitHub pull requests"
     }
   ]);
 
-  const router = await createToolRouter({ sources: [github.source] });
+  const router = await createToolRouter({ servers: [github.server] });
   const results = await router.searchTools({
     serverId: "GitHub Server",
     query: "pull requests"
@@ -160,7 +160,7 @@ test("normalizes server ids consistently during search", async () => {
 });
 
 test("initializes schema lookup when using the async meta-tool path", async () => {
-  const github = fakeSource("github", [
+  const github = fakeServer("github", [
     {
       name: "get_issue",
       description: "Get GitHub issue",
@@ -169,7 +169,7 @@ test("initializes schema lookup when using the async meta-tool path", async () =
   ]);
 
   const { ToolRouter } = await import("../dist/index.js");
-  const router = new ToolRouter({ sources: [github.source] });
+  const router = new ToolRouter({ servers: [github.server] });
   const schema = await router.executeMetaTool("get_tool_schemas", {
     toolIds: ["github.get_issue"]
   });
@@ -185,7 +185,7 @@ test("shares one initialization across concurrent first-use calls", async () => 
     releaseList = resolve;
   });
 
-  const source = createToolSource({
+  const server = createToolServer({
     id: "github",
     name: "github",
     listTools: async () => {
@@ -199,7 +199,7 @@ test("shares one initialization across concurrent first-use calls", async () => 
   });
 
   const { ToolRouter } = await import("../dist/index.js");
-  const router = new ToolRouter({ sources: [source] });
+  const router = new ToolRouter({ servers: [server] });
 
   const searchPromise = router.searchTools({ query: "issue" });
   const callPromise = router.callTool({ toolId: "github.get_issue", args: {} });
@@ -241,9 +241,9 @@ test("refresh invalidates ai-sdk adapter tool cache", async () => {
     }
   };
 
-  const { ToolRouter, asToolSource } = await import("../dist/index.js");
+  const { ToolRouter, asToolServer } = await import("../dist/index.js");
   const router = new ToolRouter({
-    sources: [asToolSource("github", client)]
+    servers: [asToolServer("github", client)]
   });
 
   await router.searchTools({ query: "issue" });
@@ -270,7 +270,7 @@ test("rejects duplicate meta-tool names in configuration", async () => {
   assert.throws(
     () => {
       new ToolRouter({
-        sources: [],
+        servers: [],
         metaToolNames: {
           searchTools: "my_tool",
           callTool: "my_tool"
@@ -282,7 +282,7 @@ test("rejects duplicate meta-tool names in configuration", async () => {
 });
 
 test("rejects discovered tools that collide with active meta-tool names", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     {
       name: "search_tools",
       description: "A tool that collides with the default meta-tool"
@@ -290,7 +290,7 @@ test("rejects discovered tools that collide with active meta-tool names", async 
   ]);
 
   const { ToolRouter } = await import("../dist/index.js");
-  const router = new ToolRouter({ sources: [source.source] });
+  const router = new ToolRouter({ servers: [github.server] });
 
   await assert.rejects(
     router.initialize(),
@@ -299,7 +299,7 @@ test("rejects discovered tools that collide with active meta-tool names", async 
 });
 
 test("allows excluding meta-tools to resolve collisions", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     {
       name: "search_tools",
       description: "A tool that collides with the default meta-tool, but we exclude the meta-tool"
@@ -308,7 +308,7 @@ test("allows excluding meta-tools to resolve collisions", async () => {
 
   const { ToolRouter } = await import("../dist/index.js");
   const router = new ToolRouter({
-    sources: [source.source],
+    servers: [github.server],
     excludeMetaTools: ["search_tools"]
   });
 
@@ -318,14 +318,14 @@ test("allows excluding meta-tools to resolve collisions", async () => {
 });
 
 test("pinned tools appear in getVisibleTools alongside meta-tools", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     { name: "help", description: "Get help" },
     { name: "status", description: "Get server status" },
     { name: "create_issue", description: "Create a GitHub issue" }
   ]);
 
   const router = await createToolRouter({
-    sources: [source.source],
+    servers: [github.server],
     pinnedTools: ["help", "status"]
   });
 
@@ -335,13 +335,13 @@ test("pinned tools appear in getVisibleTools alongside meta-tools", async () => 
 });
 
 test("pinned tools are excluded from search results", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     { name: "help", description: "Get help and documentation" },
     { name: "create_issue", description: "Create a GitHub issue" }
   ]);
 
   const router = await createToolRouter({
-    sources: [source.source],
+    servers: [github.server],
     pinnedTools: ["help"]
   });
 
@@ -350,26 +350,26 @@ test("pinned tools are excluded from search results", async () => {
 });
 
 test("pinned tools remain callable via callTool", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     { name: "help", description: "Get help" }
   ]);
 
   const router = await createToolRouter({
-    sources: [source.source],
+    servers: [github.server],
     pinnedTools: ["help"]
   });
 
   const result = await router.callTool({ toolId: "github.help", args: {} });
-  assert.deepEqual(result, { source: "github", name: "help", args: {} });
+  assert.deepEqual(result, { server: "github", name: "help", args: {} });
 });
 
 test("unknown pinned tool names are silently omitted", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     { name: "create_issue", description: "Create issue" }
   ]);
 
   const router = await createToolRouter({
-    sources: [source.source],
+    servers: [github.server],
     pinnedTools: ["nonexistent_tool"]
   });
 
@@ -378,13 +378,13 @@ test("unknown pinned tool names are silently omitted", async () => {
 });
 
 test("policy-denied tools are excluded from search results", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     { name: "delete_repo", description: "Delete a repository" },
     { name: "get_issue", description: "Get an issue" }
   ]);
 
   const router = await createToolRouter({
-    sources: [source.source],
+    servers: [github.server],
     policy: { denyTools: ["github.delete_repo"] }
   });
 
@@ -394,13 +394,13 @@ test("policy-denied tools are excluded from search results", async () => {
 });
 
 test("policy-denied pinned tools are excluded from visible tools", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     { name: "delete_repo", description: "Delete a repository" },
     { name: "get_issue", description: "Get an issue" }
   ]);
 
   const router = await createToolRouter({
-    sources: [source.source],
+    servers: [github.server],
     pinnedTools: ["delete_repo", "get_issue"],
     policy: { denyTools: ["github.delete_repo"] }
   });
@@ -410,11 +410,11 @@ test("policy-denied pinned tools are excluded from visible tools", async () => {
 });
 
 test("listServers uses normalized server ids without duplicates", async () => {
-  const source = fakeSource("GitHub Server", [
+  const github = fakeServer("GitHub Server", [
     { name: "get_issue", description: "Get issue" }
   ]);
 
-  const router = await createToolRouter({ sources: [source.source] });
+  const router = await createToolRouter({ servers: [github.server] });
   assert.deepEqual(router.listServers(), [
     {
       serverId: "github_server",
@@ -425,7 +425,7 @@ test("listServers uses normalized server ids without duplicates", async () => {
 });
 
 test("pinned ai-sdk tools preserve annotations", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     {
       name: "delete_repo",
       description: "Delete a repository",
@@ -435,7 +435,7 @@ test("pinned ai-sdk tools preserve annotations", async () => {
 
   const { createAISDKTools } = await import("../dist/index.js");
   const router = await createToolRouter({
-    sources: [source.source],
+    servers: [github.server],
     pinnedTools: ["delete_repo"]
   });
 
@@ -447,7 +447,7 @@ test("pinned ai-sdk tools preserve annotations", async () => {
 });
 
 test("search meta tool does not expose annotations", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     {
       name: "delete_repo",
       description: "Delete a repository",
@@ -455,7 +455,7 @@ test("search meta tool does not expose annotations", async () => {
     }
   ]);
 
-  const router = await createToolRouter({ sources: [source.source] });
+  const router = await createToolRouter({ servers: [github.server] });
   const search = await router.executeMetaTool("search_tools", { query: "delete" });
 
   assert.equal(search.isError, false);
@@ -464,7 +464,7 @@ test("search meta tool does not expose annotations", async () => {
 });
 
 test("schema meta tool does not expose annotations", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     {
       name: "delete_repo",
       description: "Delete a repository",
@@ -473,7 +473,7 @@ test("schema meta tool does not expose annotations", async () => {
     }
   ]);
 
-  const router = await createToolRouter({ sources: [source.source] });
+  const router = await createToolRouter({ servers: [github.server] });
   const schema = await router.executeMetaTool("get_tool_schemas", {
     toolIds: ["github.delete_repo"]
   });
@@ -485,23 +485,23 @@ test("schema meta tool does not expose annotations", async () => {
 });
 
 test("search results expose canonical tool ids", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     { name: "get_issue", description: "Get an issue" }
   ]);
 
-  const router = await createToolRouter({ sources: [source.source] });
+  const router = await createToolRouter({ servers: [github.server] });
   const [result] = await router.searchTools({ query: "issue" });
 
   assert.equal(result.toolId, "github.get_issue");
 });
 
 test("getToolSchemas supports batch tool ids", async () => {
-  const source = fakeSource("github", [
+  const github = fakeServer("github", [
     { name: "get_issue", description: "Get issue", inputSchema: { type: "object" } },
     { name: "list_pull_requests", description: "List pull requests", inputSchema: { type: "object" } }
   ]);
 
-  const router = await createToolRouter({ sources: [source.source] });
+  const router = await createToolRouter({ servers: [github.server] });
   const schemas = router.getToolSchemas({
     toolIds: ["github.get_issue", "github.list_pull_requests"]
   });
@@ -511,4 +511,3 @@ test("getToolSchemas supports batch tool ids", async () => {
     "github.list_pull_requests"
   ]);
 });
-

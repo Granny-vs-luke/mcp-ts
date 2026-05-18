@@ -1,5 +1,5 @@
 import type { ToolRouter } from "../router.js";
-import type { ToolSource } from "../types.js";
+import type { ToolServer } from "../types.js";
 
 export type AISDKToolSet = Record<string, {
   description?: string;
@@ -21,7 +21,7 @@ export interface MCPClient {
   tools(): Promise<Record<string, unknown>>;
 }
 
-export function asToolSource(id: string, client: MCPClient, name?: string): ToolSource {
+export function asToolServer(id: string, client: MCPClient, name?: string): ToolServer {
   let cachedToolsPromise: Promise<Record<string, unknown>> | null = null;
 
   return {
@@ -45,7 +45,7 @@ export function asToolSource(id: string, client: MCPClient, name?: string): Tool
       const toolSet = await cachedToolsPromise;
       const tool = toolSet[toolName] as { execute?: (...args: unknown[]) => Promise<unknown> } | undefined;
       if (!tool || typeof tool.execute !== "function") {
-        throw new Error(`Tool "${toolName}" not found on source "${id}".`);
+        throw new Error(`Tool "${toolName}" not found on server "${id}".`);
       }
       return tool.execute(args);
     },

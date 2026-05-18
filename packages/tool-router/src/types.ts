@@ -15,7 +15,7 @@ export interface ToolDefinition {
   [key: string]: unknown;
 }
 
-export interface ToolSource {
+export interface ToolServer {
   id: string;
   name?: string;
   listTools(): Promise<{ tools: ToolDefinition[] }>;
@@ -73,7 +73,7 @@ export interface ToolRouterPolicy {
 }
 
 export interface ToolRouterOptions {
-  sources: ToolSource[];
+  servers: ToolServer[];
   policy?: ToolRouterPolicy;
   searchStrategy?: SearchStrategy;
   pinnedTools?: string[];            // tool names always visible alongside meta-tools

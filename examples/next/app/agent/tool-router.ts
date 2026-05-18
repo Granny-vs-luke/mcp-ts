@@ -1,7 +1,7 @@
 import { ToolLoopAgent, InferAgentUIMessage, stepCountIs } from "ai";
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import { createToolRouter, createAISDKTools, asToolSource } from "@mcp-ts/tool-router";
+import { createToolRouter, createAISDKTools, asToolServer } from "@mcp-ts/tool-router";
 
 // ----------------------------------------------------------------------
 // 1. Agent Instructions
@@ -9,15 +9,15 @@ import { createToolRouter, createAISDKTools, asToolSource } from "@mcp-ts/tool-r
 const INSTRUCTIONS = `
 You are an expert assistant that helps users with tasks using the available MCP tools.
 
-For most tools, use this flow:
-1) list_sources
+use this flow:
+1) list_servers
 2) search_tools
 3) get_tool_schema
 4) call_tool
 
 Always search tools first before calling them.
-Exception: 'web_search_exa' is pinned and always visible, so you can call it directly without searching first!
 `;
+// Exception: 'web_search_exa' is pinned and always visible, so you can call it directly without searching first!
 
 const EXA_MCP_URL =
   "https://mcp.exa.ai/mcp?tools=web_search_exa,deep_search_exa,get_code_context_exa,crawling_exa";
@@ -40,11 +40,11 @@ async function getRouterTools(): Promise<Record<string, unknown>> {
       ]);
 
       const router = await createToolRouter({
-        sources: [
-          asToolSource("exa", exaClient),
-          asToolSource("grep", grepClient)
+        servers: [
+          asToolServer("exa", exaClient),
+          asToolServer("grep", grepClient)
         ],
-        pinnedTools: ["web_search_exa"],
+        // pinnedTools: ["web_search_exa"],
         maxSearchResults: 8
       });
 
