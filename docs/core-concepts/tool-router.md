@@ -87,3 +87,84 @@ const router = new ToolRouter(client, {
   }
 });
 ```
+
+---
+
+## Standalone package: `@mcp-ts/tool-router`
+
+The Tool Router also ships as a zero-dependency standalone package you can drop into any agent or framework — even when you are not using the rest of `mcp-ts`. It exposes the same meta-tool pattern (`search_tools`, `list_sources`, `get_tool_schema`, `call_tool`) over a generic `ToolSource` abstraction, so you can route across multiple MCP servers, custom tool sources, or a mix of both.
+
+Use the standalone package when:
+
+- You already have one or more MCP clients (for example from `@ai-sdk/mcp`) and want to expose them to an LLM behind meta-tools.
+- You want to keep large tool catalogs out of the model's context window without adopting the full `mcp-ts` server SDK.
+- You need to plug custom, non-MCP tool sources into the same discovery flow.
+
+### Install
+
+```bash
+npm install @mcp-ts/tool-router
+```
+
+### Quickstart with the Vercel AI SDK
+
+The `asToolSource` adapter wraps any compatible MCP client — including those returned by `@ai-sdk/mcp` — into a `ToolSource` that the router can index. `createAISDKTools` then exposes the four meta-tools as a Vercel AI SDK tool set.
+
+```typescript
+import { ToolLoopAgent, stepCountIs } from "ai";
+import { createMCPClient } from "@ai-sdk/mcp";
+import { createDeepSeek } from "@ai-sdk/deepseek";
+import {
+  createToolRouter,
+  createAISDKTools,
+  asToolSource
+} from "@mcp-ts/tool-router";
+
+const instructions = `
+You are an expert assistant. Use this flow:
+1) list_sources
+2) search_tools
+3) get_tool_schema
+4) call_tool
+Always search first before calling.
+`;
+
+const [exa, grep] = await Promise.all([
+  createMCPClient({ transport: { type: "http", url: "https://mcp.exa.ai/mcp" } }),
+  createMCPClient({ transport: { type: "http", url: "https://mcp.grep.app" } })
+]);
+
+const router = await createToolRouter({
+  sources: [asToolSource("exa", exa), asToolSource("grep", grep)],
+  maxSearchResults: 8
+});
+
+const tools = await createAISDKTools(router);
+
+const agent = new ToolLoopAgent({
+  model: createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY })("deepseek-chat"),
+  instructions,
+  tools: tools as any,
+  stopWhen: stepCountIs(20)
+});
+```
+
+### Customizing meta-tool names
+
+By default the standalone router exposes meta-tools as `search_tools`, `list_sources`, `get_tool_schema`, and `call_tool`. If those names collide with your own tools — or you prefer a different convention — pass `metaToolNames` to override any subset:
+
+```typescript
+const router = await createToolRouter({
+  sources: [asToolSource("github", github)],
+  metaToolNames: {
+    searchTools: "find_tools",
+    listSources: "sources",
+    getToolSchema: "tool_schema",
+    callTool: "run_tool"
+  }
+});
+```
+
+Update your agent's system prompt to match the names you choose so the model calls the meta-tools in the right order.
+
+For the full API surface — including `createToolSource`, `mcpSource`, and policy gates — see the [Tool Router API reference](/reference/tool-router).

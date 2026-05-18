@@ -92,6 +92,93 @@ const listed = index.listTools({
 console.log(listed.totalCount, listed.tools);
 ```
 
+---
+
+## Standalone package API (`@mcp-ts/tool-router`)
+
+The standalone [`@mcp-ts/tool-router`](/core-concepts/tool-router#standalone-package-mcp-ts-tool-router) package exposes the Tool Router pattern over a generic `ToolSource` abstraction. Use it when you want meta-tool routing without the rest of the SDK.
+
+### `createToolRouter(options)`
+
+Create and initialize a `ToolRouter` from one or more `ToolSource` adapters.
+
+```typescript
+import { createToolRouter, asToolSource } from "@mcp-ts/tool-router";
+
+const router = await createToolRouter({
+  sources: [asToolSource("github", githubClient)],
+  maxSearchResults: 8,
+  excludeMetaTools: [],
+  metaToolNames: {
+    searchTools: "search_tools",
+    listSources: "list_sources",
+    getToolSchema: "get_tool_schema",
+    callTool: "call_tool"
+  }
+});
+```
+
+**Options:**
+
+| Property | Type | Default | Description |
+| :-- | :-- | :-- | :-- |
+| `sources` | `ToolSource[]` | required | Tool sources to index and route to. |
+| `maxSearchResults` | `number` | `10` | Default cap for `search_tools` results (max 100). |
+| `policy` | `ToolRouterPolicy` | – | Allow/deny lists and a custom gate function for tool calls. |
+| `excludeMetaTools` | `string[]` | `[]` | Names of meta-tools to omit (after renaming). |
+| `metaToolNames` | `Partial<ToolRouterMetaToolNames>` | see below | Override one or more meta-tool names. |
+
+**Default meta-tool names** (from `DEFAULT_TOOLROUTER_META_TOOL_NAMES`):
+
+```typescript
+{
+  searchTools: "search_tools",
+  listSources: "list_sources",
+  getToolSchema: "get_tool_schema",
+  callTool: "call_tool"
+}
+```
+
+Search ranks candidates with BM25 over tool name, source, and description, so common terms in unrelated tools no longer dominate the results.
+
+### `asToolSource(id, client, name?)`
+
+Adapt any compatible MCP client — including those returned by `@ai-sdk/mcp` — to a `ToolSource`. The adapter lazily caches the client's `tools()` map on first call so each tool invocation reuses the same handle.
+
+```typescript
+import { createMCPClient } from "@ai-sdk/mcp";
+import { asToolSource } from "@mcp-ts/tool-router";
+
+const exa = await createMCPClient({
+  transport: { type: "http", url: "https://mcp.exa.ai/mcp" }
+});
+
+const source = asToolSource("exa", exa, "Exa Search");
+```
+
+The client must implement `listTools()` (returning `{ tools: [...] }`) and `tools()` (returning a record of executable tools). Both shapes are exported as the `MCPClient` interface.
+
+### `createAISDKTools(router)`
+
+Wrap a router's meta-tools as a Vercel AI SDK tool set. Pass the returned object to `ToolLoopAgent` (or any AI SDK call site that accepts a tool set):
+
+```typescript
+import { createAISDKTools } from "@mcp-ts/tool-router";
+
+const tools = await createAISDKTools(router);
+```
+
+### Other exports
+
+- `createToolSource(source)` — identity helper that type-checks a custom `ToolSource` implementation.
+- `mcpSource(id, client, name?)` / `mcpSources(provider)` — wrap MCP-style clients that expose `listTools` and `callTool` directly.
+- `createMetaTools(names?)` — return the raw meta-tool definitions (useful when integrating with a non-AI-SDK framework).
+- `DEFAULT_TOOLROUTER_META_TOOL_NAMES` — the default mapping for `metaToolNames`.
+
+Exported types include `ToolSource`, `ToolRouterOptions`, `ToolRouterMetaTool`, `ToolRouterMetaToolNames`, `ToolSearchResult`, `ToolSchemaResult`, `ToolRouterCallResult`, and `MCPClient`.
+
+---
+
 ### `SchemaCompressor`
 
 Utility for yielding compact tool representations (name + description + inline parameterHint) without the full `inputSchema`.
