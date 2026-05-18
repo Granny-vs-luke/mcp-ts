@@ -264,3 +264,55 @@ test("refresh invalidates ai-sdk adapter tool cache", async () => {
     args: { state: "open" }
   });
 });
+
+test("rejects duplicate meta-tool names in configuration", async () => {
+  const { ToolRouter } = await import("../dist/index.js");
+  assert.throws(
+    () => {
+      new ToolRouter({
+        sources: [],
+        metaToolNames: {
+          searchTools: "my_tool",
+          callTool: "my_tool"
+        }
+      });
+    },
+    /duplicate names detected/
+  );
+});
+
+test("rejects discovered tools that collide with active meta-tool names", async () => {
+  const source = fakeSource("github", [
+    {
+      name: "search_tools",
+      description: "A tool that collides with the default meta-tool"
+    }
+  ]);
+
+  const { ToolRouter } = await import("../dist/index.js");
+  const router = new ToolRouter({ sources: [source.source] });
+
+  await assert.rejects(
+    router.initialize(),
+    /Tool collision: Source "github" exposes a tool named "search_tools" which conflicts/
+  );
+});
+
+test("allows excluding meta-tools to resolve collisions", async () => {
+  const source = fakeSource("github", [
+    {
+      name: "search_tools",
+      description: "A tool that collides with the default meta-tool, but we exclude the meta-tool"
+    }
+  ]);
+
+  const { ToolRouter } = await import("../dist/index.js");
+  const router = new ToolRouter({
+    sources: [source.source],
+    excludeMetaTools: ["search_tools"]
+  });
+
+  await router.initialize();
+  const results = await router.searchTools({ query: "search_tools" });
+  assert.equal(results[0].toolName, "search_tools");
+});

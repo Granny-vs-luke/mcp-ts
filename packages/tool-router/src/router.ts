@@ -36,6 +36,18 @@ export class ToolRouter {
       ...DEFAULT_TOOLROUTER_META_TOOL_NAMES,
       ...(options.metaToolNames ?? {})
     };
+
+    const metaNames = [
+      this.metaToolNames.searchTools,
+      this.metaToolNames.listSources,
+      this.metaToolNames.getToolSchema,
+      this.metaToolNames.callTool
+    ];
+    if (new Set(metaNames).size !== metaNames.length) {
+      const duplicates = metaNames.filter((item, index) => metaNames.indexOf(item) !== index);
+      throw new Error(`Invalid meta-tool configuration: duplicate names detected (${[...new Set(duplicates)].join(", ")}).`);
+    }
+
     for (const source of options.sources) {
       this.sources.set(source.id, source);
     }
@@ -65,6 +77,7 @@ export class ToolRouter {
   private async rebuildIndex(): Promise<void> {
     const next: IndexedTool[] = [];
     const seenSourceIds = new Set<string>();
+    const activeMetaToolNames = new Set(this.getMetaTools().map((t) => t.name));
 
     try {
       for (const source of this.options.sources) {
@@ -77,6 +90,9 @@ export class ToolRouter {
 
         const listed = await source.listTools();
         for (const tool of listed.tools) {
+          if (activeMetaToolNames.has(tool.name)) {
+            throw new Error(`Tool collision: Source "${sourceId}" exposes a tool named "${tool.name}" which conflicts with a configured meta-tool.`);
+          }
           next.push(this.toIndexedTool(source, sourceId, tool));
         }
       }
