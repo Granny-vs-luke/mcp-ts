@@ -64,10 +64,10 @@ const github = createToolSource({
 
 The router exposes four meta-tools to LLMs:
 
-- `toolrouter_search_tools`: Search the tool index without fetching full schemas.
-- `toolrouter_list_sources`: List registered sources and tool counts.
-- `toolrouter_get_tool_schema`: Fetch the input schema for a specific tool.
-- `toolrouter_call_tool`: Invoke a tool on a registered source.
+- `search_tools`: Search the tool index without fetching full schemas.
+- `list_sources`: List registered sources and tool counts.
+- `get_tool_schema`: Fetch the input schema for a specific tool.
+- `call_tool`: Invoke a tool on a registered source.
 
 ---
 
@@ -77,7 +77,13 @@ The router exposes four meta-tools to LLMs:
 import { createToolRouter } from "@mcp-ts/tool-router";
 
 const router = await createToolRouter({
-  sources: [github, linear, slack]
+  sources: [github, linear, slack],
+  metaToolNames: {
+    searchTools: "find_tools",
+    listSources: "sources",
+    getToolSchema: "tool_schema",
+    callTool: "run_tool"
+  }
 });
 
 // Search tools
@@ -129,6 +135,57 @@ The model only sees the meta-tools rather than the entire tool catalog at start.
 
 ---
 
+## AI SDK Agent Example (Exa + grep)
+
+This mirrors the pattern used in `examples/next/app/agent/agent.ts`.
+
+```typescript
+import { ToolLoopAgent, stepCountIs } from "ai";
+import { createMCPClient } from "@ai-sdk/mcp";
+import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createToolRouter, createAISDKTools, asToolSource } from "@mcp-ts/tool-router";
+
+const EXA_MCP_URL =
+  "https://mcp.exa.ai/mcp?tools=web_search_exa,deep_search_exa,get_code_context_exa,crawling_exa";
+const GREP_MCP_URL = "https://mcp.grep.app";
+
+const instructions = `
+You are an expert assistant that helps users with tasks using available MCP tools.
+Use this flow:
+1) list_sources
+2) search_tools
+3) get_tool_schema
+4) call_tool
+Always search first before calling.
+`;
+
+async function createAgent() {
+  const [exaClient, grepClient] = await Promise.all([
+    createMCPClient({ transport: { type: "http", url: EXA_MCP_URL } }),
+    createMCPClient({ transport: { type: "http", url: GREP_MCP_URL } })
+  ]);
+
+  const router = await createToolRouter({
+    sources: [
+      asToolSource("exa", exaClient),
+      asToolSource("grep", grepClient)
+    ],
+    maxSearchResults: 8
+  });
+
+  const tools = await createAISDKTools(router);
+
+  return new ToolLoopAgent({
+    model: createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY })("deepseek-chat"),
+    instructions,
+    tools: tools as any,
+    stopWhen: stepCountIs(20)
+  });
+}
+```
+
+---
+
 ## MCP Client Adapters
 
 Wrap any compatible MCP client with `mcpSource`:
@@ -149,6 +206,20 @@ If you have a client provider that manages multiple active clients:
 ```typescript
 const router = await createToolRouter({
   sources: mcpSources(multiSessionClient)
+});
+```
+
+Using Vercel AI SDK MCP clients (`@ai-sdk/mcp`):
+
+```typescript
+import { createMCPClient } from "@ai-sdk/mcp";
+import { createToolRouter, asToolSource } from "@mcp-ts/tool-router";
+
+const exa = await createMCPClient({ transport: { type: "http", url: "https://mcp.exa.ai/mcp" } });
+const grep = await createMCPClient({ transport: { type: "http", url: "https://mcp.grep.app" } });
+
+const router = await createToolRouter({
+  sources: [asToolSource("exa", exa), asToolSource("grep", grep)]
 });
 ```
 
@@ -181,6 +252,7 @@ Main exports:
 - `createToolRouter(options)`: Create and initialize a `ToolRouter`.
 - `createToolSource(source)`: Helper to type-check custom tool sources.
 - `createAISDKTools(router)`: Expose meta-tools as Vercel AI SDK tools.
+- `asToolSource(id, client, name?)`: Adapt a compatible MCP tool client (including `@ai-sdk/mcp`) to `ToolSource`.
 - `mcpSource(id, client, name?)`: Wrap an MCP-like client as a `ToolSource`.
 - `mcpSources(provider)`: Convert multiple client instances to `ToolSource[]`.
 

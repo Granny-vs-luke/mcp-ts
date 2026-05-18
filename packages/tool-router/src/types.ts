@@ -1,8 +1,10 @@
 export interface ToolAnnotations {
+  title?: string;
   readOnlyHint?: boolean;
   destructiveHint?: boolean;
   idempotentHint?: boolean;
   openWorldHint?: boolean;
+  [key: string]: unknown;
 }
 
 export interface ToolDefinition {
@@ -34,8 +36,15 @@ export interface ToolSearchResult {
   sourceName: string;
   toolName: string;
   description: string;
-  annotations?: ToolAnnotations;
   score: number;
+}
+
+export interface ToolSchemaResult {
+  sourceId: string;
+  sourceName: string;
+  toolName: string;
+  description: string;
+  inputSchema?: unknown;
 }
 
 export interface ToolRouterPolicy {
@@ -50,6 +59,12 @@ export interface ToolRouterOptions {
   policy?: ToolRouterPolicy;
   maxSearchResults?: number;
   excludeMetaTools?: string[];
+  metaToolNames?: Partial<{
+    searchTools: string;
+    listSources: string;
+    getToolSchema: string;
+    callTool: string;
+  }>;
 }
 
 export interface ToolSearchRequest {
@@ -74,6 +89,13 @@ export interface ToolRouterMetaTool {
   description: string;
   inputSchema: unknown;
   annotations?: ToolAnnotations;
+}
+
+export interface ToolRouterMetaToolNames {
+  searchTools: string;
+  listSources: string;
+  getToolSchema: string;
+  callTool: string;
 }
 
 export interface ToolRouterCallResult {

@@ -1,25 +1,16 @@
-import type { ToolRouterMetaTool } from "./types.js";
+import type { ToolRouterMetaTool, ToolRouterMetaToolNames } from "./types.js";
 
-export const TOOLROUTER_SEARCH_TOOLS = "toolrouter_search_tools";
-export const TOOLROUTER_LIST_SOURCES = "toolrouter_list_sources";
-export const TOOLROUTER_GET_TOOL_SCHEMA = "toolrouter_get_tool_schema";
-export const TOOLROUTER_CALL_TOOL = "toolrouter_call_tool";
+export const DEFAULT_TOOLROUTER_META_TOOL_NAMES: ToolRouterMetaToolNames = {
+  searchTools: "search_tools",
+  listSources: "list_sources",
+  getToolSchema: "get_tool_schema",
+  callTool: "call_tool"
+};
 
-export const TOOLROUTER_META_TOOL_NAMES = [
-  TOOLROUTER_SEARCH_TOOLS,
-  TOOLROUTER_LIST_SOURCES,
-  TOOLROUTER_GET_TOOL_SCHEMA,
-  TOOLROUTER_CALL_TOOL
-] as const;
-
-export function isToolRouterMetaTool(name: string): boolean {
-  return (TOOLROUTER_META_TOOL_NAMES as readonly string[]).includes(name);
-}
-
-export function createMetaTools(): ToolRouterMetaTool[] {
+export function createMetaTools(names: ToolRouterMetaToolNames = DEFAULT_TOOLROUTER_META_TOOL_NAMES): ToolRouterMetaTool[] {
   return [
     {
-      name: TOOLROUTER_SEARCH_TOOLS,
+      name: names.searchTools,
       description:
         "Search connected tool sources without loading every tool schema into context. Use this first to find candidate tools.",
       inputSchema: {
@@ -33,7 +24,7 @@ export function createMetaTools(): ToolRouterMetaTool[] {
       }
     },
     {
-      name: TOOLROUTER_LIST_SOURCES,
+      name: names.listSources,
       description: "List connected tool sources and indexed tool counts.",
       inputSchema: {
         type: "object",
@@ -43,7 +34,7 @@ export function createMetaTools(): ToolRouterMetaTool[] {
       }
     },
     {
-      name: TOOLROUTER_GET_TOOL_SCHEMA,
+      name: names.getToolSchema,
       description: "Get the full input schema for one discovered tool before calling it.",
       inputSchema: {
         type: "object",
@@ -56,7 +47,7 @@ export function createMetaTools(): ToolRouterMetaTool[] {
       }
     },
     {
-      name: TOOLROUTER_CALL_TOOL,
+      name: names.callTool,
       description: "Proxy execution to a discovered tool on the correct source.",
       inputSchema: {
         type: "object",

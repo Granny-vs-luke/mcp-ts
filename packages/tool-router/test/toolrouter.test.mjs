@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createToolRouter,
-  createToolSource,
-  isToolRouterMetaTool
+  createToolSource
 } from "../dist/index.js";
 
 function fakeSource(id, tools) {
@@ -91,27 +90,26 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
   const names = metaTools.map((tool) => tool.name);
 
   assert.deepEqual(names, [
-    "toolrouter_search_tools",
-    "toolrouter_list_sources",
-    "toolrouter_get_tool_schema",
-    "toolrouter_call_tool"
+    "search_tools",
+    "list_sources",
+    "get_tool_schema",
+    "call_tool"
   ]);
-  assert.equal(names.every(isToolRouterMetaTool), true);
 
-  const search = await router.executeMetaTool("toolrouter_search_tools", {
+  const search = await router.executeMetaTool("search_tools", {
     query: "pull requests"
   });
   assert.equal(search.isError, false);
   assert.match(search.content[0].text, /list_pull_requests/);
 
-  const schema = await router.executeMetaTool("toolrouter_get_tool_schema", {
+  const schema = await router.executeMetaTool("get_tool_schema", {
     sourceId: "github",
     toolName: "list_pull_requests"
   });
   assert.equal(schema.isError, false);
   assert.match(schema.content[0].text, /inputSchema/);
 
-  const call = await router.executeMetaTool("toolrouter_call_tool", {
+  const call = await router.executeMetaTool("call_tool", {
     sourceId: "github",
     toolName: "list_pull_requests",
     args: { state: "open" }
