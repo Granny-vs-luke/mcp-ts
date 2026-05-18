@@ -149,7 +149,7 @@ This mirrors the pattern used in `examples/next/app/agent/agent.ts`.
 import { ToolLoopAgent, stepCountIs } from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import { createToolRouter, createAISDKTools, asToolServer } from "@mcp-ts/tool-router";
+import { createToolRouter, createAISDKTools, mcpServer } from "@mcp-ts/tool-router";
 
 const EXA_MCP_URL =
   "https://mcp.exa.ai/mcp?tools=web_search_exa,deep_search_exa,get_code_context_exa,crawling_exa";
@@ -173,8 +173,8 @@ async function createAgent() {
 
   const router = await createToolRouter({
     servers: [
-      asToolServer("exa", exaClient),
-      asToolServer("grep", grepClient)
+      mcpServer("exa", exaClient),
+      mcpServer("grep", grepClient)
     ],
     maxSearchResults: 8
   });
@@ -194,7 +194,7 @@ async function createAgent() {
 
 ## MCP Client Adapters
 
-Wrap any compatible MCP client with `mcpServer`:
+Wrap any compatible tool client with `mcpServer`:
 
 ```typescript
 import { createToolRouter, mcpServer, mcpServers } from "@mcp-ts/tool-router";
@@ -219,13 +219,13 @@ Using Vercel AI SDK MCP clients (`@ai-sdk/mcp`):
 
 ```typescript
 import { createMCPClient } from "@ai-sdk/mcp";
-import { createToolRouter, asToolServer } from "@mcp-ts/tool-router";
+import { createToolRouter, mcpServer } from "@mcp-ts/tool-router";
 
 const exa = await createMCPClient({ transport: { type: "http", url: "https://mcp.exa.ai/mcp" } });
 const grep = await createMCPClient({ transport: { type: "http", url: "https://mcp.grep.app" } });
 
 const router = await createToolRouter({
-  servers: [asToolServer("exa", exa), asToolServer("grep", grep)]
+  servers: [mcpServer("exa", exa), mcpServer("grep", grep)]
 });
 ```
 
@@ -258,9 +258,8 @@ Main exports:
 - `createToolRouter(options)`: Create and initialize a `ToolRouter`.
 - `createToolServer(server)`: Helper to type-check custom tool adapters.
 - `createAISDKTools(router)`: Expose meta-tools as Vercel AI SDK tools.
-- `asToolServer(id, client, name?)`: Adapt a compatible MCP tool client (including `@ai-sdk/mcp`) to `ToolServer`.
-- `mcpServer(id, client, name?)`: Wrap an MCP-like client as a `ToolServer`.
-- `mcpServers(provider)`: Convert multiple client instances to `ToolServer[]`.
+- `mcpServer(id, client, name?)`: Wrap a `ToolClient`, including `@ai-sdk/mcp` clients, as a `ToolServer`.
+- `mcpServers(provider)`: Convert a `ToolClientProvider` into `ToolServer[]`.
 
 ---
 

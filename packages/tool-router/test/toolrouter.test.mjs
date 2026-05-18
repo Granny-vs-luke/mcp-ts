@@ -249,9 +249,9 @@ test("refresh invalidates ai-sdk adapter tool cache", async () => {
     }
   };
 
-  const { ToolRouter, asToolServer } = await import("../dist/index.js");
+  const { ToolRouter, mcpServer } = await import("../dist/index.js");
   const router = new ToolRouter({
-    servers: [asToolServer("github", client)]
+    servers: [mcpServer("github", client)]
   });
 
   await router.searchTools({ query: "issue" });
