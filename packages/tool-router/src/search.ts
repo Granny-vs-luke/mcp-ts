@@ -80,7 +80,11 @@ export function bm25Scores(tools: IndexedTool[], query = ""): number[] {
 
 export class BM25SearchStrategy implements SearchStrategy {
   search(tools: IndexedTool[], request: ToolSearchRequest, limit: number): ToolSearchResult[] {
-    const candidates = tools.filter((tool) => matchesSearchScope(tool, request));
+    const candidates = tools.filter(
+      (tool) =>
+        matchesSearchScope(tool, request) &&
+        !request._pinnedTools?.has(tool.toolName)
+    );
     const scores = bm25Scores(candidates, request.query ?? "");
 
     return candidates

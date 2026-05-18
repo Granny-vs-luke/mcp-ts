@@ -52,6 +52,13 @@ export interface ToolSchemaResult {
   inputSchema?: unknown;
 }
 
+export interface PinnedToolResult extends ToolSchemaResult {}
+
+export interface VisibleTools {
+  pinned: PinnedToolResult[];
+  metaTools: ToolRouterMetaTool[];
+}
+
 export interface ToolRouterPolicy {
   allowTools?: string[];
   denyTools?: string[];
@@ -63,6 +70,7 @@ export interface ToolRouterOptions {
   sources: ToolSource[];
   policy?: ToolRouterPolicy;
   searchStrategy?: SearchStrategy;
+  pinnedTools?: string[];            // tool names always visible alongside meta-tools
   maxSearchResults?: number;
   excludeMetaTools?: string[];
   metaToolNames?: Partial<{
@@ -78,6 +86,8 @@ export interface ToolSearchRequest {
   sourceId?: string;
   sourceName?: string;
   limit?: number;
+  /** Internal: pinned tool names to exclude from search results (set by ToolRouter). */
+  _pinnedTools?: Set<string>;
 }
 
 export interface ToolSchemaRequest {

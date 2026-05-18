@@ -16,6 +16,7 @@ import type {
 import { normalizeSourceId } from "./utils.js";
 import { BM25SearchStrategy } from "./search.js";
 import { PolicyEnforcer } from "./policy.js";
+import type { PinnedToolResult, VisibleTools } from "./types.js";
 
 export class ToolRouter {
   private sources = new Map<string, ToolSource>();
@@ -27,11 +28,13 @@ export class ToolRouter {
   private metaToolNames: ToolRouterMetaToolNames;
   private searchStrategy: import("./types.js").SearchStrategy;
   private policyEnforcer: PolicyEnforcer;
+  private pinnedToolNames: Set<string>;
 
   constructor(private options: ToolRouterOptions) {
     this.maxSearchResults = options.maxSearchResults ?? 10;
     this.searchStrategy = options.searchStrategy ?? new BM25SearchStrategy();
     this.policyEnforcer = new PolicyEnforcer(options.policy);
+    this.pinnedToolNames = new Set(options.pinnedTools ?? []);
     this.metaToolNames = {
       ...DEFAULT_TOOLROUTER_META_TOOL_NAMES,
       ...(options.metaToolNames ?? {})
@@ -133,7 +136,31 @@ export class ToolRouter {
   async searchTools(request: ToolSearchRequest): Promise<ToolSearchResult[]> {
     await this.ensureInitialized();
     const limit = Math.min(request.limit ?? this.maxSearchResults, 100);
-    return this.searchStrategy.search(this.indexedTools, request, limit);
+    return this.searchStrategy.search(this.indexedTools, {
+      ...request,
+      _pinnedTools: this.pinnedToolNames
+    }, limit);
+  }
+
+  /** Returns pinned tools resolved from the current index. Unknown names are silently omitted. */
+  getPinnedTools(): PinnedToolResult[] {
+    return [...this.pinnedToolNames].flatMap((name) => {
+      const tool = this.indexedTools.find((t) => t.toolName === name);
+      return tool
+        ? [{
+            sourceId: tool.sourceId,
+            sourceName: tool.sourceName,
+            toolName: tool.toolName,
+            description: tool.description,
+            inputSchema: tool.inputSchema
+          }]
+        : [];
+    });
+  }
+
+  /** Combined view: pinned real tools + synthetic meta-tools. Use this as the public tool listing. */
+  getVisibleTools(): VisibleTools {
+    return { pinned: this.getPinnedTools(), metaTools: this.getMetaTools() };
   }
 
   listSources(query = ""): Array<{ sourceId: string; sourceName: string; toolCount: number }> {

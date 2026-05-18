@@ -63,15 +63,28 @@ export async function createAISDKTools(router: ToolRouter): Promise<AISDKToolSet
     jsonSchema = (schema: unknown) => schema;
   }
 
-  return Object.fromEntries(
-    router.getMetaTools().map((tool) => [
-      tool.name,
-      {
-        description: tool.description,
-        inputSchema: jsonSchema!(tool.inputSchema),
-        annotations: tool.annotations,
-        execute: async (args: Record<string, unknown>) => router.executeMetaTool(tool.name, args)
-      }
-    ])
-  );
+  await router.initialize();
+  const { pinned, metaTools } = router.getVisibleTools();
+
+  const pinnedEntries = pinned.map((tool) => [
+    tool.toolName,
+    {
+      description: tool.description,
+      inputSchema: jsonSchema!(tool.inputSchema ?? { type: "object" }),
+      execute: async (args: Record<string, unknown>) =>
+        router.callTool({ toolName: tool.toolName, sourceId: tool.sourceId, args })
+    }
+  ]);
+
+  const metaEntries = metaTools.map((tool) => [
+    tool.name,
+    {
+      description: tool.description,
+      inputSchema: jsonSchema!(tool.inputSchema),
+      annotations: tool.annotations,
+      execute: async (args: Record<string, unknown>) => router.executeMetaTool(tool.name, args)
+    }
+  ]);
+
+  return Object.fromEntries([...pinnedEntries, ...metaEntries]);
 }

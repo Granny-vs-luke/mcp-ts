@@ -9,6 +9,7 @@ export { BM25SearchStrategy } from "./search.js";
 export { PolicyEnforcer } from "./policy.js";
 export type {
   IndexedTool,
+  PinnedToolResult,
   SearchStrategy,
   ToolAnnotations,
   ToolCallRequest,
@@ -22,7 +23,8 @@ export type {
   ToolSchemaRequest,
   ToolSearchRequest,
   ToolSearchResult,
-  ToolSource
+  ToolSource,
+  VisibleTools
 } from "./types.js";
 export type { MCPClient } from "./adapters/ai-sdk.js";
 

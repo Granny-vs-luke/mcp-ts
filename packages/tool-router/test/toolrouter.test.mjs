@@ -316,3 +316,64 @@ test("allows excluding meta-tools to resolve collisions", async () => {
   const results = await router.searchTools({ query: "search_tools" });
   assert.equal(results[0].toolName, "search_tools");
 });
+
+test("pinned tools appear in getVisibleTools alongside meta-tools", async () => {
+  const source = fakeSource("github", [
+    { name: "help", description: "Get help" },
+    { name: "status", description: "Get server status" },
+    { name: "create_issue", description: "Create a GitHub issue" }
+  ]);
+
+  const router = await createToolRouter({
+    sources: [source.source],
+    pinnedTools: ["help", "status"]
+  });
+
+  const { pinned, metaTools } = router.getVisibleTools();
+  assert.deepEqual(pinned.map((t) => t.toolName), ["help", "status"]);
+  assert.equal(metaTools.length, 4);
+});
+
+test("pinned tools are excluded from search results", async () => {
+  const source = fakeSource("github", [
+    { name: "help", description: "Get help and documentation" },
+    { name: "create_issue", description: "Create a GitHub issue" }
+  ]);
+
+  const router = await createToolRouter({
+    sources: [source.source],
+    pinnedTools: ["help"]
+  });
+
+  const results = await router.searchTools({ query: "help" });
+  assert.equal(results.find((r) => r.toolName === "help"), undefined);
+});
+
+test("pinned tools remain callable via callTool", async () => {
+  const source = fakeSource("github", [
+    { name: "help", description: "Get help" }
+  ]);
+
+  const router = await createToolRouter({
+    sources: [source.source],
+    pinnedTools: ["help"]
+  });
+
+  const result = await router.callTool({ toolName: "help", args: {} });
+  assert.deepEqual(result, { source: "github", name: "help", args: {} });
+});
+
+test("unknown pinned tool names are silently omitted", async () => {
+  const source = fakeSource("github", [
+    { name: "create_issue", description: "Create issue" }
+  ]);
+
+  const router = await createToolRouter({
+    sources: [source.source],
+    pinnedTools: ["nonexistent_tool"]
+  });
+
+  const { pinned } = router.getVisibleTools();
+  assert.equal(pinned.length, 0);
+});
+
