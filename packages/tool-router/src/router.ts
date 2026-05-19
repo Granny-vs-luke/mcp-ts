@@ -4,7 +4,6 @@ import type {
   ToolCallRequest,
   ToolDefinition,
   ToolRouterCallResult,
-  ToolRouterDetailLevel,
   ToolRouterMetaTool,
   ToolRouterMetaToolNames,
   ToolRouterOptions,
@@ -12,12 +11,14 @@ import type {
   ToolSchemaResult,
   ToolSearchRequest,
   ToolSearchResult,
-  ToolServer
+  ToolServer,
+  PinnedToolResult,
+  VisibleTools
 } from "./types.js";
-import type { PinnedToolResult, VisibleTools } from "./types.js";
 import { normalizeServerId } from "./utils.js";
 import { BM25SearchStrategy } from "./search.js";
 import { PolicyEnforcer, wildcardMatch } from "./policy.js";
+import { executeMetaTool } from "./meta-handler.js";
 
 export class ToolRouter {
   private servers = new Map<string, ToolServer>();
@@ -118,7 +119,6 @@ export class ToolRouter {
     if (this.initializePromise) {
       await this.initializePromise;
     }
-    this.initialized = false;
     try {
       for (const server of this.options.servers) {
         await server.refresh?.();
@@ -241,45 +241,18 @@ export class ToolRouter {
   }
 
   async executeMetaTool(name: string, args: Record<string, unknown>): Promise<ToolRouterCallResult> {
-    try {
-      switch (name) {
-        case this.metaToolNames.searchTools: {
-          const detail = detailArg(args.detail) ?? "brief";
-          const results = await this.searchTools({
-            query: stringArg(args.query),
-            serverId: stringArg(args.serverId),
-            serverName: stringArg(args.serverName),
-            limit: numberArg(args.limit),
-            detail
-          });
-          return this.success(renderSearchResults(results, detail), { results });
-        }
-        case this.metaToolNames.listServers: {
-          await this.ensureInitialized();
-          const result = this.listServers(stringArg(args.query) ?? "");
-          return this.success(formatJson(result), { servers: result });
-        }
-        case this.metaToolNames.getToolSchemas: {
-          await this.ensureInitialized();
-          const detail = detailArg(args.detail) ?? "detailed";
-          const schema = this.getToolSchemas({
-            toolIds: requiredStringArrayArg(args.toolIds, "toolIds")
-          });
-          return this.success(renderSchemaResults(schema, detail), { results: schema });
-        }
-        case this.metaToolNames.callTool: {
-          const result = await this.callTool({
-            toolId: requiredStringArg(args.toolId, "toolId"),
-            args: objectArg(args.args)
-          });
-          return this.success(formatJson(result), { result });
-        }
-        default:
-          return this.error(`Unknown toolrouter meta tool "${name}".`);
-      }
-    } catch (error) {
-      return this.error(error instanceof Error ? error.message : String(error));
-    }
+    return executeMetaTool(
+      {
+        metaToolNames: this.metaToolNames,
+        initialize: () => this.initialize(),
+        searchTools: (request) => this.searchTools(request),
+        listServers: (query) => this.listServers(query),
+        getToolSchemas: (request) => this.getToolSchemas(request),
+        callTool: (request) => this.callTool(request)
+      },
+      name,
+      args
+    );
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -342,69 +315,6 @@ export class ToolRouter {
       annotations: tool.annotations
     };
   }
-
-  private success(text: string, structuredContent?: unknown): ToolRouterCallResult {
-    return {
-      content: [{ type: "text", text }],
-      ...(structuredContent === undefined ? {} : { structuredContent }),
-      isError: false
-    };
-  }
-
-  private error(text: string): ToolRouterCallResult {
-    return {
-      content: [{ type: "text", text }],
-      isError: true
-    };
-  }
-}
-
-export async function createToolRouter(options: ToolRouterOptions): Promise<ToolRouter> {
-  const router = new ToolRouter(options);
-  await router.initialize();
-  return router;
-}
-
-function formatJson(value: unknown): string {
-  return JSON.stringify(value, null, 2);
-}
-
-function stringArg(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function requiredStringArg(value: unknown, name: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`Missing required parameter "${name}".`);
-  }
-  return value;
-}
-
-function requiredStringArrayArg(value: unknown, name: string): string[] {
-  if (
-    !Array.isArray(value) ||
-    value.length === 0 ||
-    value.some((item) => typeof item !== "string" || item.length === 0)
-  ) {
-    throw new Error(`Missing required parameter "${name}".`);
-  }
-  return value;
-}
-
-function numberArg(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function detailArg(value: unknown): ToolRouterDetailLevel | undefined {
-  return value === "brief" || value === "detailed" || value === "full" ? value : undefined;
-}
-
-function objectArg(value: unknown): Record<string, unknown> {
-  if (!value) return {};
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw new Error('"args" must be an object.');
-  }
-  return value as Record<string, unknown>;
 }
 
 function makeToolId(serverId: string, toolName: string): string {
@@ -432,116 +342,8 @@ function normalizeToolReference(reference: string): string {
   return makeToolId(normalizeServerId(serverId), toolName);
 }
 
-function renderSearchResults(results: ToolSearchResult[], detail: ToolRouterDetailLevel): string {
-  if (results.length === 0) {
-    return detail === "full" ? "[]" : "No tools matched the query.";
-  }
-
-  if (detail === "full") {
-    return formatJson(results);
-  }
-
-  if (detail === "detailed") {
-    return results
-      .map((tool, index) =>
-        [
-          `${index + 1}. ${tool.toolName}`,
-          `Tool ID: ${tool.toolId}`,
-          `Server: ${tool.serverId}${tool.serverName && tool.serverName !== tool.serverId ? ` (${tool.serverName})` : ""}`,
-          tool.description ? `Description: ${tool.description}` : null
-        ]
-          .filter(Boolean)
-          .join("\n")
-      )
-      .join("\n\n");
-  }
-
-  return results
-    .map((tool) => `- Tool ID: ${tool.toolId} - ${tool.description || "No description."}`)
-    .join("\n");
-}
-
-function renderSchemaResults(results: ToolSchemaResult[], detail: ToolRouterDetailLevel): string {
-  if (results.length === 0) {
-    return detail === "full" ? "[]" : "No tools matched the query.";
-  }
-
-  if (detail === "full") {
-    return formatJson(results);
-  }
-
-  return results
-    .map((tool) => {
-      const lines = [`### ${tool.toolName}`, `Tool ID: ${tool.toolId}`];
-      if (tool.description) {
-        lines.push("", tool.description);
-      }
-      if (detail === "brief") {
-        return lines.join("\n");
-      }
-      lines.push("", "**Parameters**");
-      lines.push(...renderSchemaFields(tool.inputSchema));
-      if (tool.outputSchema !== undefined) {
-        lines.push("", "**Returns**");
-        lines.push(...renderSchemaFields(tool.outputSchema));
-      }
-      return lines.join("\n");
-    })
-    .join("\n\n");
-}
-
-function renderSchemaFields(schema: unknown): string[] {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
-    return ["- `value` (any)"];
-  }
-
-  const record = schema as Record<string, unknown>;
-  const properties = record.properties;
-  const required = Array.isArray(record.required)
-    ? new Set(
-        record.required.filter((item): item is string => typeof item === "string")
-      )
-    : new Set<string>();
-
-  if (
-    (!properties || typeof properties !== "object" || Array.isArray(properties)) &&
-    required.size > 0
-  ) {
-    return [...required].map((name) => `- \`${name}\` (any, required)`);
-  }
-
-  if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
-    return ["- `value` (any)"];
-  }
-
-  const entries = Object.entries(properties as Record<string, unknown>);
-  if (entries.length === 0) {
-    return ["*(no parameters)*"];
-  }
-
-  return entries.map(([name, field]) => {
-    const fieldType = schemaType(field);
-    const suffix = required.has(name) ? ", required" : "";
-    return `- \`${name}\` (${fieldType}${suffix})`;
-  });
-}
-
-function schemaType(schema: unknown): string {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
-    return "any";
-  }
-
-  const record = schema as Record<string, unknown>;
-  if (typeof record.type === "string" && record.type.length > 0) {
-    if (record.type === "array") {
-      return `${schemaType(record.items)}[]`;
-    }
-    return record.type;
-  }
-
-  if (record.properties && typeof record.properties === "object") {
-    return "object";
-  }
-
-  return "any";
+export async function createToolRouter(options: ToolRouterOptions): Promise<ToolRouter> {
+  const router = new ToolRouter(options);
+  await router.initialize();
+  return router;
 }

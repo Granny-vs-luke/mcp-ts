@@ -7,6 +7,8 @@ export { createAISDKTools } from "./adapters/ai-sdk.js";
 export { mcpServer, mcpServers } from "./adapters/mcp.js";
 export { BM25SearchStrategy } from "./search.js";
 export { PolicyEnforcer } from "./policy.js";
+export { executeMetaTool } from "./meta-handler.js";
+export type { MetaToolContext } from "./meta-handler.js";
 export type {
   IndexedTool,
   PinnedToolResult,

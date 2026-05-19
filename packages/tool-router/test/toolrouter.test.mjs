@@ -154,6 +154,42 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
   });
 });
 
+test("meta-tool execution is available as an isolated executor", async () => {
+  const {
+    DEFAULT_TOOLROUTER_META_TOOL_NAMES,
+    executeMetaTool
+  } = await import("../dist/index.js");
+
+  assert.equal(typeof executeMetaTool, "function");
+
+  const result = await executeMetaTool(
+    {
+      metaToolNames: DEFAULT_TOOLROUTER_META_TOOL_NAMES,
+      searchTools: async (request) => [
+        {
+          toolId: "github.get_issue",
+          serverId: "github",
+          serverName: "github",
+          toolName: "get_issue",
+          description: `query=${request.query}`,
+          score: 1
+        }
+      ],
+      listServers: () => [],
+      getToolSchemas: () => [],
+      callTool: async () => ({ ok: true })
+    },
+    "search_tools",
+    { query: "issue" }
+  );
+
+  assert.equal(result.isError, false);
+  assert.match(result.content[0].text, /github\.get_issue/);
+  assert.deepEqual(result.structuredContent.results.map((tool) => tool.toolId), [
+    "github.get_issue"
+  ]);
+});
+
 test("enforces destructive tool approval policy", async () => {
   const github = fakeServer("github", [
     {
@@ -296,6 +332,48 @@ test("refresh invalidates ai-sdk adapter tool cache", async () => {
   assert.deepEqual(call, {
     tool: "list_pull_requests",
     args: { state: "open" }
+  });
+});
+
+test("concurrent refresh failures keep the last good catalog usable", async () => {
+  let refreshCalls = 0;
+  let failListTools = false;
+  const server = createToolServer({
+    id: "github",
+    name: "github",
+    listTools: async () => {
+      if (failListTools) {
+        throw new Error("catalog unavailable");
+      }
+      return {
+        tools: [{ name: "get_issue", description: "Get GitHub issue" }]
+      };
+    },
+    callTool: async (name, args) => ({ name, args }),
+    refresh: async () => {
+      refreshCalls += 1;
+    }
+  });
+
+  const router = await createToolRouter({ servers: [server] });
+  failListTools = true;
+
+  const refreshResults = await Promise.allSettled([
+    router.refresh(),
+    router.refresh()
+  ]);
+
+  assert.equal(refreshCalls, 1);
+  assert.equal(refreshResults[0].status, "rejected");
+  assert.equal(refreshResults[1].status, "rejected");
+
+  const searchResults = await router.searchTools({ query: "issue" });
+  const callResult = await router.callTool({ toolId: "github.get_issue", args: { issue_number: 1 } });
+
+  assert.equal(searchResults[0].toolId, "github.get_issue");
+  assert.deepEqual(callResult, {
+    name: "get_issue",
+    args: { issue_number: 1 }
   });
 });
 
