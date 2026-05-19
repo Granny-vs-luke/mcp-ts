@@ -57,7 +57,20 @@ test("returns schemas and proxies calls to the selected server", async () => {
     {
       name: "get_issue",
       description: "Get GitHub issue",
-      inputSchema: { type: "object", required: ["issue_number"] }
+      inputSchema: { type: "object", required: ["issue_number"] },
+      outputSchema: {
+        type: "object",
+        properties: {
+          issue: {
+            type: "object",
+            properties: {
+              number: { type: "number" }
+            },
+            required: ["number"]
+          }
+        },
+        required: ["issue"]
+      }
     }
   ]);
 
@@ -70,6 +83,19 @@ test("returns schemas and proxies calls to the selected server", async () => {
 
   assert.equal(schema.toolId, "github.get_issue");
   assert.deepEqual(schema.inputSchema, { type: "object", required: ["issue_number"] });
+  assert.deepEqual(schema.outputSchema, {
+    type: "object",
+    properties: {
+      issue: {
+        type: "object",
+        properties: {
+          number: { type: "number" }
+        },
+        required: ["number"]
+      }
+    },
+    required: ["issue"]
+  });
   assert.deepEqual(result, {
     server: "github",
     name: "get_issue",
@@ -613,7 +639,14 @@ test("schema meta tool does not expose annotations", async () => {
       name: "delete_repo",
       description: "Delete a repository",
       annotations: { destructiveHint: true, title: "Delete Repository" },
-      inputSchema: { type: "object", properties: { repo: { type: "string" } } }
+      inputSchema: { type: "object", properties: { repo: { type: "string" } } },
+      outputSchema: {
+        type: "object",
+        properties: {
+          deleted: { type: "boolean" }
+        },
+        required: ["deleted"]
+      }
     }
   ]);
 
@@ -624,8 +657,17 @@ test("schema meta tool does not expose annotations", async () => {
 
   assert.equal(schema.isError, false);
   assert.match(schema.content[0].text, /Parameters/);
+  assert.match(schema.content[0].text, /Returns/);
+  assert.match(schema.content[0].text, /deleted/);
   assert.doesNotMatch(schema.content[0].text, /destructiveHint|Delete Repository/);
   assert.deepEqual(schema.structuredContent.results.map((tool) => tool.toolId), ["github.delete_repo"]);
+  assert.deepEqual(schema.structuredContent.results[0].outputSchema, {
+    type: "object",
+    properties: {
+      deleted: { type: "boolean" }
+    },
+    required: ["deleted"]
+  });
 });
 
 test("search results expose canonical tool ids", async () => {

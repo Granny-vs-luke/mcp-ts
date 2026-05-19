@@ -217,7 +217,8 @@ export class ToolRouter {
         serverName: tool.serverName,
         toolName: tool.toolName,
         description: tool.description,
-        inputSchema: tool.inputSchema
+        inputSchema: tool.inputSchema,
+        outputSchema: tool.outputSchema
       };
     });
   }
@@ -337,6 +338,7 @@ export class ToolRouter {
       toolName: tool.name,
       description: tool.description ?? "",
       inputSchema: tool.inputSchema,
+      outputSchema: tool.outputSchema,
       annotations: tool.annotations
     };
   }
@@ -479,6 +481,10 @@ function renderSchemaResults(results: ToolSchemaResult[], detail: ToolRouterDeta
       }
       lines.push("", "**Parameters**");
       lines.push(...renderSchemaFields(tool.inputSchema));
+      if (tool.outputSchema !== undefined) {
+        lines.push("", "**Returns**");
+        lines.push(...renderSchemaFields(tool.outputSchema));
+      }
       return lines.join("\n");
     })
     .join("\n\n");

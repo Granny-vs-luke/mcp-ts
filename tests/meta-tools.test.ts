@@ -14,6 +14,7 @@ function createRouterClient(
         name: string;
         description?: string;
         inputSchema?: Record<string, unknown>;
+        outputSchema?: Record<string, unknown>;
     }>
 ) {
     return {
@@ -89,6 +90,23 @@ test.describe('executeMetaTool', () => {
                     },
                     required: ['query'],
                 },
+                outputSchema: {
+                    type: 'object',
+                    properties: {
+                        results: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    title: { type: 'string' },
+                                    url: { type: 'string' },
+                                },
+                                required: ['title', 'url'],
+                            },
+                        },
+                    },
+                    required: ['results'],
+                },
                 serverId: 'server-123',
             }),
         };
@@ -102,6 +120,23 @@ test.describe('executeMetaTool', () => {
         expect(result?.isError).toBe(false);
         const text = (result?.content[0] as any).text;
         const schema = JSON.parse(text);
+        expect(schema.outputSchema).toEqual({
+            type: 'object',
+            properties: {
+                results: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            title: { type: 'string' },
+                            url: { type: 'string' },
+                        },
+                        required: ['title', 'url'],
+                    },
+                },
+            },
+            required: ['results'],
+        });
         expect(schema.executionInstructions).toEqual(
             expect.objectContaining({
                 nextTool: 'mcp_execute_tool',
@@ -334,6 +369,73 @@ test.describe('executeMetaTool', () => {
             expect(text).toContain('Errors resolving some tools');
             expect(text).toContain('fake_tool_1**: Tool not found');
             expect(text).toContain('fake_tool_2**: Tool not found');
+        });
+    });
+
+    test.describe('pinned tools and excludeTools', () => {
+        test('pinned tools are exposed directly in search strategy and omitted from search results', async () => {
+            const router = new ToolRouter([
+                createRouterClient('web-server', 'Web Search', [
+                    { name: 'web_search', description: 'Search the web' },
+                    { name: 'web_status', description: 'Report current web search status' },
+                ]) as any,
+            ], {
+                strategy: 'search',
+                pinnedTools: ['web_search'],
+            });
+
+            const filteredTools = await router.getFilteredTools();
+            expect(filteredTools.map((tool) => tool.name)).toContain('web_search');
+            expect(filteredTools.map((tool) => tool.name)).toContain('mcp_search_tools');
+
+            const searchResults = await router.searchTools('search', 10);
+            expect(searchResults.map((tool) => tool.name)).not.toContain('web_search');
+            expect(searchResults.map((tool) => tool.name)).toContain('web_status');
+
+            const regexResults = await router.searchToolsRegex('web_', 10);
+            expect(regexResults.map((tool) => tool.name)).not.toContain('web_search');
+            expect(regexResults.map((tool) => tool.name)).toContain('web_status');
+        });
+
+        test('excludeTools removes exact and glob matches from returned tools and lookup', async () => {
+            const router = new ToolRouter([
+                createRouterClient('db-server', 'Database MCP', [
+                    { name: 'list_tables', description: 'List tables' },
+                    { name: 'db_admin_reset', description: 'Reset the database' },
+                    { name: 'db_query', description: 'Query the database' },
+                ]) as any,
+            ], {
+                strategy: 'all',
+                excludeTools: ['list_tables', 'db_admin*'],
+            });
+
+            const filteredTools = await router.getFilteredTools();
+            expect(filteredTools.map((tool) => tool.name)).toEqual(['db_query']);
+
+            expect(router.getToolSchema('list_tables')).toBeUndefined();
+            expect(router.getToolSchema('db_admin_reset')).toBeUndefined();
+            expect(router.getToolSchema('db_query')?.name).toBe('db_query');
+        });
+
+        test('excludeTools takes precedence over pinning', async () => {
+            const router = new ToolRouter([
+                createRouterClient('web-server', 'Web Search', [
+                    { name: 'web_search', description: 'Search the web' },
+                    { name: 'web_status', description: 'Report current web search status' },
+                ]) as any,
+            ], {
+                strategy: 'search',
+                pinnedTools: ['web_search'],
+                excludeTools: ['web_search'],
+            });
+
+            const filteredTools = await router.getFilteredTools();
+            expect(filteredTools.map((tool) => tool.name)).not.toContain('web_search');
+
+            const searchResults = await router.searchTools('search', 10);
+            expect(searchResults.map((tool) => tool.name)).not.toContain('web_search');
+
+            expect(router.getToolSchema('web_search')).toBeUndefined();
         });
     });
 });

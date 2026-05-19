@@ -72,6 +72,7 @@ export interface IndexedTool extends Tool {
   sessionId: string;
   serverId: string;
   serverName: string;
+  outputSchema?: Tool['outputSchema'];
 }
 
 /**

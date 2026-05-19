@@ -162,7 +162,8 @@ export function isCallToolSuccess(
 export type ToolInfo = {
   name: string;
   description?: string;
-  inputSchema?: unknown;
+  inputSchema?: Tool['inputSchema'];
+  outputSchema?: Tool['outputSchema'];
 };
 
 // Transport type

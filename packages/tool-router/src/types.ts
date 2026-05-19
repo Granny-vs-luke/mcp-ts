@@ -11,6 +11,7 @@ export interface ToolDefinition {
   name: string;
   description?: string;
   inputSchema?: unknown;
+  outputSchema?: unknown;
   annotations?: ToolAnnotations;
   [key: string]: unknown;
 }
@@ -30,6 +31,7 @@ export interface IndexedTool {
   description: string;
   annotations?: ToolAnnotations;
   inputSchema?: unknown;
+  outputSchema?: unknown;
 }
 
 export interface ToolSearchResult {
@@ -52,6 +54,7 @@ export interface ToolSchemaResult {
   toolName: string;
   description: string;
   inputSchema?: unknown;
+  outputSchema?: unknown;
 }
 
 export interface PinnedToolResult extends ToolSchemaResult {

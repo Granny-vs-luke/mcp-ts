@@ -40,7 +40,7 @@ export function createMetaTools(names: ToolRouterMetaToolNames = DEFAULT_TOOLROU
     },
     {
       name: names.getToolSchemas,
-      description: "Get input schema details for discovered tools before calling them.",
+      description: "Get input and output schema details for discovered tools before calling them.",
       inputSchema: {
         type: "object",
         properties: {

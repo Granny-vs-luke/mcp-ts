@@ -100,6 +100,17 @@ export interface ToolRouterOptions {
   compactSchemas?: boolean;
 
   /**
+   * Tool names to expose directly when using `search` strategy.
+   * Pinned tools are removed from discovery results and should be called directly.
+   */
+  pinnedTools?: string[];
+
+  /**
+   * Tool names or glob-style patterns to omit entirely from the router catalog.
+   */
+  excludeTools?: string[];
+
+  /**
    * Optional embedding function for semantic search.
    * When not provided, keyword TF-IDF matching is used.
    */
@@ -136,12 +147,16 @@ export type ToolRouterClientInput = ToolClientProvider | ToolClient[];
 export class ToolRouter {
   private index: ToolIndex;
   private allTools: IndexedTool[] = [];
+  private pinnedTools: IndexedTool[] = [];
+  private discoverableTools: IndexedTool[] = [];
   private groupsMap = new Map<string, ToolGroupInfo>();
   private strategy: ToolRouterStrategy;
   private maxTools: number;
   private compactSchemas: boolean;
   private activeGroups: Set<string>;
   private customGroups?: Record<string, string[]>;
+  private pinnedToolNames: Set<string>;
+  private excludeToolMatchers: RegExp[];
   private initialized = false;
 
   constructor(
@@ -153,6 +168,10 @@ export class ToolRouter {
     this.compactSchemas = options.compactSchemas ?? false;
     this.activeGroups = new Set(options.activeGroups ?? []);
     this.customGroups = options.groups;
+    this.pinnedToolNames = new Set(options.pinnedTools ?? []);
+    this.excludeToolMatchers = (options.excludeTools ?? []).map((pattern) =>
+      globToRegExp(pattern)
+    );
 
     this.index = new ToolIndex({
       embedFn: options.embedFn,
@@ -177,7 +196,7 @@ export class ToolRouter {
 
     switch (this.strategy) {
       case 'search':
-        return this.getMetaToolDefinitions();
+        return [...this.getMetaToolDefinitions(), ...this.pinnedTools];
 
       case 'groups':
         return this.getGroupFilteredTools();
@@ -352,8 +371,11 @@ export class ToolRouter {
   private async ensureInitialized(): Promise<void> {
     if (this.initialized) return;
 
-    this.allTools = await this.fetchAllTools();
-    await this.index.buildIndex(this.allTools);
+    const fetchedTools = await this.fetchAllTools();
+    this.allTools = fetchedTools.filter((tool) => !this.matchesExcludedTool(tool.name));
+    this.pinnedTools = this.allTools.filter((tool) => this.matchesPinnedTool(tool.name));
+    this.discoverableTools = this.allTools.filter((tool) => !this.matchesPinnedTool(tool.name));
+    await this.index.buildIndex(this.discoverableTools);
     this.buildGroups();
     this.initialized = true;
   }
@@ -476,4 +498,17 @@ export class ToolRouter {
     ];
   }
 
+  private matchesPinnedTool(toolName: string): boolean {
+    return this.pinnedToolNames.has(toolName);
+  }
+
+  private matchesExcludedTool(toolName: string): boolean {
+    return this.excludeToolMatchers.some((matcher) => matcher.test(toolName));
+  }
+}
+
+function globToRegExp(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  const regexPattern = `^${escaped.replace(/\*/g, '.*')}$`;
+  return new RegExp(regexPattern);
 }
