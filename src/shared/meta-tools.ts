@@ -135,16 +135,16 @@ export function createRegexSearchToolDefinition(): Tool {
  *
  * After discovering tools via `mcp_search_tools` or
  * `mcp_search_tool_regex`, the LLM calls this to load the full
- * inputSchema for a specific tool so it can construct the correct
- * arguments.
+ * input and output schemas for a specific tool so it can construct the
+ * correct arguments and plan around the result shape.
  */
 export function createGetSchemaToolDefinition(): Tool {
   return {
     name: 'mcp_get_tool_schema',
     description:
-      'Get the full input schema (parameters) for a specific tool. ' +
+      'Get the full input schema (parameters) and output schema (result shape) for a specific tool. ' +
       'Call this after mcp_search_tools to get the parameter details ' +
-      'needed to call a tool correctly. ' +
+      'needed to call a tool correctly and understand what it returns. ' +
       'Do NOT call the discovered tool directly; after reading the schema, call mcp_execute_tool.',
     inputSchema: {
       type: 'object' as const,
@@ -432,6 +432,7 @@ export async function executeMetaTool(
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema,
+        outputSchema: tool.outputSchema,
         executionInstructions: {
           nextTool: 'mcp_execute_tool',
           toolName: tool.name,

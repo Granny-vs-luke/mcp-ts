@@ -1,31 +1,86 @@
-import type { ToolDefinition, ToolSource } from "../types.js";
+import type { ToolDefinition, ToolServer } from "../types.js";
 
-export interface McpLikeClient {
+export interface ToolClient {
   listTools(): Promise<{ tools: ToolDefinition[] }>;
-  callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
+  callTool?:
+    | ((name: string, args: Record<string, unknown>) => Promise<unknown>)
+    | ((request: {
+        name: string;
+        args: Record<string, unknown>;
+        options?: unknown;
+      }) => Promise<unknown>);
+  tools?(): Promise<Record<string, unknown>>;
   getServerId?(): string | undefined;
   getServerName?(): string | undefined;
 }
 
-export interface McpLikeProvider {
-  getClients(): McpLikeClient[];
+export interface ToolClientProvider {
+  getClients(): ToolClient[];
 }
 
-export function mcpSource(id: string, client: McpLikeClient, name?: string): ToolSource {
+export function mcpServer(id: string, client: ToolClient, name?: string): ToolServer {
+  let cachedToolsPromise: Promise<Record<string, unknown>> | null = null;
+
   return {
     id,
     name: name ?? client.getServerName?.() ?? client.getServerId?.() ?? id,
     listTools: () => client.listTools(),
-    callTool: (toolName, args) => client.callTool(toolName, args)
+    callTool: async (toolName, args) => {
+      if (client.callTool) {
+        return callClientTool(client, client.callTool, toolName, args);
+      }
+
+      if (!client.tools) {
+        throw new Error(`Client for server "${id}" does not support tool execution.`);
+      }
+
+      if (!cachedToolsPromise) {
+        cachedToolsPromise = client.tools();
+      }
+      const toolSet = await cachedToolsPromise;
+      const tool = toolSet[toolName] as { execute?: (...args: unknown[]) => Promise<unknown> } | undefined;
+      if (!tool || typeof tool.execute !== "function") {
+        throw new Error(`Tool "${toolName}" not found on server "${id}".`);
+      }
+      return tool.execute(args);
+    },
+    refresh: async () => {
+      cachedToolsPromise = null;
+    }
   };
 }
 
-export function mcpSources(provider: McpLikeProvider): ToolSource[] {
+function callClientTool(
+  client: ToolClient,
+  callTool: NonNullable<ToolClient["callTool"]>,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  if (callTool.length >= 2) {
+    return (callTool as (this: ToolClient, name: string, args: Record<string, unknown>) => Promise<unknown>).call(
+      client,
+      name,
+      args
+    );
+  }
+
+  return (callTool as (this: ToolClient, request: {
+    name: string;
+    args: Record<string, unknown>;
+    options?: unknown;
+  }) => Promise<unknown>).call(client, {
+    name,
+    args
+  });
+}
+
+export function mcpServers(provider: ToolClientProvider): ToolServer[] {
   return provider.getClients().map((client, index) =>
-    mcpSource(
+    mcpServer(
       client.getServerId?.() ?? `mcp_${index + 1}`,
       client,
       client.getServerName?.()
     )
   );
 }
+

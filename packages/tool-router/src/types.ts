@@ -11,40 +11,61 @@ export interface ToolDefinition {
   name: string;
   description?: string;
   inputSchema?: unknown;
+  outputSchema?: unknown;
   annotations?: ToolAnnotations;
   [key: string]: unknown;
 }
 
-export interface ToolSource {
+export interface ToolServer {
   id: string;
   name?: string;
   listTools(): Promise<{ tools: ToolDefinition[] }>;
   callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
+  refresh?(): Promise<void>;
 }
 
 export interface IndexedTool {
-  sourceId: string;
-  sourceName: string;
+  serverId: string;
+  serverName: string;
   toolName: string;
   description: string;
   annotations?: ToolAnnotations;
   inputSchema?: unknown;
+  outputSchema?: unknown;
 }
 
 export interface ToolSearchResult {
-  sourceId: string;
-  sourceName: string;
+  toolId: string;
+  serverId: string;
+  serverName: string;
   toolName: string;
   description: string;
   score: number;
 }
 
+export interface SearchStrategy {
+  search(tools: IndexedTool[], request: ToolSearchRequest, limit: number): ToolSearchResult[];
+}
+
 export interface ToolSchemaResult {
-  sourceId: string;
-  sourceName: string;
+  toolId: string;
+  serverId: string;
+  serverName: string;
   toolName: string;
   description: string;
   inputSchema?: unknown;
+  outputSchema?: unknown;
+}
+
+export interface PinnedToolResult extends ToolSchemaResult {
+  annotations?: ToolAnnotations;
+}
+
+export type ToolRouterDetailLevel = "brief" | "detailed" | "full";
+
+export interface VisibleTools {
+  pinned: PinnedToolResult[];
+  metaTools: ToolRouterMetaTool[];
 }
 
 export interface ToolRouterPolicy {
@@ -55,32 +76,37 @@ export interface ToolRouterPolicy {
 }
 
 export interface ToolRouterOptions {
-  sources: ToolSource[];
+  servers: ToolServer[];
   policy?: ToolRouterPolicy;
+  searchStrategy?: SearchStrategy;
+  /** Canonical tool ids (serverId.toolName) or legacy tool names always visible alongside meta-tools. */
+  pinnedTools?: string[];
+  /** Canonical tool ids/patterns or legacy tool names/patterns to omit from the router catalog. */
+  excludeTools?: string[];
   maxSearchResults?: number;
   excludeMetaTools?: string[];
   metaToolNames?: Partial<{
     searchTools: string;
-    listSources: string;
-    getToolSchema: string;
+    listServers: string;
+    getToolSchemas: string;
     callTool: string;
   }>;
 }
 
 export interface ToolSearchRequest {
   query?: string;
-  sourceId?: string;
-  sourceName?: string;
+  serverId?: string;
+  serverName?: string;
   limit?: number;
+  detail?: ToolRouterDetailLevel;
 }
 
 export interface ToolSchemaRequest {
-  sourceId?: string;
-  sourceName?: string;
-  toolName: string;
+  toolIds: string[];
 }
 
-export interface ToolCallRequest extends ToolSchemaRequest {
+export interface ToolCallRequest {
+  toolId: string;
   args?: Record<string, unknown>;
 }
 
@@ -93,13 +119,13 @@ export interface ToolRouterMetaTool {
 
 export interface ToolRouterMetaToolNames {
   searchTools: string;
-  listSources: string;
-  getToolSchema: string;
+  listServers: string;
+  getToolSchemas: string;
   callTool: string;
 }
 
 export interface ToolRouterCallResult {
   content: Array<{ type: "text"; text: string }>;
-  isError?: boolean;
   structuredContent?: unknown;
+  isError?: boolean;
 }
