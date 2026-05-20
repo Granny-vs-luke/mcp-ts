@@ -1,35 +1,35 @@
-import type { IndexedTool, ToolSearchResult, ToolServer } from "../types.js";
+import type { IndexedTool, ToolSearchResult, ToolSource } from "../types.js";
 
 /**
- * Normalizes a server ID to a safe, lowercase identifier.
+ * Normalizes a source ID to a safe, lowercase identifier.
  */
-export function normalizeServerId(value: string): string {
+export function normalizeSourceId(value: string): string {
   return value
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "") || "server";
+    .replace(/^_+|_+$/g, "") || "source";
 }
 
 /**
- * Indexes all tools from the given servers.
- * Resolves tools from each server and flattens into a single list.
+ * Indexes all tools from the given sources.
+ * Resolves tools from each source and flattens into a single list.
  */
-export async function indexServers(servers: ToolServer[]): Promise<IndexedTool[]> {
+export async function indexSources(sources: ToolSource[]): Promise<IndexedTool[]> {
   const indexed: IndexedTool[] = [];
-  const seenServerIds = new Set<string>();
+  const seenSourceIds = new Set<string>();
 
-  for (const server of servers) {
-    const serverId = normalizeServerId(server.serverId);
-    if (seenServerIds.has(serverId)) {
-      throw new Error(`Duplicate tool server id "${serverId}".`);
+  for (const source of sources) {
+    const sourceId = normalizeSourceId(source.id);
+    if (seenSourceIds.has(sourceId)) {
+      throw new Error(`Duplicate tool source id "${sourceId}".`);
     }
-    seenServerIds.add(serverId);
+    seenSourceIds.add(sourceId);
 
-    const listed = await server.listTools();
+    const listed = await source.listTools();
     for (const tool of listed.tools) {
       indexed.push({
-        serverId,
-        serverName: server.serverName ?? serverId,
+        sourceId,
+        sourceName: source.name ?? sourceId,
         toolName: tool.name,
         description: tool.description ?? "",
         inputSchema: tool.inputSchema,
@@ -41,6 +41,9 @@ export async function indexServers(servers: ToolServer[]): Promise<IndexedTool[]
   return indexed;
 }
 
+/**
+ * Scores a tool against a search query using word-match heuristics.
+ */
 function scoreTool(tool: IndexedTool, query: string): number {
   const terms = query
     .toLowerCase()
@@ -51,29 +54,32 @@ function scoreTool(tool: IndexedTool, query: string): number {
   if (terms.length === 0) return 1;
 
   const name = tool.toolName.toLowerCase();
-  const server = `${tool.serverId} ${tool.serverName}`.toLowerCase();
+  const source = `${tool.sourceId} ${tool.sourceName}`.toLowerCase();
   const description = tool.description.toLowerCase();
   let score = 0;
 
   for (const term of terms) {
     if (name === term) score += 10;
     if (name.includes(term)) score += 6;
-    if (server.includes(term)) score += 4;
+    if (source.includes(term)) score += 4;
     if (description.includes(term)) score += 2;
   }
 
   return score;
 }
 
+/**
+ * Searches the index by query with optional source filters.
+ */
 export function searchToolIndex(
   index: IndexedTool[],
   query?: string,
   limit = 10,
-  serverId?: string,
+  sourceId?: string,
 ): ToolSearchResult[] {
   return index
     .filter((tool) => {
-      if (serverId && tool.serverId !== serverId) return false;
+      if (sourceId && tool.sourceId !== sourceId) return false;
       return true;
     })
     .map((tool) => ({ tool, score: scoreTool(tool, query ?? "") }))
@@ -81,8 +87,8 @@ export function searchToolIndex(
     .sort((a, b) => b.score - a.score || a.tool.toolName.localeCompare(b.tool.toolName))
     .slice(0, Math.min(limit, 100))
     .map(({ tool, score }) => ({
-      serverId: tool.serverId,
-      serverName: tool.serverName,
+      sourceId: tool.sourceId,
+      sourceName: tool.sourceName,
       toolName: tool.toolName,
       description: tool.description,
       annotations: tool.annotations,
@@ -91,23 +97,23 @@ export function searchToolIndex(
 }
 
 /**
- * Resolves a specific tool from the index by serverId + toolName.
+ * Resolves a specific tool from the index by sourceId + toolName.
  */
 export function resolveTool(
   index: IndexedTool[],
   toolName: string,
-  serverId?: string,
+  sourceId?: string,
 ): IndexedTool | undefined {
   const matches = index.filter((tool) => {
     if (tool.toolName !== toolName) return false;
-    if (serverId && tool.serverId !== normalizeServerId(serverId)) return false;
+    if (sourceId && tool.sourceId !== normalizeSourceId(sourceId)) return false;
     return true;
   });
 
   if (matches.length > 1) {
-    const servers = matches.map((t) => t.serverId).join(", ");
+    const sources = matches.map((t) => t.sourceId).join(", ");
     throw new Error(
-      `Tool "${toolName}" exists on multiple servers: ${servers}. Provide serverId.`
+      `Tool "${toolName}" exists on multiple sources: ${sources}. Provide sourceId.`
     );
   }
 
@@ -115,19 +121,19 @@ export function resolveTool(
 }
 
 /**
- * Lists connected servers with tool counts.
+ * Lists connected sources with tool counts.
  */
-export function listServersFromIndex(
+export function listSourcesFromIndex(
   index: IndexedTool[],
-): Array<{ serverId: string; serverName: string; toolCount: number }> {
-  const counts = new Map<string, { serverId: string; serverName: string; toolCount: number }>();
+): Array<{ sourceId: string; sourceName: string; toolCount: number }> {
+  const counts = new Map<string, { sourceId: string; sourceName: string; toolCount: number }>();
 
   for (const tool of index) {
     const current =
-      counts.get(tool.serverId) ??
-      { serverId: tool.serverId, serverName: tool.serverName, toolCount: 0 };
+      counts.get(tool.sourceId) ??
+      { sourceId: tool.sourceId, sourceName: tool.sourceName, toolCount: 0 };
     current.toolCount += 1;
-    counts.set(tool.serverId, current);
+    counts.set(tool.sourceId, current);
   }
 
   return [...counts.values()];

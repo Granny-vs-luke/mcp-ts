@@ -136,8 +136,7 @@ function renderSearchResults(results: ToolSearchResult[], detail: ToolRouterDeta
         [
           `${index + 1}. ${tool.toolName}`,
           `Tool ID: ${tool.toolId}`,
-          `Server ID: ${tool.serverId}`,
-          `Server Name: ${tool.serverName}`,
+          `Server: ${tool.serverId}${tool.serverName && tool.serverName !== tool.serverId ? ` (${tool.serverName})` : ""}`,
           tool.description ? `Description: ${tool.description}` : null
         ]
           .filter(Boolean)
@@ -147,10 +146,7 @@ function renderSearchResults(results: ToolSearchResult[], detail: ToolRouterDeta
   }
 
   return results
-    .map(
-      (tool) =>
-        `- Tool ID: ${tool.toolId} | Server ID: ${tool.serverId} | Server Name: ${tool.serverName} - ${tool.description || "No description."}`
-    )
+    .map((tool) => `- Tool ID: ${tool.toolId} - ${tool.description || "No description."}`)
     .join("\n");
 }
 
@@ -165,12 +161,7 @@ function renderSchemaResults(results: ToolSchemaResult[], detail: ToolRouterDeta
 
   return results
     .map((tool) => {
-      const lines = [
-        `### ${tool.toolName}`,
-        `Tool ID: ${tool.toolId}`,
-        `Server ID: ${tool.serverId}`,
-        `Server Name: ${tool.serverName}`
-      ];
+      const lines = [`### ${tool.toolName}`, `Tool ID: ${tool.toolId}`];
       if (tool.description) {
         lines.push("", tool.description);
       }

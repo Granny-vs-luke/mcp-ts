@@ -24,7 +24,7 @@ export async function createCodemodeAITools(runtime: CodeModeRuntime): Promise<A
   return {
     codemode_search_tools: {
       description:
-        "Search connected tool servers by natural language description. Returns tool names, server IDs, and TypeScript interfaces. Use this first to discover what tools are available.",
+        "Search connected tool sources by natural language description. Returns tool names, source IDs, and TypeScript interfaces. Use this first to discover what tools are available.",
       inputSchema: jsonSchema!({
         type: "object",
         properties: {
@@ -47,20 +47,20 @@ export async function createCodemodeAITools(runtime: CodeModeRuntime): Promise<A
       },
     },
 
-    codemode_list_servers: {
-      description: "List all connected tool servers and indexed tool counts.",
+    codemode_list_sources: {
+      description: "List all connected tool sources and indexed tool counts.",
       inputSchema: jsonSchema!({
         type: "object",
         properties: {},
       }),
       execute: async () => {
-        return runtime.listServers();
+        return runtime.listSources();
       },
     },
 
     codemode_tools_info: {
       description:
-        "Get detailed TypeScript interface definitions for specific tools. Pass tool names as 'serverId.toolName' format. Use after search to understand exact input/output contracts.",
+        "Get detailed TypeScript interface definitions for specific tools. Pass tool names as 'sourceId.toolName' format. Use after search to understand exact input/output contracts.",
       inputSchema: jsonSchema!({
         type: "object",
         properties: {
@@ -68,7 +68,7 @@ export async function createCodemodeAITools(runtime: CodeModeRuntime): Promise<A
             type: "array",
             items: { type: "string" },
             description:
-              "Tool names to get interfaces for, in 'serverId.toolName' format (e.g. ['github.get_issue', 'exa.web_search']).",
+              "Tool names to get interfaces for, in 'sourceId.toolName' format (e.g. ['github.get_issue', 'exa.web_search']).",
           },
         },
         required: ["tool_names"],
@@ -84,7 +84,7 @@ export async function createCodemodeAITools(runtime: CodeModeRuntime): Promise<A
         "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool()). " +
         "Tool calls are synchronous from the sandbox — no 'await' needed (but 'await' also works). " +
         "Use 'return' to provide the final value. Console output is captured. " +
-        "Also available: callTool(serverId, toolName, args), callToolRaw(serverId, toolName, args), searchTools(query), __interfaces, __getToolInterface(name).",
+        "Also available: callTool(sourceId, toolName, args), searchTools(query), __interfaces, __getToolInterface(name).",
       inputSchema: jsonSchema!({
         type: "object",
         properties: {
@@ -92,7 +92,7 @@ export async function createCodemodeAITools(runtime: CodeModeRuntime): Promise<A
             type: "string",
             description:
               "TypeScript code to execute with access to all registered tools. Your code runs as an async function body. " +
-              "Call tools directly: server.tool(args). Use return for the final value.",
+              "Call tools directly: source.tool(args). Use return for the final value.",
           },
           input: {
             description: "Optional serializable input exposed as 'input' in the sandbox.",
@@ -116,7 +116,7 @@ export async function createCodemodeAITools(runtime: CodeModeRuntime): Promise<A
           value: result.value,
           logs: result.logs,
           toolCalls: result.toolCalls.map((c) => ({
-            serverId: c.serverId,
+            sourceId: c.sourceId,
             toolName: c.toolName,
             ok: c.ok,
             durationMs: c.durationMs,

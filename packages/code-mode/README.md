@@ -9,7 +9,7 @@ Sandboxed execution engine for Model Context Protocol (MCP) tools.
 ## Features
 
 - **V8 Sandboxing**: Uses `isolated-vm` to isolate memory and execution.
-- **Namespace Bridging**: Exposes connected tool servers as callable JavaScript functions (e.g., `await github.list_pull_requests(...)`).
+- **Namespace Bridging**: Exposes connected tool sources as callable JavaScript functions (e.g., `await github.list_pull_requests(...)`).
 - **TypeScript Interfaces**: Generates TypeScript type definitions for registered tools.
 - **Adapters**: Built-in support for Vercel AI SDK and native MCP server tools.
 - **Optional Native Dependency**: `isolated-vm` is optional at install time so the package builds in any environment.
@@ -37,10 +37,9 @@ npm install @mcp-ts/codemode
 ```typescript
 import { createCodeModeRuntime } from "@mcp-ts/codemode";
 
-// Define a tool server
-const githubServer = {
-  serverId: "github",
-  serverName: "GitHub",
+// Define a tool source
+const githubSource = {
+  id: "github",
   async listTools() {
     return {
       tools: [
@@ -69,7 +68,7 @@ const githubServer = {
 
 // Create the runtime
 const runtime = await createCodeModeRuntime({
-  servers: [githubServer],
+  sources: [githubSource],
   limits: {
     timeoutMs: 5000,
     memoryLimitMb: 64,
@@ -104,8 +103,7 @@ console.log(result.value);
 Scripts running inside the sandbox have access to:
 
 - `input`: The serializable input payload passed from the host.
-- `callTool(serverId, toolName, args)`: Directly invoke a tool and receive the normalized result.
-- `callToolRaw(serverId, toolName, args)`: Directly invoke a tool and receive the raw MCP envelope when available.
+- `callTool(sourceId, toolName, args)`: Directly invoke a tool.
 - `searchTools(query, limit?)`: Search descriptions of registered tools.
 - `console`: Standard console logging (`log`, `info`, `warn`, `error`) redirected to host-managed logs.
 - **Hierarchical Namespaces**: E.g. `github.list_pull_requests(args)` generated dynamically from your registered sources.
@@ -143,7 +141,7 @@ Expose the `codemode` engine as an MCP server:
 import { createCodeModeMcpServer } from "@mcp-ts/codemode/server";
 
 const server = await createCodeModeMcpServer({
-  servers: [githubServer],
+  sources: [githubSource],
   limits: {
     timeoutMs: 10000,
     memoryLimitMb: 128

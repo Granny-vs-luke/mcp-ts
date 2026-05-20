@@ -128,8 +128,6 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
   });
   assert.equal(search.isError, false);
   assert.match(search.content[0].text, /list_pull_requests/);
-  assert.match(search.content[0].text, /Server ID: github/);
-  assert.match(search.content[0].text, /Server Name: github/);
   assert.deepEqual(search.structuredContent.results.map((tool) => tool.toolId), [
     "github.list_pull_requests"
   ]);
@@ -139,8 +137,6 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
   });
   assert.equal(schema.isError, false);
   assert.match(schema.content[0].text, /Parameters/);
-  assert.match(schema.content[0].text, /Server ID: github/);
-  assert.match(schema.content[0].text, /Server Name: github/);
   assert.deepEqual(schema.structuredContent.results.map((tool) => tool.toolId), [
     "github.list_pull_requests"
   ]);
@@ -189,8 +185,6 @@ test("meta-tool execution is available as an isolated executor", async () => {
 
   assert.equal(result.isError, false);
   assert.match(result.content[0].text, /github\.get_issue/);
-  assert.match(result.content[0].text, /Server ID: github/);
-  assert.match(result.content[0].text, /Server Name: github/);
   assert.deepEqual(result.structuredContent.results.map((tool) => tool.toolId), [
     "github.get_issue"
   ]);
@@ -740,8 +734,6 @@ test("schema meta tool does not expose annotations", async () => {
   });
 
   assert.equal(schema.isError, false);
-  assert.match(schema.content[0].text, /Server ID: github/);
-  assert.match(schema.content[0].text, /Server Name: github/);
   assert.match(schema.content[0].text, /Parameters/);
   assert.match(schema.content[0].text, /Returns/);
   assert.match(schema.content[0].text, /deleted/);
@@ -754,38 +746,6 @@ test("schema meta tool does not expose annotations", async () => {
     },
     required: ["deleted"]
   });
-});
-
-test("search and schema meta tools include server id and server name in text responses", async () => {
-  const server = createToolServer({
-    id: "GitHub Server",
-    name: "GitHub Server",
-    listTools: async () => ({
-      tools: [
-        {
-          name: "get_issue",
-          description: "Get a GitHub issue",
-          inputSchema: { type: "object", properties: { issue_number: { type: "number" } } }
-        }
-      ]
-    }),
-    callTool: async (name, args) => ({ name, args })
-  });
-
-  const router = await createToolRouter({ servers: [server] });
-  const search = await router.executeMetaTool("search_tools", { query: "issue" });
-  const schema = await router.executeMetaTool("get_tool_schemas", {
-    toolIds: ["github_server.get_issue"]
-  });
-
-  assert.match(search.content[0].text, /Server ID: github_server/);
-  assert.match(search.content[0].text, /Server Name: GitHub Server/);
-  assert.match(schema.content[0].text, /Server ID: github_server/);
-  assert.match(schema.content[0].text, /Server Name: GitHub Server/);
-  assert.equal(search.structuredContent.results[0].serverId, "github_server");
-  assert.equal(search.structuredContent.results[0].serverName, "GitHub Server");
-  assert.equal(schema.structuredContent.results[0].serverId, "github_server");
-  assert.equal(schema.structuredContent.results[0].serverName, "GitHub Server");
 });
 
 test("search results expose canonical tool ids", async () => {

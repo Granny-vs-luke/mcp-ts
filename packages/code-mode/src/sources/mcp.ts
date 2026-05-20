@@ -1,15 +1,4 @@
-import type { ToolServer, ToolDefinition } from "../types.js";
-
-type McpTextContent = {
-  type?: unknown;
-  text?: unknown;
-};
-
-type McpCallToolEnvelope = {
-  structuredContent?: unknown;
-  content?: unknown;
-  isError?: unknown;
-};
+import type { ToolSource, ToolDefinition } from "../types.js";
 
 export interface McpLikeClient {
   listTools(): Promise<{ tools: ToolDefinition[] }>;
@@ -22,66 +11,25 @@ export interface McpLikeProvider {
   getClients(): McpLikeClient[];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function tryParseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
-
-export function normalizeMcpToolResult(result: unknown): unknown {
-  if (!isRecord(result)) {
-    return result;
-  }
-
-  const envelope = result as McpCallToolEnvelope;
-  if (envelope.structuredContent !== undefined) {
-    return envelope.structuredContent;
-  }
-
-  const content = Array.isArray(envelope.content) ? envelope.content : null;
-  if (content?.length === 1) {
-    const item = content[0] as McpTextContent;
-    if (item?.type === "text" && typeof item.text === "string") {
-      return tryParseJson(item.text);
-    }
-  }
-
-  if (content) {
-    return {
-      content,
-      isError: Boolean(envelope.isError),
-    };
-  }
-
-  return result;
-}
-
 /**
- * Wraps a single MCP-like client as a ToolServer.
+ * Wraps a single MCP-like client as a ToolSource.
  */
-export function mcpServer(serverId: string, client: McpLikeClient, serverName?: string): ToolServer {
+export function mcpSource(id: string, client: McpLikeClient, name?: string): ToolSource {
   return {
-    serverId,
-    serverName: serverName ?? client.getServerName?.() ?? client.getServerId?.() ?? serverId,
+    id,
+    name: name ?? client.getServerName?.() ?? client.getServerId?.() ?? id,
     listTools: () => client.listTools(),
-    callTool: async (toolName, args) => normalizeMcpToolResult(await client.callTool(toolName, args)),
-    callToolRaw: (toolName, args) => client.callTool(toolName, args),
+    callTool: (toolName, args) => client.callTool(toolName, args),
   };
 }
 
 /**
- * Creates ToolServer[] from a provider that manages multiple MCP clients
+ * Creates ToolSource[] from a provider that manages multiple MCP clients
  * (e.g. MultiSessionClient).
  */
-export function mcpServers(provider: McpLikeProvider): ToolServer[] {
+export function mcpSources(provider: McpLikeProvider): ToolSource[] {
   return provider.getClients().map((client, index) =>
-    mcpServer(
+    mcpSource(
       client.getServerId?.() ?? `mcp_${index + 1}`,
       client,
       client.getServerName?.()

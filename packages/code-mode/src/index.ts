@@ -1,8 +1,8 @@
 // Runtime
 export { createCodeModeRuntime, IsolatedVmCodeModeRuntime } from "./runtime/runtime.js";
 
-// Servers
-export { mcpServer, mcpServers, normalizeMcpToolResult } from "./sources/index.js";
+// Sources
+export { mcpSource, mcpSources } from "./sources/index.js";
 export type { McpLikeClient, McpLikeProvider } from "./sources/index.js";
 
 // AI SDK adapter
@@ -22,5 +22,5 @@ export type {
   ToolAnnotations,
   ToolDefinition,
   ToolSearchResult,
-  ToolServer,
+  ToolSource,
 } from "./types.js";
