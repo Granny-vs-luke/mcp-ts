@@ -17,16 +17,17 @@ export interface ToolDefinition {
   [key: string]: unknown;
 }
 
-export interface ToolSource {
-  id: string;
-  name?: string;
+export interface ToolServer {
+  serverId: string;
+  serverName?: string;
   listTools(): Promise<{ tools: ToolDefinition[] }>;
   callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
+  callToolRaw?(name: string, args: Record<string, unknown>): Promise<unknown>;
 }
 
 export interface IndexedTool {
-  sourceId: string;
-  sourceName: string;
+  serverId: string;
+  serverName: string;
   toolName: string;
   description: string;
   inputSchema?: Record<string, unknown>;
@@ -34,8 +35,8 @@ export interface IndexedTool {
 }
 
 export interface ToolSearchResult {
-  sourceId: string;
-  sourceName: string;
+  serverId: string;
+  serverName: string;
   toolName: string;
   description: string;
   annotations?: ToolAnnotations;
@@ -56,7 +57,7 @@ export interface CodeModeLimits {
 }
 
 export interface CodeModeRuntimeOptions {
-  sources: ToolSource[];
+  servers: ToolServer[];
   limits?: CodeModeLimits;
   maxSearchResults?: number;
 }
@@ -72,7 +73,7 @@ export interface CodeModeLogEntry {
 
 export interface CodeModeToolCall {
   id: string;
-  sourceId: string;
+  serverId: string;
   toolName: string;
   args: unknown;
   startedAt: number;
@@ -102,6 +103,6 @@ export interface CodeModeResult {
 export interface CodeModeRuntime {
   run(code: string, input?: unknown, options?: CodeModeRunOptions): Promise<CodeModeResult>;
   searchTools(query: string, limit?: number): Promise<ToolSearchResult[]>;
-  listSources(): Array<{ sourceId: string; sourceName: string; toolCount: number }>;
+  listServers(): Array<{ serverId: string; serverName: string; toolCount: number }>;
   getToolInterfaces(toolNames: string[]): string;
 }

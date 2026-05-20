@@ -7,7 +7,7 @@ const hasIsolatedVm = await import("isolated-vm").then(
 );
 
 /**
- * Creates a fake ToolSource for testing.
+ * Creates a fake ToolServer for testing.
  */
 function fakeSource(id = "github", tools = undefined) {
   const calls = [];
@@ -81,13 +81,82 @@ function fakeExaSource() {
   };
 }
 
+function fakeMcpEnvelopeSource(id = "docs") {
+  const calls = [];
+  return {
+    calls,
+    source: {
+      id,
+      name: id,
+      listTools: async () => ({
+        tools: [
+          {
+            name: "structured_search",
+            description: "Returns structuredContent",
+            inputSchema: { type: "object", properties: { query: { type: "string" } } }
+          },
+          {
+            name: "json_text_search",
+            description: "Returns JSON text content",
+            inputSchema: { type: "object", properties: { query: { type: "string" } } }
+          },
+          {
+            name: "plain_text_search",
+            description: "Returns plain text content",
+            inputSchema: { type: "object", properties: { query: { type: "string" } } }
+          },
+          {
+            name: "multipart_search",
+            description: "Returns multipart content",
+            inputSchema: { type: "object", properties: { query: { type: "string" } } }
+          }
+        ]
+      }),
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "structured_search") {
+          return {
+            structuredContent: {
+              items: [{ title: "Structured result" }]
+            },
+            content: [{ type: "text", text: "{\"ignored\":true}" }],
+            isError: false
+          };
+        }
+        if (name === "json_text_search") {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ items: [{ title: "JSON text result" }] }) }],
+            isError: false
+          };
+        }
+        if (name === "plain_text_search") {
+          return {
+            content: [{ type: "text", text: "plain text result" }],
+            isError: false
+          };
+        }
+        if (name === "multipart_search") {
+          return {
+            content: [
+              { type: "text", text: "first" },
+              { type: "text", text: "second" }
+            ],
+            isError: true
+          };
+        }
+        throw new Error(`Unknown tool ${name}`);
+      }
+    }
+  };
+}
+
 // -----------------------------------------------------------------------
-// Test 1: Namespace bridging — source.tool(args) works WITHOUT await
+// Test 1: Namespace bridging — server.tool(args) works WITHOUT await
 // -----------------------------------------------------------------------
 test("namespace bridging: github.get_issue(args) works without await", { skip: !hasIsolatedVm }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { calls, source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ sources: [source] });
+  const runtime = await createCodeModeRuntime({ servers: [source] });
 
   const result = await runtime.run(`
     const issue = github.get_issue({ issue_number: 42 });
@@ -107,7 +176,7 @@ test("namespace bridging: github.get_issue(args) works without await", { skip: !
 test("namespace bridging: await github.get_issue(args) also works", { skip: !hasIsolatedVm }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { calls, source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ sources: [source] });
+  const runtime = await createCodeModeRuntime({ servers: [source] });
 
   const result = await runtime.run(`
     const issue = await github.get_issue({ issue_number: 99 });
@@ -120,12 +189,12 @@ test("namespace bridging: await github.get_issue(args) also works", { skip: !has
 });
 
 // -----------------------------------------------------------------------
-// Test 3: Legacy callTool(sourceId, toolName, args) escape hatch
+// Test 3: callTool(serverId, toolName, args) escape hatch
 // -----------------------------------------------------------------------
 test("callTool() escape hatch works", { skip: !hasIsolatedVm }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { calls, source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ sources: [source] });
+  const runtime = await createCodeModeRuntime({ servers: [source] });
 
   const result = await runtime.run(`
     const issue = callTool("github", "get_issue", { issue_number: 7 });
@@ -143,17 +212,17 @@ test("callTool() escape hatch works", { skip: !hasIsolatedVm }, async () => {
 test("searchTools() inside sandbox returns results", { skip: !hasIsolatedVm }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ sources: [source] });
+  const runtime = await createCodeModeRuntime({ servers: [source] });
 
   const result = await runtime.run(`
     const tools = searchTools("issue");
-    return tools.map(t => ({ sourceId: t.sourceId, toolName: t.toolName }));
+    return tools.map(t => ({ serverId: t.serverId, toolName: t.toolName }));
   `);
 
   assert.equal(result.error, undefined);
   assert.ok(Array.isArray(result.value));
   assert.ok(result.value.length > 0);
-  assert.equal(result.value[0].sourceId, "github");
+  assert.equal(result.value[0].serverId, "github");
 });
 
 // -----------------------------------------------------------------------
@@ -162,7 +231,7 @@ test("searchTools() inside sandbox returns results", { skip: !hasIsolatedVm }, a
 test("__interfaces contains TypeScript definitions", { skip: !hasIsolatedVm }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ sources: [source] });
+  const runtime = await createCodeModeRuntime({ servers: [source] });
 
   const result = await runtime.run(`
     return __interfaces;
@@ -181,7 +250,7 @@ test("__interfaces contains TypeScript definitions", { skip: !hasIsolatedVm }, a
 test("__getToolInterface() returns specific tool interface", { skip: !hasIsolatedVm }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ sources: [source] });
+  const runtime = await createCodeModeRuntime({ servers: [source] });
 
   const result = await runtime.run(`
     const iface = __getToolInterface("github.get_issue");
@@ -200,7 +269,7 @@ test("multi-source: github.get_issue() vs exa.web_search()", { skip: !hasIsolate
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const github = fakeSource();
   const exa = fakeExaSource();
-  const runtime = await createCodeModeRuntime({ sources: [github.source, exa.source] });
+  const runtime = await createCodeModeRuntime({ servers: [github.source, exa.source] });
 
   const result = await runtime.run(`
     const issue = github.get_issue({ issue_number: 1 });
@@ -221,7 +290,7 @@ test("multi-source: github.get_issue() vs exa.web_search()", { skip: !hasIsolate
 test("console output is captured", { skip: !hasIsolatedVm }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ sources: [source] });
+  const runtime = await createCodeModeRuntime({ servers: [source] });
 
   const result = await runtime.run(`
     console.log("hello");
@@ -244,7 +313,7 @@ test("console output is captured", { skip: !hasIsolatedVm }, async () => {
 test("tool calls are tracked in result", { skip: !hasIsolatedVm }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ sources: [source] });
+  const runtime = await createCodeModeRuntime({ servers: [source] });
 
   const result = await runtime.run(`
     github.get_issue({ issue_number: 1 });
@@ -266,7 +335,7 @@ test("tool calls are tracked in result", { skip: !hasIsolatedVm }, async () => {
 test("input is accessible in sandbox", { skip: !hasIsolatedVm }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ sources: [source] });
+  const runtime = await createCodeModeRuntime({ servers: [source] });
 
   const result = await runtime.run(`
     return { doubled: input.value * 2 };
@@ -277,20 +346,55 @@ test("input is accessible in sandbox", { skip: !hasIsolatedVm }, async () => {
 });
 
 // -----------------------------------------------------------------------
-// Test 11: Host-side searchTools and listSources
+// Test 11: Host-side searchTools and listServers
 // -----------------------------------------------------------------------
-test("runtime.searchTools() and runtime.listSources() work", { skip: !hasIsolatedVm }, async () => {
+test("runtime.searchTools() and runtime.listServers() work", { skip: !hasIsolatedVm }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const github = fakeSource();
   const exa = fakeExaSource();
-  const runtime = await createCodeModeRuntime({ sources: [github.source, exa.source] });
+  const runtime = await createCodeModeRuntime({ servers: [github.source, exa.source] });
 
   const searchResults = await runtime.searchTools("search web");
   assert.ok(searchResults.length > 0);
   assert.equal(searchResults[0].toolName, "web_search");
+  assert.equal(searchResults[0].serverId, "exa");
 
-  const sources = runtime.listSources();
-  assert.equal(sources.length, 2);
-  assert.ok(sources.some(s => s.sourceId === "github"));
-  assert.ok(sources.some(s => s.sourceId === "exa"));
+  const servers = runtime.listServers();
+  assert.equal(servers.length, 2);
+  assert.ok(servers.some(s => s.serverId === "github"));
+  assert.ok(servers.some(s => s.serverId === "exa"));
+});
+
+// -----------------------------------------------------------------------
+// Test 12: MCP-style tool responses are normalized for scripts
+// -----------------------------------------------------------------------
+test("MCP envelopes are normalized to script-friendly values", { skip: !hasIsolatedVm }, async () => {
+  const { createCodeModeRuntime } = await import("../dist/index.js");
+  const { source } = fakeMcpEnvelopeSource();
+  const runtime = await createCodeModeRuntime({ servers: [source] });
+
+  const result = await runtime.run(`
+    return {
+      structured: docs.structured_search({ query: "a" }),
+      jsonText: callTool("docs", "json_text_search", { query: "b" }),
+      plainText: docs.plain_text_search({ query: "c" }),
+      multipart: callTool("docs", "multipart_search", { query: "d" })
+    };
+  `);
+
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.value.structured, {
+    items: [{ title: "Structured result" }]
+  });
+  assert.deepEqual(result.value.jsonText, {
+    items: [{ title: "JSON text result" }]
+  });
+  assert.equal(result.value.plainText, "plain text result");
+  assert.deepEqual(result.value.multipart, {
+    content: [
+      { type: "text", text: "first" },
+      { type: "text", text: "second" }
+    ],
+    isError: true
+  });
 });
