@@ -19,7 +19,7 @@ export async function createCodeModeMcpServer(options: CodeModeMcpServerOptions)
     "codemode_search_tools",
     {
       description:
-        "Search connected tool sources by natural language description. Returns tool names, source IDs, and TypeScript interfaces.",
+        "Search connected tool servers by natural language description. Returns tool names, server IDs, and TypeScript interfaces.",
       inputSchema: {
         query: z.string().describe("Natural-language description of the task or tools you need."),
         limit: z.number().optional().describe("Maximum number of results (default: 10).")
@@ -34,13 +34,13 @@ export async function createCodeModeMcpServer(options: CodeModeMcpServerOptions)
   );
 
   server.registerTool(
-    "codemode_list_sources",
+    "codemode_list_servers",
     {
-      description: "List all connected tool sources and indexed tool counts.",
+      description: "List all connected tool servers and indexed tool counts.",
       inputSchema: {}
     },
     async () => {
-      const result = runtime.listSources();
+      const result = runtime.listServers();
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }]
       };
@@ -53,7 +53,7 @@ export async function createCodeModeMcpServer(options: CodeModeMcpServerOptions)
       description:
         "Get detailed TypeScript interface definitions for specific tools. Use after search to understand exact input contracts.",
       inputSchema: {
-        tool_names: z.array(z.string()).describe("Tool names in 'sourceId.toolName' format.")
+        tool_names: z.array(z.string()).describe("Tool names in 'serverId.toolName' format.")
       }
     },
     async ({ tool_names }) => {
