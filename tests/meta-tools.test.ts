@@ -108,6 +108,7 @@ test.describe('executeMetaTool', () => {
                     required: ['results'],
                 },
                 serverId: 'server-123',
+                serverName: 'Exa Search',
             }),
         };
 
@@ -144,7 +145,73 @@ test.describe('executeMetaTool', () => {
                 serverId: 'server-123',
             })
         );
+        expect(schema.serverId).toBe('server-123');
+        expect(schema.serverName).toBe('Exa Search');
+        expect(schema.sessionId).toBeUndefined();
         expect(schema.executionInstructions.note).toContain('Do not call this discovered tool directly');
+    });
+
+    test('should include structured search results with server routing data', async () => {
+        const router = new ToolRouter([
+            createRouterClient('web-server', 'Web Search', [
+                { name: 'web_search', description: 'Search the web' },
+            ]) as any,
+        ], { strategy: 'search' });
+
+        const result = await executeMetaTool(
+            'mcp_search_tools',
+            { query: 'web', limit: 5 },
+            router
+        );
+
+        expect(result?.isError).toBe(false);
+        expect(result?.structuredContent).toEqual({
+            operation: 'search',
+            tools: [
+                expect.objectContaining({
+                    name: 'web_search',
+                    serverId: 'web-server',
+                    serverName: 'Web Search',
+                }),
+            ],
+        });
+        const searchStructured = result?.structuredContent as { tools: Array<Record<string, unknown>> };
+        expect(searchStructured.tools[0]).not.toHaveProperty('sessionId');
+    });
+
+    test('should include structured schema results with server routing data', async () => {
+        const router = {
+            getToolSchema: () => ({
+                name: 'list_tables',
+                description: 'List database tables',
+                inputSchema: { type: 'object', properties: {} },
+                outputSchema: { type: 'object', properties: { tables: { type: 'array' } } },
+                serverId: 'database-server',
+                serverName: 'Database MCP',
+            }),
+        };
+
+        const result = await executeMetaTool(
+            'mcp_get_tool_schema',
+            { toolName: 'list_tables', serverId: 'database-server' },
+            router as any
+        );
+
+        expect(result?.isError).toBe(false);
+        expect(result?.structuredContent).toEqual({
+            name: 'list_tables',
+            description: 'List database tables',
+            inputSchema: { type: 'object', properties: {} },
+            outputSchema: { type: 'object', properties: { tables: { type: 'array' } } },
+            serverId: 'database-server',
+            serverName: 'Database MCP',
+            executionInstructions: expect.objectContaining({
+                nextTool: 'mcp_execute_tool',
+                toolName: 'list_tables',
+                serverId: 'database-server',
+            }),
+        });
+        expect(Object.prototype.hasOwnProperty.call(result?.structuredContent ?? {}, 'sessionId')).toBe(false);
     });
 
     test('should list every tool from a matching server without search-result truncation', async () => {
@@ -276,6 +343,17 @@ test.describe('executeMetaTool', () => {
         const text = (result?.content[0] as any).text;
         expect(text).toContain('list_tables');
         expect(text).toContain('Database MCP');
+        expect(result?.structuredContent).toEqual({
+            operation: 'search',
+            tools: [
+                {
+                    name: 'list_tables',
+                    description: 'List database tables',
+                    serverName: 'Database MCP',
+                    serverId: 'database-server',
+                },
+            ],
+        });
     });
 
     test.describe('mcp_search_tools edge cases and incorrect arguments', () => {

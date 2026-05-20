@@ -7,14 +7,14 @@ import type {
   CodeModeToolCall,
   IndexedTool,
   ToolSearchResult,
-  ToolSource,
+  ToolServer,
 } from "../types.js";
 import { classifyError } from "./errors.js";
 import { estimateJsonBytes, resolveLimits } from "./limits.js";
 import {
-  indexSources,
-  listSourcesFromIndex,
-  normalizeSourceId,
+  indexServers,
+  listServersFromIndex,
+  normalizeServerId,
   resolveTool,
   searchToolIndex,
 } from "./tool-index.js";
@@ -27,22 +27,22 @@ import {
 } from "./sandbox-bridge.js";
 
 export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
-  private sources: Map<string, ToolSource>;
+  private servers: Map<string, ToolServer>;
   private indexedTools: IndexedTool[] = [];
   private initialized = false;
   private maxSearchResults: number;
 
   constructor(private options: CodeModeRuntimeOptions) {
     this.maxSearchResults = options.maxSearchResults ?? 10;
-    this.sources = new Map<string, ToolSource>();
-    for (const source of options.sources) {
-      this.sources.set(normalizeSourceId(source.id), source);
+    this.servers = new Map<string, ToolServer>();
+    for (const server of options.servers) {
+      this.servers.set(normalizeServerId(server.serverId), server);
     }
   }
 
   private async ensureInitialized(): Promise<void> {
     if (!this.initialized) {
-      this.indexedTools = await indexSources(this.options.sources);
+      this.indexedTools = await indexServers(this.options.servers);
       this.initialized = true;
     }
   }
@@ -52,8 +52,8 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
     return searchToolIndex(this.indexedTools, query, limit ?? this.maxSearchResults);
   }
 
-  listSources(): Array<{ sourceId: string; sourceName: string; toolCount: number }> {
-    return listSourcesFromIndex(this.indexedTools);
+  listServers(): Array<{ serverId: string; serverName: string; toolCount: number }> {
+    return listServersFromIndex(this.indexedTools);
   }
 
   getToolInterfaces(toolNames: string[]): string {
@@ -61,12 +61,12 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
     const notFound: string[] = [];
 
     for (const name of toolNames) {
-      // name can be "sourceId.toolName" or just "toolName"
+      // name can be "serverId.toolName" or just "toolName"
       let tool: IndexedTool | undefined;
       if (name.includes(".")) {
-        const [sourceId, ...rest] = name.split(".");
+        const [serverId, ...rest] = name.split(".");
         const toolName = rest.join(".");
-        tool = resolveTool(this.indexedTools, toolName, sourceId);
+        tool = resolveTool(this.indexedTools, toolName, serverId);
       } else {
         tool = resolveTool(this.indexedTools, name);
       }
@@ -114,7 +114,7 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
     // -----------------------------------------------------------------------
 
     const hostCallTool = async (
-      sourceId: string,
+      serverId: string,
       toolName: string,
       argsJson: string,
     ): Promise<string> => {
@@ -133,7 +133,7 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
       const callStartedAt = Date.now();
       const call: CodeModeToolCall = {
         id: `call_${totalToolCalls}`,
-        sourceId,
+        serverId,
         toolName,
         args: JSON.parse(argsJson),
         startedAt: callStartedAt,
@@ -143,17 +143,17 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
       toolCalls.push(call);
 
       try {
-        const tool = resolveTool(this.indexedTools, toolName, sourceId);
+        const tool = resolveTool(this.indexedTools, toolName, serverId);
         if (!tool) {
-          throw new Error(`Tool "${toolName}" was not found on source "${sourceId}".`);
+          throw new Error(`Tool "${toolName}" was not found on server "${serverId}".`);
         }
 
-        const source = this.sources.get(tool.sourceId);
-        if (!source) {
-          throw new Error(`Source "${tool.sourceId}" is no longer registered.`);
+        const server = this.servers.get(tool.serverId);
+        if (!server) {
+          throw new Error(`Server "${tool.serverId}" is no longer registered.`);
         }
 
-        const result = await source.callTool(toolName, JSON.parse(argsJson));
+        const result = await server.callTool(toolName, JSON.parse(argsJson));
         call.ok = true;
         return JSON.stringify({ success: true, result });
       } catch (error) {
@@ -171,12 +171,38 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
       return JSON.stringify(results);
     };
 
-    const hostGetToolSchema = async (sourceId: string, toolName: string): Promise<string> => {
-      const tool = resolveTool(this.indexedTools, toolName, sourceId);
+    const hostGetToolSchema = async (serverId: string, toolName: string): Promise<string> => {
+      const tool = resolveTool(this.indexedTools, toolName, serverId);
       if (!tool) {
-        return JSON.stringify({ error: `Tool "${toolName}" not found on source "${sourceId}".` });
+        return JSON.stringify({ error: `Tool "${toolName}" not found on server "${serverId}".` });
       }
       return JSON.stringify(tool);
+    };
+
+    const hostCallToolRaw = async (
+      serverId: string,
+      toolName: string,
+      argsJson: string,
+    ): Promise<string> => {
+      const tool = resolveTool(this.indexedTools, toolName, serverId);
+      if (!tool) {
+        return JSON.stringify({ success: false, error: `Tool "${toolName}" was not found on server "${serverId}".` });
+      }
+
+      const server = this.servers.get(tool.serverId);
+      if (!server) {
+        return JSON.stringify({ success: false, error: `Server "${tool.serverId}" is no longer registered.` });
+      }
+
+      try {
+        const result = server.callToolRaw
+          ? await server.callToolRaw(toolName, JSON.parse(argsJson))
+          : await server.callTool(toolName, JSON.parse(argsJson));
+        return JSON.stringify({ success: true, result });
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return JSON.stringify({ success: false, error: errorMsg });
+      }
     };
 
     const hostLog = (level: CodeModeLogEntry["level"], args: unknown[]) => {
@@ -216,6 +242,10 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
       const searchRef = new ivm.Reference(hostSearchTools);
       await jail.set("__searchToolsRef", searchRef);
 
+      // Raw tool call reference
+      const rawToolCallerRef = new ivm.Reference(hostCallToolRaw);
+      await jail.set("__callToolRawRef", rawToolCallerRef);
+
       // Get tool schema reference
       const schemaRef = new ivm.Reference(hostGetToolSchema);
       await jail.set("__getToolSchemaRef", schemaRef);
@@ -230,8 +260,8 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
       const bootstrapScript = await isolate.compileScript(bootstrapCode);
       await bootstrapScript.run(context);
 
-      // Namespace bridging: source.tool(args) functions
-      const namespaceBridgeCode = generateNamespaceBridgeCode(this.indexedTools, this.sources);
+      // Namespace bridging: server.tool(args) functions
+      const namespaceBridgeCode = generateNamespaceBridgeCode(this.indexedTools, this.servers);
       if (namespaceBridgeCode.trim()) {
         const namespaceScript = await isolate.compileScript(namespaceBridgeCode);
         await namespaceScript.run(context);

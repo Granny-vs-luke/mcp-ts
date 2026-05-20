@@ -1,5 +1,4 @@
-import type { IndexedTool, ToolSource } from "../types.js";
-import { normalizeSourceId } from "./tool-index.js";
+import type { IndexedTool, ToolServer } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Identifier helpers
@@ -14,13 +13,6 @@ export function sanitizeIdentifier(name: string): string {
     .replace(/^[0-9]/, "_$&");
 }
 
-// ---------------------------------------------------------------------------
-// TypeScript interface generation (ported from UTCP code_mode_utcp_client.ts)
-// ---------------------------------------------------------------------------
-
-/**
- * Converts a JSON Schema to a TypeScript type string.
- */
 function jsonSchemaToTsType(schema: Record<string, unknown> | undefined): string {
   if (!schema || typeof schema !== "object") return "any";
 
@@ -65,7 +57,8 @@ function jsonSchemaToTsType(schema: Record<string, unknown> | undefined): string
           .map((t) => {
             switch (t) {
               case "string": return "string";
-              case "number": case "integer": return "number";
+              case "number":
+              case "integer": return "number";
               case "boolean": return "boolean";
               case "null": return "null";
               case "object": return "object";
@@ -79,9 +72,6 @@ function jsonSchemaToTsType(schema: Record<string, unknown> | undefined): string
   }
 }
 
-/**
- * Generates the inner content of a TypeScript interface from a JSON Schema.
- */
 function jsonSchemaToObjectContent(schema: Record<string, unknown> | undefined): string {
   if (!schema || typeof schema !== "object" || schema.type !== "object") {
     return "    [key: string]: any;";
@@ -112,17 +102,17 @@ function escapeComment(text: string): string {
 
 /**
  * Generates a TypeScript interface definition for a single tool,
- * grouped under its source namespace.
+ * grouped under its server namespace.
  */
 export function toolToTypeScriptInterface(tool: IndexedTool): string {
-  const sanitizedSource = sanitizeIdentifier(tool.sourceId);
+  const sanitizedServer = sanitizeIdentifier(tool.serverId);
   const sanitizedTool = sanitizeIdentifier(tool.toolName);
-  const accessPattern = `${sanitizedSource}.${sanitizedTool}`;
+  const accessPattern = `${sanitizedServer}.${sanitizedTool}`;
 
   const inputContent = jsonSchemaToObjectContent(tool.inputSchema);
 
   return `
-namespace ${sanitizedSource} {
+namespace ${sanitizedServer} {
   interface ${sanitizedTool}Input {
 ${inputContent}
   }
@@ -130,67 +120,51 @@ ${inputContent}
 
 /**
  * ${escapeComment(tool.description || "No description")}
- * Source: ${tool.sourceId}
+ * Server: ${tool.serverId}
  * Access as: ${accessPattern}(args)
  */`;
 }
 
-/**
- * Generates all TypeScript interface definitions for a set of indexed tools.
- */
 export function generateAllInterfaces(tools: IndexedTool[]): string {
   const interfaces = tools.map((tool) => toolToTypeScriptInterface(tool));
   return `// Auto-generated TypeScript interfaces for available tools\n${interfaces.join("\n\n")}`;
 }
 
 /**
- * Generates a lookup map of tool name → TypeScript interface string.
- * Keys use the format "sourceId.toolName".
+ * Generates a lookup map of tool name -> TypeScript interface string.
+ * Keys use the format "serverId.toolName".
  */
 export function generateInterfaceMap(tools: IndexedTool[]): Record<string, string> {
   const map: Record<string, string> = {};
   for (const tool of tools) {
-    const key = `${tool.sourceId}.${tool.toolName}`;
+    const key = `${tool.serverId}.${tool.toolName}`;
     map[key] = toolToTypeScriptInterface(tool);
   }
   return map;
 }
 
-// ---------------------------------------------------------------------------
-// Namespace function code generation
-// ---------------------------------------------------------------------------
-
 /**
  * Generates JavaScript code to set up namespace functions in the sandbox.
- * Each source becomes a namespace object (e.g. `global.github = {}`) and
- * each tool becomes a synchronous function on that namespace
- * (e.g. `global.github.get_issue = function(args) { ... }`).
- *
- * Uses `applySyncPromise` so tool calls are synchronous from the sandbox's
- * perspective — no `await` needed (but `await` also works).
  */
 export function generateNamespaceBridgeCode(
   tools: IndexedTool[],
-  sources: Map<string, ToolSource>,
+  _servers: Map<string, ToolServer>,
 ): string {
   const parts: string[] = [];
   const namespaces = new Set<string>();
 
   for (const tool of tools) {
-    const sanitizedSource = sanitizeIdentifier(tool.sourceId);
+    const sanitizedServer = sanitizeIdentifier(tool.serverId);
     const sanitizedTool = sanitizeIdentifier(tool.toolName);
 
-    if (!namespaces.has(sanitizedSource)) {
-      namespaces.add(sanitizedSource);
-      parts.push(`globalThis.${sanitizedSource} = globalThis.${sanitizedSource} || {};`);
+    if (!namespaces.has(sanitizedServer)) {
+      namespaces.add(sanitizedServer);
+      parts.push(`globalThis.${sanitizedServer} = globalThis.${sanitizedServer} || {};`);
     }
 
-    // applySyncPromise blocks the isolate until the host-side async tool call completes.
-    // This makes `github.get_issue({...})` work without `await`.
-    // `await github.get_issue({...})` also works because awaiting a non-Promise is a no-op.
     parts.push(`
-      globalThis.${sanitizedSource}.${sanitizedTool} = function(args) {
-        var resultJson = __callToolRef.applySyncPromise(undefined, [${JSON.stringify(tool.sourceId)}, ${JSON.stringify(tool.toolName)}, JSON.stringify(args || {})]);
+      globalThis.${sanitizedServer}.${sanitizedTool} = function(args) {
+        var resultJson = __callToolRef.applySyncPromise(undefined, [${JSON.stringify(tool.serverId)}, ${JSON.stringify(tool.toolName)}, JSON.stringify(args || {})]);
         var parsed = JSON.parse(resultJson);
         if (!parsed.success) throw new Error(parsed.error);
         return parsed.result;
@@ -201,10 +175,6 @@ export function generateNamespaceBridgeCode(
   return parts.join("\n");
 }
 
-/**
- * Generates JavaScript code for console, searchTools, callTool, and
- * interface introspection helpers in the sandbox.
- */
 export function generateBootstrapCode(
   interfacesString: string,
   interfaceMapJson: string,
@@ -212,7 +182,6 @@ export function generateBootstrapCode(
   return `
     "use strict";
 
-    // Console bridge
     const __stringify = (a) => typeof a === "object" && a !== null ? JSON.stringify(a, null, 2) : String(a);
     globalThis.console = {
       log: (...args) => __logRef.applySync(undefined, args.map(__stringify)),
@@ -221,34 +190,36 @@ export function generateBootstrapCode(
       info: (...args) => __infoRef.applySync(undefined, args.map(__stringify)),
     };
 
-    // Low-level callTool escape hatch (requires await)
-    globalThis.callTool = function(sourceId, toolName, args) {
-      var resultJson = __callToolRef.applySyncPromise(undefined, [sourceId, toolName, JSON.stringify(args || {})]);
+    globalThis.callTool = function(serverId, toolName, args) {
+      var resultJson = __callToolRef.applySyncPromise(undefined, [serverId, toolName, JSON.stringify(args || {})]);
       var parsed = JSON.parse(resultJson);
       if (!parsed.success) throw new Error(parsed.error);
       return parsed.result;
     };
 
-    // searchTools (requires await)
+    globalThis.callToolRaw = function(serverId, toolName, args) {
+      var resultJson = __callToolRawRef.applySyncPromise(undefined, [serverId, toolName, JSON.stringify(args || {})]);
+      var parsed = JSON.parse(resultJson);
+      if (!parsed.success) throw new Error(parsed.error);
+      return parsed.result;
+    };
+
     globalThis.searchTools = function(query, limit) {
       var resultJson = __searchToolsRef.applySyncPromise(undefined, [query || "", limit || 10]);
       return JSON.parse(resultJson);
     };
 
-    // getToolSchema
-    globalThis.getToolSchema = function(sourceId, toolName) {
-      var resultJson = __getToolSchemaRef.applySyncPromise(undefined, [sourceId, toolName]);
+    globalThis.getToolSchema = function(serverId, toolName) {
+      var resultJson = __getToolSchemaRef.applySyncPromise(undefined, [serverId, toolName]);
       return JSON.parse(resultJson);
     };
 
-    // Interface introspection
     globalThis.__interfaces = ${JSON.stringify(interfacesString)};
     const __interfaceMap = ${interfaceMapJson};
     globalThis.__getToolInterface = function(toolName) {
       return __interfaceMap[toolName] || null;
     };
 
-    // Input passthrough
     globalThis.input = typeof __input !== "undefined" ? __input : undefined;
   `;
 }
