@@ -29,6 +29,7 @@ export interface IndexedTool {
   serverName: string;
   toolName: string;
   description: string;
+  deferred?: boolean;
   annotations?: ToolAnnotations;
   inputSchema?: unknown;
   outputSchema?: unknown;
@@ -81,6 +82,8 @@ export interface ToolRouterOptions {
   searchStrategy?: SearchStrategy;
   /** Canonical tool ids (serverId.toolName) or legacy tool names always visible alongside meta-tools. */
   pinnedTools?: string[];
+  /** Tools omitted from direct exposure but kept indexed for meta-tool search/schema/call flows. */
+  deferredTools?: string[];
   /** Canonical tool ids/patterns or legacy tool names/patterns to omit from the router catalog. */
   excludeTools?: string[];
   maxSearchResults?: number;
