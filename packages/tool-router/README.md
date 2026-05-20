@@ -77,6 +77,31 @@ Use `pinnedTools` when a small number of tools should remain directly visible al
 
 The router owns canonical ids: server ids are normalized to lowercase slug-style ids before they appear in tool ids. For example, `u2tsgODpOrlF.toolname` is treated as `u2tsgodporlf.toolname`.
 
+### Deferred Tools
+
+Use `deferredTools` for tools that should stay out of the initial client-visible tool list while remaining indexed for `search_tools`, schema lookup, and `call_tool`.
+
+This is useful when you want an LLM to discover a tool only on demand instead of feeding it upfront. In practice:
+- `pinnedTools` are directly visible
+- `deferredTools` are meta-tool only
+- `excludeTools` are removed entirely
+
+Servers can also declare deferred-by-default tools with custom metadata:
+
+```typescript
+{
+  name: "workflow_list",
+  description: "List workflows",
+  _meta: {
+    toolRouter: {
+      deferred: true
+    }
+  }
+}
+```
+
+Router config still takes precedence, so you can pin a deferred-by-default tool when a specific client should see it directly.
+
 ### Excluded Tools
 
 Use `excludeTools` to omit tools from the router catalog entirely. Excluded tools are not indexed, not searchable, not pinnable, and not callable through router meta-tools.

@@ -543,6 +543,50 @@ test("pinned tools are excluded from search results", async () => {
   assert.equal(results.find((r) => r.toolName === "help"), undefined);
 });
 
+test("deferredTools stay searchable and callable but are omitted from visible tools", async () => {
+  const github = fakeServer("github", [
+    { name: "workflow_list", description: "List workflows" },
+    { name: "codemode_search_mcp_tools", description: "Search connected MCP tools" }
+  ]);
+
+  const router = await createToolRouter({
+    servers: [github.server],
+    pinnedTools: ["codemode_search_mcp_tools"],
+    deferredTools: ["workflow_list"]
+  });
+
+  const { pinned, metaTools } = router.getVisibleTools();
+  const results = await router.searchTools({ query: "workflow_list" });
+  const call = await router.callTool({ toolId: "github.workflow_list", args: {} });
+
+  assert.deepEqual(pinned.map((tool) => tool.toolName), ["codemode_search_mcp_tools"]);
+  assert.equal(metaTools.length, 4);
+  assert.equal(results.find((tool) => tool.toolId === "github.workflow_list")?.toolId, "github.workflow_list");
+  assert.deepEqual(call, { server: "github", name: "workflow_list", args: {} });
+});
+
+test("tool metadata can defer tools from visible tools without removing them from search", async () => {
+  const github = fakeServer("github", [
+    {
+      name: "workflow_run",
+      description: "Run a workflow",
+      _meta: { toolRouter: { deferred: true } }
+    },
+    { name: "codemode_run", description: "Run codemode" }
+  ]);
+
+  const router = await createToolRouter({
+    servers: [github.server],
+    pinnedTools: ["codemode_run"]
+  });
+
+  const { pinned } = router.getVisibleTools();
+  const results = await router.searchTools({ query: "workflow_run" });
+
+  assert.deepEqual(pinned.map((tool) => tool.toolName), ["codemode_run"]);
+  assert.equal(results.find((tool) => tool.toolId === "github.workflow_run")?.toolId, "github.workflow_run");
+});
+
 test("canonical pinned tool ids disambiguate duplicate tool names", async () => {
   const github = fakeServer("github", [
     { name: "status", description: "Get GitHub status" }

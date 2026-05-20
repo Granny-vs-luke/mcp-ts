@@ -106,6 +106,12 @@ export interface ToolRouterOptions {
   pinnedTools?: string[];
 
   /**
+   * Tool names to omit from direct exposure while keeping them indexed for
+   * search/schema lookup/calls through meta-tools.
+   */
+  deferredTools?: string[];
+
+  /**
    * Tool names or glob-style patterns to omit entirely from the router catalog.
    */
   excludeTools?: string[];
@@ -148,6 +154,7 @@ export class ToolRouter {
   private index: ToolIndex;
   private allTools: IndexedTool[] = [];
   private pinnedTools: IndexedTool[] = [];
+  private deferredTools: IndexedTool[] = [];
   private discoverableTools: IndexedTool[] = [];
   private groupsMap = new Map<string, ToolGroupInfo>();
   private strategy: ToolRouterStrategy;
@@ -156,6 +163,7 @@ export class ToolRouter {
   private activeGroups: Set<string>;
   private customGroups?: Record<string, string[]>;
   private pinnedToolNames: Set<string>;
+  private deferredToolNames: Set<string>;
   private excludeToolMatchers: RegExp[];
   private initialized = false;
 
@@ -169,6 +177,7 @@ export class ToolRouter {
     this.activeGroups = new Set(options.activeGroups ?? []);
     this.customGroups = options.groups;
     this.pinnedToolNames = new Set(options.pinnedTools ?? []);
+    this.deferredToolNames = new Set(options.deferredTools ?? []);
     this.excludeToolMatchers = (options.excludeTools ?? []).map((pattern) =>
       globToRegExp(pattern)
     );
@@ -203,9 +212,10 @@ export class ToolRouter {
 
       case 'all':
       default:
+        const directlyVisibleTools = this.getDirectlyVisibleTools();
         if (this.compactSchemas) {
           // Return tools with inputSchema stripped
-          return this.allTools.map((t) => {
+          return directlyVisibleTools.map((t) => {
             const compact = SchemaCompressor.toCompact(t);
             return {
               name: compact.name,
@@ -216,7 +226,7 @@ export class ToolRouter {
             };
           });
         }
-        return [...this.allTools];
+        return [...directlyVisibleTools];
     }
   }
 
@@ -374,6 +384,9 @@ export class ToolRouter {
     const fetchedTools = await this.fetchAllTools();
     this.allTools = fetchedTools.filter((tool) => !this.matchesExcludedTool(tool.name));
     this.pinnedTools = this.allTools.filter((tool) => this.matchesPinnedTool(tool.name));
+    this.deferredTools = this.allTools.filter(
+      (tool) => !this.matchesPinnedTool(tool.name) && this.matchesDeferredTool(tool)
+    );
     this.discoverableTools = this.allTools.filter((tool) => !this.matchesPinnedTool(tool.name));
     await this.index.buildIndex(this.discoverableTools);
     this.buildGroups();
@@ -469,7 +482,7 @@ export class ToolRouter {
       }
     }
 
-    const filtered = this.allTools.filter((t) => activeToolNames.has(t.name));
+    const filtered = this.getDirectlyVisibleTools().filter((t) => activeToolNames.has(t.name));
 
     if (this.compactSchemas) {
       return filtered.slice(0, this.maxTools).map((t) => {
@@ -502,8 +515,23 @@ export class ToolRouter {
     return this.pinnedToolNames.has(toolName);
   }
 
+  private matchesDeferredTool(tool: Tool): boolean {
+    if (this.deferredToolNames.has(tool.name)) {
+      return true;
+    }
+
+    const meta = (tool as Tool & {
+      _meta?: { toolRouter?: { deferred?: boolean } };
+    })._meta;
+    return meta?.toolRouter?.deferred === true;
+  }
+
   private matchesExcludedTool(toolName: string): boolean {
     return this.excludeToolMatchers.some((matcher) => matcher.test(toolName));
+  }
+
+  private getDirectlyVisibleTools(): IndexedTool[] {
+    return this.allTools.filter((tool) => !this.matchesDeferredTool(tool) || this.matchesPinnedTool(tool.name));
   }
 }
 

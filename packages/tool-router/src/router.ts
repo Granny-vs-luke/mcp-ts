@@ -31,6 +31,7 @@ export class ToolRouter {
   private searchStrategy: import("./types.js").SearchStrategy;
   private policyEnforcer: PolicyEnforcer;
   private pinnedToolNames: Set<string>;
+  private deferredToolNames: Set<string>;
   private excludedToolPatterns: string[];
 
   constructor(private options: ToolRouterOptions) {
@@ -38,6 +39,7 @@ export class ToolRouter {
     this.searchStrategy = options.searchStrategy ?? new BM25SearchStrategy();
     this.policyEnforcer = new PolicyEnforcer(options.policy);
     this.pinnedToolNames = new Set((options.pinnedTools ?? []).map(normalizeToolReference));
+    this.deferredToolNames = new Set((options.deferredTools ?? []).map(normalizeToolReference));
     this.excludedToolPatterns = (options.excludeTools ?? []).map(normalizeToolReference);
     this.metaToolNames = {
       ...DEFAULT_TOOLROUTER_META_TOOL_NAMES,
@@ -310,10 +312,23 @@ export class ToolRouter {
       serverName: server.name ?? serverId,
       toolName: tool.name,
       description: tool.description ?? "",
+      deferred: this.isDeferredTool(serverId, tool),
       inputSchema: tool.inputSchema,
       outputSchema: tool.outputSchema,
       annotations: tool.annotations
     };
+  }
+
+  private isDeferredTool(serverId: string, tool: ToolDefinition): boolean {
+    const canonicalId = makeToolId(serverId, tool.name);
+    if (this.deferredToolNames.has(canonicalId) || this.deferredToolNames.has(tool.name)) {
+      return true;
+    }
+
+    const meta = (tool as ToolDefinition & {
+      _meta?: { toolRouter?: { deferred?: boolean } };
+    })._meta;
+    return meta?.toolRouter?.deferred === true;
   }
 }
 

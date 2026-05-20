@@ -516,4 +516,55 @@ test.describe('executeMetaTool', () => {
             expect(router.getToolSchema('web_search')).toBeUndefined();
         });
     });
+
+    test.describe('deferredTools', () => {
+        test('deferred tools are omitted from all-strategy direct exposure but remain searchable and callable', async () => {
+            const router = new ToolRouter([
+                createRouterClient('workflow-server', 'Workflow MCP', [
+                    { name: 'workflow_list', description: 'List workflows' },
+                    { name: 'codemode_search_mcp_tools', description: 'Search connected MCP tools' },
+                ]) as any,
+            ], {
+                strategy: 'all',
+                pinnedTools: ['codemode_search_mcp_tools'],
+                deferredTools: ['workflow_list'],
+            });
+
+            const filteredTools = await router.getFilteredTools();
+            expect(filteredTools.map((tool) => tool.name)).toContain('codemode_search_mcp_tools');
+            expect(filteredTools.map((tool) => tool.name)).not.toContain('workflow_list');
+
+            const searchResults = await router.searchTools('workflow', 10);
+            expect(searchResults.map((tool) => tool.name)).toContain('workflow_list');
+
+            const schema = router.getToolSchema('workflow_list');
+            expect(schema?.name).toBe('workflow_list');
+
+            const result = await router.callTool('workflow_list', {});
+            expect(result.content[0].text).toContain('Workflow MCP:workflow_list:{}');
+        });
+
+        test('tool metadata can mark deferred tools without excluding them from search', async () => {
+            const router = new ToolRouter([
+                createRouterClient('workflow-server', 'Workflow MCP', [
+                    {
+                        name: 'workflow_run',
+                        description: 'Run workflows',
+                        _meta: { toolRouter: { deferred: true } } as any,
+                    },
+                    { name: 'codemode_run', description: 'Run codemode' },
+                ]) as any,
+            ], {
+                strategy: 'all',
+                pinnedTools: ['codemode_run'],
+            });
+
+            const filteredTools = await router.getFilteredTools();
+            expect(filteredTools.map((tool) => tool.name)).toContain('codemode_run');
+            expect(filteredTools.map((tool) => tool.name)).not.toContain('workflow_run');
+
+            const searchResults = await router.searchTools('workflow', 10);
+            expect(searchResults.map((tool) => tool.name)).toContain('workflow_run');
+        });
+    });
 });
