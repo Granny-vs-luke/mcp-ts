@@ -1,6 +1,9 @@
 {
   "name": "@mcp-ts/codemode",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Standalone code-mode execution for MCP tools — sandboxed JS with namespace bridging, TypeScript interfaces, and tool discovery.",
   "type": "module",
   "main": "./dist/index.js",
@@ -22,6 +25,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "prepublishOnly": "npm run build",
     "test": "npm run build && node --test test/*.test.mjs",
     "type-check": "tsc --noEmit"
   },
