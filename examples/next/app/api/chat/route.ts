@@ -1,5 +1,5 @@
 import { UIMessage, createAgentUIStreamResponse } from "ai";
-import { createMcpAgent } from "../../agent/tool-router";
+import { createMcpAgent } from "../../agent/agent";
 
 export const maxDuration = 60; // Max serverless function duration
 
