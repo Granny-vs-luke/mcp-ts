@@ -1,7 +1,7 @@
 import { ToolLoopAgent, InferAgentUIMessage, stepCountIs } from "ai";
 import { MultiSessionClient } from "@mcp-ts/sdk/server";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import { createCodeModeRuntime, mcpSources, createCodemodeAITools } from "@mcp-ts/codemode";
+import { createCodeModeRuntime, mcpServers, createCodemodeAITools } from "@mcp-ts/codemode";
 
 // ----------------------------------------------------------------------
 // 1. Agent Instructions
@@ -13,7 +13,7 @@ You have access to a sandboxed Code Mode environment where you can execute TypeS
 
 Available tools:
 1. 'codemode_search_tools': Find tools by natural language description.
-2. 'codemode_list_sources': See what systems are connected.
+2. 'codemode_list_servers': See what systems are connected.
 3. 'codemode_tools_info': Fetch the exact TypeScript interfaces for tools before using them.
 4. 'call_tool_chain': Execute code to get things done.
 
@@ -56,9 +56,9 @@ export async function createMcpAgent(userId: string = process.env.NEXT_PUBLIC_MC
     console.error("[McpAgent] Failed to connect MCP client:", error);
   }
 
-  // Set up Codemode Runtime using MCP clients as sources
+  // Set up Codemode Runtime using MCP clients as servers
   const runtime = await createCodeModeRuntime({
-    sources: mcpSources(client),
+    servers: mcpServers(client),
     limits: {
       timeoutMs: 30000, // 30 seconds for complex multi-tool workflows
       maxToolCalls: 50,
