@@ -19,19 +19,6 @@ import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolRouter } from './tool-router.js';
 import type { IndexedTool, ToolLookupOptions } from './tool-index.js';
 
-type PublicToolSummary = {
-  name: string;
-  description: string;
-  serverName: string;
-  serverId: string;
-};
-
-type PublicServerSummary = {
-  serverName: string;
-  serverId: string;
-  toolCount: number;
-};
-
 // ---------------------------------------------------------------------------
 // Tool Definitions
 // ---------------------------------------------------------------------------
@@ -310,14 +297,6 @@ export async function executeMetaTool(
 
         return {
           content: [{ type: 'text', text: lines.join('\n') }],
-          structuredContent: {
-            operation: 'list',
-            tools: result.tools.map(toPublicToolSummary),
-            servers: result.servers.map(toPublicServerSummary),
-            totalCount: result.totalCount,
-            returnedCount: result.returnedCount,
-            nextCursor: result.nextCursor ?? null,
-          } as Record<string, unknown>,
           isError: false,
         };
       }
@@ -374,12 +353,6 @@ export async function executeMetaTool(
 
         return {
           content: [{ type: 'text', text }],
-          structuredContent: found.length > 0
-            ? {
-                operation: 'search',
-                tools: found.map(toPublicToolSummary),
-              } as Record<string, unknown>
-            : undefined,
           isError: found.length === 0,
         };
       }
@@ -392,10 +365,6 @@ export async function executeMetaTool(
 
       return {
         content: [{ type: 'text', text }],
-        structuredContent: {
-          operation: 'search',
-          tools: results.map(toPublicToolSummary),
-        } as Record<string, unknown>,
         isError: false,
       };
     }
@@ -464,8 +433,6 @@ export async function executeMetaTool(
         description: tool.description,
         inputSchema: tool.inputSchema,
         outputSchema: tool.outputSchema,
-        serverId: tool.serverId,
-        serverName: tool.serverName,
         executionInstructions: {
           nextTool: 'mcp_execute_tool',
           toolName: tool.name,
@@ -477,7 +444,6 @@ export async function executeMetaTool(
 
       return {
         content: [{ type: 'text', text: JSON.stringify(schema, null, 2) }],
-        structuredContent: schema as Record<string, unknown>,
         isError: false,
       };
     }
@@ -560,32 +526,6 @@ function formatToolSummaries(
       `${i + 1}. **${t.name}** (serverName: ${t.serverName}, serverId: ${t.serverId})\n` +
       `   ${t.description}`
   );
-}
-
-function toPublicToolSummary(tool: {
-  name: string;
-  description: string;
-  serverName: string;
-  serverId: string;
-}): PublicToolSummary {
-  return {
-    name: tool.name,
-    description: tool.description,
-    serverName: tool.serverName,
-    serverId: tool.serverId,
-  };
-}
-
-function toPublicServerSummary(server: {
-  serverName: string;
-  serverId: string;
-  toolCount: number;
-}): PublicServerSummary {
-  return {
-    serverName: server.serverName,
-    serverId: server.serverId,
-    toolCount: server.toolCount,
-  };
 }
 
 /** Check if a tool name is one of the meta-tools. */
