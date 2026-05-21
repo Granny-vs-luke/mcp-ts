@@ -290,6 +290,19 @@ export class ToolRouter {
   }
 
   /**
+   * Resolve the full tool definition by name, ensuring the router index has
+   * been initialized first.
+   */
+  async resolveToolSchema(
+    toolName: string,
+    namespace?: string,
+    options: ToolLookupOptions = {}
+  ): Promise<IndexedTool | undefined> {
+    await this.ensureInitialized();
+    return this.getToolSchema(toolName, namespace, options);
+  }
+
+  /**
    * Get compact (schema-less) summaries for all tools.
    */
   getCompactTools(): CompactTool[] {

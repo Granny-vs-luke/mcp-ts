@@ -462,6 +462,9 @@ test.describe('executeMetaTool', () => {
             const schema = router.getToolSchema('workflow_list');
             expect(schema?.name).toBe('workflow_list');
 
+            const resolvedSchema = await router.resolveToolSchema('workflow_list');
+            expect(resolvedSchema?.name).toBe('workflow_list');
+
             const result = await router.callTool('workflow_list', {});
             expect(result.content[0].text).toContain('Workflow MCP:workflow_list:{}');
         });
@@ -488,5 +491,21 @@ test.describe('executeMetaTool', () => {
             const searchResults = await router.searchTools('workflow', 10);
             expect(searchResults.map((tool) => tool.name)).toContain('workflow_run');
         });
+    });
+
+    test('resolveToolSchema initializes a fresh router before lookup', async () => {
+        const router = new ToolRouter([
+            createRouterClient('github-server', 'GitHub', [
+                { name: 'search_issues', description: 'Search issues' },
+            ]) as any,
+        ], {
+            strategy: 'search',
+        });
+
+        expect(router.getToolSchema('search_issues')).toBeUndefined();
+
+        const schema = await router.resolveToolSchema('search_issues', 'github-server');
+        expect(schema?.name).toBe('search_issues');
+        expect(schema?.serverId).toBe('github-server');
     });
 });

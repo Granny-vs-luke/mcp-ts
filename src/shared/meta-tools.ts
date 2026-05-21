@@ -235,12 +235,23 @@ export async function executeMetaTool(
   router: ToolRouter,
   callToolFn?: CallToolFn
 ): Promise<CallToolResult | null> {
-  const resolveToolSchema = (
+  const resolveToolSchema = async (
     name: string,
     namespace?: string,
     options?: ToolLookupOptions
-  ): { tool?: IndexedTool; error?: CallToolResult } => {
+  ): Promise<{ tool?: IndexedTool; error?: CallToolResult }> => {
     try {
+      if (typeof (router as ToolRouter & { resolveToolSchema?: unknown }).resolveToolSchema === 'function') {
+        return {
+          tool: await (router as ToolRouter & {
+            resolveToolSchema: (
+              toolName: string,
+              namespace?: string,
+              options?: ToolLookupOptions
+            ) => Promise<IndexedTool | undefined>;
+          }).resolveToolSchema(name, namespace, options),
+        };
+      }
       return { tool: router.getToolSchema(name, namespace, options) };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -307,8 +318,6 @@ export async function executeMetaTool(
       // Fast path: Check for select: prefix
       const selectMatch = query.match(/^select:(.+)$/i);
       if (selectMatch) {
-        await router.listTools({ serverId, serverName, limit: 1 });
-
         const requested = selectMatch[1]!
           .split(',')
           .map((s) => s.trim())
@@ -320,7 +329,7 @@ export async function executeMetaTool(
         const namespace = serverId ?? serverName;
 
         for (const requestedToolName of requested) {
-          const { tool, error } = resolveToolSchema(requestedToolName, namespace, {
+          const { tool, error } = await resolveToolSchema(requestedToolName, namespace, {
             allowServerNameFragment: Boolean(serverName && !serverId),
           });
           if (error) {
@@ -410,7 +419,7 @@ export async function executeMetaTool(
     case 'mcp_get_tool_schema': {
       const name = String(args.toolName ?? '');
       const namespace = String(args.serverId ?? '') || undefined;
-      const { tool, error } = resolveToolSchema(name, namespace);
+      const { tool, error } = await resolveToolSchema(name, namespace);
 
       if (error) {
         return error;
@@ -461,7 +470,7 @@ export async function executeMetaTool(
       }
 
       // Verify the tool exists in our index
-      const { tool, error } = resolveToolSchema(targetToolName, namespace);
+      const { tool, error } = await resolveToolSchema(targetToolName, namespace);
       if (error) {
         return error;
       }
