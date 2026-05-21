@@ -274,7 +274,7 @@ export class ToolRouter {
     namespace?: string,
     options: ToolLookupOptions = {}
   ): IndexedTool | undefined {
-    const matches = this.index.getTool(toolName, namespace, options);
+    const matches = this.getIndexedToolMatches(toolName, namespace, options);
 
     if (matches.length === 0) return undefined;
 
@@ -545,6 +545,37 @@ export class ToolRouter {
 
   private getDirectlyVisibleTools(): IndexedTool[] {
     return this.allTools.filter((tool) => !this.matchesDeferredTool(tool) || this.matchesPinnedTool(tool.name));
+  }
+
+  private getIndexedToolMatches(
+    toolName: string,
+    namespace?: string,
+    options: ToolLookupOptions = {}
+  ): IndexedTool[] {
+    const indexedMatches = this.index.getTool(toolName, namespace, options);
+    if (indexedMatches.length > 0 || !this.matchesPinnedTool(toolName)) {
+      return indexedMatches;
+    }
+
+    return this.matchTools(this.pinnedTools.filter((tool) => tool.name === toolName), namespace, options);
+  }
+
+  private matchTools(
+    tools: IndexedTool[],
+    namespace?: string,
+    options: ToolLookupOptions = {}
+  ): IndexedTool[] {
+    if (!namespace) return tools;
+
+    const exactMatches = tools.filter(
+      (tool) => tool.sessionId === namespace || tool.serverId === namespace
+    );
+    if (exactMatches.length > 0) return exactMatches;
+
+    if (!options.allowServerNameFragment) return [];
+
+    const namespaceLower = namespace.toLowerCase();
+    return tools.filter((tool) => tool.serverName.toLowerCase().includes(namespaceLower));
   }
 }
 

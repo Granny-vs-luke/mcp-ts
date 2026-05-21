@@ -397,6 +397,31 @@ test.describe('executeMetaTool', () => {
             expect(regexResults.map((tool) => tool.name)).toContain('web_status');
         });
 
+        test('pinned tools remain resolvable and directly executable in search strategy', async () => {
+            const router = new ToolRouter([
+                createRouterClient('workflow-server', 'Workflow MCP', [
+                    { name: 'codemode_run', description: 'Run codemode scripts' },
+                    { name: 'workflow_status', description: 'Report workflow status' },
+                ]) as any,
+            ], {
+                strategy: 'search',
+                pinnedTools: ['codemode_run'],
+            });
+
+            const filteredTools = await router.getFilteredTools();
+            expect(filteredTools.map((tool) => tool.name)).toContain('codemode_run');
+
+            const searchResults = await router.searchTools('codemode', 10);
+            expect(searchResults.map((tool) => tool.name)).not.toContain('codemode_run');
+
+            const schema = await router.resolveToolSchema('codemode_run', 'workflow-server');
+            expect(schema?.name).toBe('codemode_run');
+            expect(schema?.serverId).toBe('workflow-server');
+
+            const result = await router.callTool('codemode_run', { script: 'return 1' }, 'workflow-server');
+            expect(result.content[0].text).toContain('Workflow MCP:codemode_run:{"script":"return 1"}');
+        });
+
         test('excludeTools removes exact and glob matches from returned tools and lookup', async () => {
             const router = new ToolRouter([
                 createRouterClient('db-server', 'Database MCP', [
