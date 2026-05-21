@@ -29,6 +29,20 @@ export interface Session {
     clientId?: string;
 }
 
+export type SessionMutationType = 'create' | 'update' | 'delete';
+
+export interface SessionMutationEvent {
+    type: SessionMutationType;
+    userId: string;
+    sessionId: string;
+    timestamp: number;
+    session?: Session;
+    patch?: Partial<Session>;
+    ttl?: number;
+}
+
+export type SessionMutationListener = (event: SessionMutationEvent) => void | Promise<void>;
+
 export interface SetClientOptions {
     sessionId: string;
     serverId?: string; // Database server ID

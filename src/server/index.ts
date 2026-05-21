@@ -6,7 +6,7 @@
 /** Core MCP client and session management */
 export { MCPClient } from './mcp/oauth-client.js';
 export { UnauthorizedError } from '../shared/errors.js';
-export { sessions, type SessionStore } from './storage/index.js';
+export { sessions, onSessionMutation, type SessionStore } from './storage/index.js';
 export { StorageOAuthClientProvider } from './mcp/storage-oauth-provider.js';
 export { MultiSessionClient } from './mcp/multi-session-client.js';
 
@@ -43,6 +43,13 @@ export type {
   CallToolRequest,
   CallToolResponse,
 } from '../shared/types';
+
+export type {
+  Session,
+  SessionMutationEvent,
+  SessionMutationListener,
+  SessionMutationType,
+} from './storage/types.js';
 
 /** Re-export MCP SDK types for convenience */
 export type {

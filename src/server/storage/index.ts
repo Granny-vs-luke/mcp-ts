@@ -5,7 +5,7 @@ import { FileStorageBackend } from './file-backend';
 import { SqliteStorage } from './sqlite-backend.js';
 import { SupabaseStorageBackend } from './supabase-backend.js';
 import { NeonStorageBackend, type NeonStorageOptions } from './neon-backend.js';
-import type { SessionStore } from './types.js';
+import type { SessionStore, Session, SessionMutationEvent, SessionMutationListener } from './types.js';
 
 // Re-export types
 export * from './types.js';
@@ -42,6 +42,65 @@ function warnIfNeonConnectionStringIsInsecure(connectionString: string): void {
 
 let storageInstance: SessionStore | null = null;
 let storagePromise: Promise<SessionStore> | null = null;
+const sessionMutationListeners = new Set<SessionMutationListener>();
+
+function emitSessionMutation(event: SessionMutationEvent): void {
+    for (const listener of sessionMutationListeners) {
+        try {
+            const result = listener(event);
+            if (result && typeof (result as Promise<void>).catch === 'function') {
+                void (result as Promise<void>).catch((error) => {
+                    console.error('[mcp-ts][Storage] Session mutation listener failed:', error);
+                });
+            }
+        } catch (error) {
+            console.error('[mcp-ts][Storage] Session mutation listener failed:', error);
+        }
+    }
+}
+
+function createSessionMutationEvent(prop: PropertyKey, args: any[]): SessionMutationEvent | null {
+    const timestamp = Date.now();
+
+    if (prop === 'create') {
+        const [session, ttl] = args as [Session, number | undefined];
+        if (!session?.userId || !session?.sessionId) return null;
+        return {
+            type: 'create',
+            userId: session.userId,
+            sessionId: session.sessionId,
+            session,
+            ttl,
+            timestamp,
+        };
+    }
+
+    if (prop === 'update') {
+        const [userId, sessionId, patch, ttl] = args as [string, string, Partial<Session>, number | undefined];
+        if (!userId || !sessionId) return null;
+        return {
+            type: 'update',
+            userId,
+            sessionId,
+            patch,
+            ttl,
+            timestamp,
+        };
+    }
+
+    if (prop === 'delete') {
+        const [userId, sessionId] = args as [string, string];
+        if (!userId || !sessionId) return null;
+        return {
+            type: 'delete',
+            userId,
+            sessionId,
+            timestamp,
+        };
+    }
+
+    return null;
+}
 
 async function initializeStorage<T extends SessionStore>(store: T): Promise<T> {
     if (typeof store.init === 'function') {
@@ -215,6 +274,17 @@ export function _setStorageInstanceForTesting(instance: SessionStore | null): vo
     }
 }
 
+export function onSessionMutation(listener: SessionMutationListener): () => void {
+    sessionMutationListeners.add(listener);
+    return () => {
+        sessionMutationListeners.delete(listener);
+    };
+}
+
+export function _resetSessionMutationListenersForTesting(): void {
+    sessionMutationListeners.clear();
+}
+
 /**
  * Global session store instance
  * Uses lazy initialization with a Proxy to handle async setup transparently
@@ -225,7 +295,12 @@ export const sessions: SessionStore = new Proxy({} as SessionStore, {
             const instance = await getStorage();
             const value = (instance as any)[prop];
             if (typeof value === 'function') {
-                return value.apply(instance, args);
+                const result = await value.apply(instance, args);
+                const event = createSessionMutationEvent(prop, args);
+                if (event) {
+                    emitSessionMutation(event);
+                }
+                return result;
             }
             return value;
         };
