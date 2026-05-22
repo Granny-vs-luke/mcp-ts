@@ -6,33 +6,11 @@ import { MemoryStorageBackend } from '../src/server/storage/memory-backend';
 test.describe('MCPClient.getMcpServerConfig', () => {
     const userId = 'test-user';
 
-    const originalInitialize = (MCPClient.prototype as any).initialize;
-    const originalGetValidTokens = (MCPClient.prototype as any).getValidTokens;
-
     test.afterEach(() => {
-        // Restore methods
         _setStorageInstanceForTesting(null); // Reset storage
-        (MCPClient.prototype as any).initialize = originalInitialize;
-        (MCPClient.prototype as any).getValidTokens = originalGetValidTokens;
     });
 
     test('should process multiple sessions in parallel and return the correct config', async () => {
-        // Spy counts
-        let initCallCount = 0;
-        let getTokensCallCount = 0;
-
-        // Mock Initialize
-        (MCPClient.prototype as any).initialize = async function () {
-            initCallCount++;
-            // Manually inject a mock provider if needed, or do nothing
-        };
-
-        // Mock GetValidTokens
-        (MCPClient.prototype as any).getValidTokens = async function () {
-            getTokensCallCount++;
-            return true;
-        };
-
         const session1 = {
             sessionId: 's1',
             active: true,
@@ -61,9 +39,6 @@ test.describe('MCPClient.getMcpServerConfig', () => {
         _setStorageInstanceForTesting(mockStorage);
 
         const config = await MCPClient.getMcpServerConfig(userId);
-
-        expect(initCallCount).toBe(2);
-        expect(getTokensCallCount).toBe(2);
 
         expect(config).toEqual({
             'server_one': expect.objectContaining({

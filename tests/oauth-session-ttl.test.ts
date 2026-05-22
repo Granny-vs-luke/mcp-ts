@@ -24,14 +24,12 @@ class TrackingMemoryStorage extends MemoryStorageBackend {
 
 test.describe('MCPClient session TTL lifecycle', () => {
   const originalInitialize = (MCPClient.prototype as any).initialize;
-  const originalGetValidTokens = (MCPClient.prototype as any).getValidTokens;
   const originalTryConnect = (MCPClient.prototype as any).tryConnect;
   const originalGetTransport = (MCPClient.prototype as any).getTransport;
   const originalClientConnect = (Client.prototype as any).connect;
 
   test.afterEach(() => {
     (MCPClient.prototype as any).initialize = originalInitialize;
-    (MCPClient.prototype as any).getValidTokens = originalGetValidTokens;
     (MCPClient.prototype as any).tryConnect = originalTryConnect;
     (MCPClient.prototype as any).getTransport = originalGetTransport;
     (Client.prototype as any).connect = originalClientConnect;
@@ -64,7 +62,6 @@ test.describe('MCPClient session TTL lifecycle', () => {
         }, Math.floor(STATE_EXPIRATION_MS / 1000));
       }
     };
-    (MCPClient.prototype as any).getValidTokens = async () => true;
     (MCPClient.prototype as any).tryConnect = async () => ({ transportType: 'streamable-http' });
 
     const client = new MCPClient({
@@ -117,7 +114,6 @@ test.describe('MCPClient session TTL lifecycle', () => {
         }, Math.floor(STATE_EXPIRATION_MS / 1000));
       }
     };
-    (MCPClient.prototype as any).getValidTokens = async () => true;
     (MCPClient.prototype as any).tryConnect = async () => {
       throw new Error('unauthorized');
     };

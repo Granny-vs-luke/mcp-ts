@@ -107,7 +107,7 @@ export class SupabaseStorageBackend implements SessionStore {
         if ('active' in data) updateData.active = data.active;
         if ('headers' in data) updateData.headers = encryptObject(data.headers);
         if ('clientInformation' in data) updateData.client_information = data.clientInformation;
-        if ('tokens' in data) updateData.tokens = encryptObject(data.tokens);
+        if ('tokens' in data) updateData.tokens = data.tokens === undefined ? null : encryptObject(data.tokens);
         if ('codeVerifier' in data) updateData.code_verifier = data.codeVerifier;
         if ('clientId' in data) updateData.client_id = data.clientId;
 

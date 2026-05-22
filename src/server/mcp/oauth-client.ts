@@ -4,9 +4,6 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import {
   UnauthorizedError as SDKUnauthorizedError,
-  refreshAuthorization,
-  discoverOAuthProtectedResourceMetadata,
-  discoverAuthorizationServerMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
 import {
   ListToolsRequest,
@@ -28,7 +25,6 @@ import {
   ReadResourceResult,
   ReadResourceResultSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { OAuthTokens, OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { StorageOAuthClientProvider, type AgentsOAuthProvider } from './storage-oauth-provider.js';
 import { sanitizeServerLabel } from '../../shared/utils.js';
 import { Emitter, type McpConnectionEvent, type McpObservabilityEvent, type McpConnectionState } from '../../shared/events.js';
@@ -58,20 +54,6 @@ interface McpAppClientCapabilities extends Omit<ClientCapabilities, 'extensions'
     };
     [key: string]: any;
   };
-}
-
-function isInvalidRefreshTokenError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const text = `${error.name} ${error.message}`.toLowerCase();
-  return (
-    text.includes('invalidgrant') ||
-    text.includes('invalid_grant') ||
-    text.includes('invalid refresh token') ||
-    /refresh\s+token\s+(?:is\s+)?(?:invalid|expired|revoked)/i.test(text)
-  );
 }
 
 export interface MCPOAuthClientOptions {
@@ -504,9 +486,6 @@ export class MCPClient {
     }
 
     try {
-      this.emitProgress('Validating OAuth tokens...');
-      await this.getValidTokens();
-
       this.emitStateChange('CONNECTING');
 
       /** Use the tryConnect loop to handle transport fallbacks */
@@ -948,79 +927,6 @@ export class MCPClient {
   }
 
   /**
-   * Refreshes the OAuth access token using the refresh token
-   * Discovers OAuth metadata from server and exchanges refresh token for new access token
-   * @returns True if refresh was successful, false otherwise
-   */
-  async refreshToken(): Promise<boolean> {
-    await this.initialize();
-
-    if (!this.oauthProvider) {
-      return false;
-    }
-
-    const tokens = await this.oauthProvider.tokens();
-    if (!tokens || !tokens.refresh_token) {
-      return false;
-    }
-
-    const clientInformation = await this.oauthProvider.clientInformation();
-    if (!clientInformation) {
-      return false;
-    }
-
-    try {
-      const resourceMetadata = await discoverOAuthProtectedResourceMetadata(this.serverUrl!);
-      const authServerUrl = resourceMetadata?.authorization_servers?.[0] || this.serverUrl!;
-      const authMetadata = await discoverAuthorizationServerMetadata(authServerUrl);
-
-      const newTokens = await refreshAuthorization(authServerUrl, {
-        metadata: authMetadata,
-        clientInformation,
-        refreshToken: tokens.refresh_token,
-      });
-
-      await this.oauthProvider.saveTokens(newTokens);
-      return true;
-    } catch (error) {
-      console.error('[OAuth] Token refresh failed:', error);
-      if (isInvalidRefreshTokenError(error)) {
-        try {
-          await this.oauthProvider.invalidateCredentials?.('tokens');
-          this.emitProgress('OAuth refresh token is invalid; requesting reauthorization...');
-        } catch (invalidateError) {
-          console.warn('[OAuth] Failed to invalidate stale refresh token credentials:', invalidateError);
-        }
-      }
-      return false;
-    }
-  }
-
-  /**
-   * Ensures OAuth tokens are valid, refreshing them if expired
-   * Called automatically by connect() - rarely needs to be called manually
-   * @returns True if valid tokens are available, false otherwise
-   */
-  async getValidTokens(): Promise<boolean> {
-    await this.initialize();
-
-    if (!this.oauthProvider) {
-      return false;
-    }
-
-    const tokens = await this.oauthProvider.tokens();
-    if (!tokens) {
-      return false;
-    }
-
-    if (this.oauthProvider.isTokenExpired()) {
-      return await this.refreshToken();
-    }
-
-    return true;
-  }
-
-  /**
    * Reconnects to MCP server using existing OAuth provider from Redis
    * Used for session restoration in serverless environments
    * Creates new client and transport without re-initializing OAuth provider
@@ -1176,10 +1082,14 @@ export class MCPClient {
 
   /**
    * Gets MCP server configuration for all active user sessions
-   * Loads sessions from Redis, validates OAuth tokens, refreshes if expired
-   * Returns ready-to-use configuration with valid auth headers
+   * Loads sessions from storage and returns server connection metadata.
+   * OAuth refresh is handled by SDK transports through their authProvider.
+   * @deprecated This returns legacy connection metadata only and does not
+   * include OAuth tokens or generated Authorization headers. Prefer
+   * MultiSessionClient or explicit MCPClient instances so SDK transports can
+   * own OAuth refresh and reauthorization.
    * @param userId - User ID to fetch sessions for
-   * @returns Object keyed by sanitized server labels containing transport, url, headers, etc.
+   * @returns Object keyed by sanitized server labels containing transport and url.
    * @static
    */
   static async getMcpServerConfig(userId: string): Promise<Record<string, any>> {
@@ -1202,34 +1112,6 @@ export class MCPClient {
             return;
           }
 
-          // Get OAuth headers if session requires authentication
-          let headers: Record<string, string> | undefined;
-          try {
-            // Inject existing session data to avoid redundant session store reads in initialize()
-            const client = new MCPClient({
-              userId,
-              sessionId,
-              serverId: sessionData.serverId,
-              serverUrl: sessionData.serverUrl,
-              callbackUrl: sessionData.callbackUrl,
-              serverName: sessionData.serverName,
-              transportType: sessionData.transportType,
-              headers: sessionData.headers,
-            });
-
-            await client.initialize();
-
-            const hasValidTokens = await client.getValidTokens();
-            if (hasValidTokens && client.oauthProvider) {
-              const tokens = await client.oauthProvider.tokens();
-              if (tokens?.access_token) {
-                headers = { Authorization: `Bearer ${tokens.access_token}` };
-              }
-            }
-          } catch (error) {
-            console.warn(`[MCP] Failed to get OAuth tokens for ${sessionId}:`, error);
-          }
-
           // Build server config
           const label = sanitizeServerLabel(
             sessionData.serverName || sessionData.serverId || 'server'
@@ -1242,7 +1124,6 @@ export class MCPClient {
               serverName: sessionData.serverName,
               serverLabel: label,
             }),
-            ...(headers && { headers }),
           };
         } catch (error) {
           await sessions.delete(userId, sessionId);

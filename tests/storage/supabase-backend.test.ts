@@ -233,6 +233,19 @@ test.describe('SupabaseStorageBackend', () => {
             expect(retrieved?.tokens?.refresh_token).toBe('new-refresh-token');
         });
 
+        test('clears OAuth tokens when credentials are invalidated', async () => {
+            const session = createMockSession({ tokens: createMockTokens() });
+            await storage.create(session);
+
+            await storage.update(session.userId, session.sessionId, { tokens: undefined });
+
+            const row = mockSupabase._listSessions()[0];
+            const retrieved = await storage.get(session.userId, session.sessionId);
+
+            expect(row.tokens).toBeNull();
+            expect(retrieved?.tokens).toBeNull();
+        });
+
         test('refreshes expires_at with a new TTL', async () => {
             const session = createMockSession();
             await storage.create(session, 10);        // 10s TTL on create

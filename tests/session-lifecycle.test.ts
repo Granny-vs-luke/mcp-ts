@@ -40,7 +40,6 @@ test.describe('Session Lifecycle Management', () => {
             };
             (client as any).client = { connect: async () => {} };
         };
-        (client as any).getValidTokens = async () => true;
         (client as any).tryConnect = async () => ({ transportType: 'sse' });
 
         // First creation with active: false occurs in initialize (mocked above, so let's verify saveSession call)
@@ -93,7 +92,6 @@ test.describe('Session Lifecycle Management', () => {
             };
             this.client = { connect: async () => {} }; // Needs to exist to pass check
         };
-        (client as any).getValidTokens = async () => true;
         (client as any).tryConnect = async () => {
             throw new Error('ECONNREFUSED');
         };
@@ -134,7 +132,6 @@ test.describe('Session Lifecycle Management', () => {
             };
             this.client = { connect: async () => {} };
         };
-        (client as any).getValidTokens = async () => true;
         (client as any).tryConnect = async () => {
             throw new Error('ECONNREFUSED');
         };
@@ -165,7 +162,7 @@ test.describe('Session Lifecycle Management', () => {
             };
             this.client = { connect: async () => {} };
         };
-        (client as any).getValidTokens = async () => {
+        (client as any).tryConnect = async () => {
             throw new SDKUnauthorizedError('Unauthorized');
         };
 
@@ -195,7 +192,7 @@ test.describe('Session Lifecycle Management', () => {
             };
             this.client = { connect: async () => {} };
         };
-        (client as any).getValidTokens = async () => {
+        (client as any).tryConnect = async () => {
             throw new SDKUnauthorizedError('Unauthorized');
         };
 

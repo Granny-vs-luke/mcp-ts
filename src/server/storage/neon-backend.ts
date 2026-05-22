@@ -180,7 +180,7 @@ export class NeonStorageBackend implements SessionStore {
                 updatedSession.active ?? false,
                 encryptObject(updatedSession.headers),
                 updatedSession.clientInformation,
-                encryptObject(updatedSession.tokens),
+                updatedSession.tokens === undefined ? null : encryptObject(updatedSession.tokens),
                 updatedSession.codeVerifier,
                 updatedSession.clientId,
                 expiresAt,
