@@ -927,36 +927,6 @@ export class MCPClient {
   }
 
   /**
-   * @deprecated OAuth refresh is owned by the MCP SDK transports. This method
-   * no longer refreshes tokens directly and only reports whether the currently
-   * stored token set is still usable.
-   * @returns True if stored tokens exist and are not expired, false otherwise
-   */
-  async refreshToken(): Promise<boolean> {
-    return this.getValidTokens();
-  }
-
-  /**
-   * Checks whether stored OAuth tokens are currently usable.
-   * Token refresh is handled by the MCP SDK transport when it receives 401.
-   * @returns True if non-expired tokens are available, false otherwise
-   */
-  async getValidTokens(): Promise<boolean> {
-    await this.initialize();
-
-    if (!this.oauthProvider) {
-      return false;
-    }
-
-    const tokens = await this.oauthProvider.tokens();
-    if (!tokens) {
-      return false;
-    }
-
-    return !this.oauthProvider.isTokenExpired();
-  }
-
-  /**
    * Reconnects to MCP server using existing OAuth provider from Redis
    * Used for session restoration in serverless environments
    * Creates new client and transport without re-initializing OAuth provider
@@ -1112,10 +1082,14 @@ export class MCPClient {
 
   /**
    * Gets MCP server configuration for all active user sessions
-   * Loads sessions from Redis, validates OAuth tokens, refreshes if expired
-   * Returns ready-to-use configuration with valid auth headers
+   * Loads sessions from storage and returns server connection metadata.
+   * OAuth refresh is handled by SDK transports through their authProvider.
+   * @deprecated This returns legacy connection metadata only and does not
+   * include OAuth tokens or generated Authorization headers. Prefer
+   * MultiSessionClient or explicit MCPClient instances so SDK transports can
+   * own OAuth refresh and reauthorization.
    * @param userId - User ID to fetch sessions for
-   * @returns Object keyed by sanitized server labels containing transport, url, headers, etc.
+   * @returns Object keyed by sanitized server labels containing transport and url.
    * @static
    */
   static async getMcpServerConfig(userId: string): Promise<Record<string, any>> {
@@ -1138,34 +1112,6 @@ export class MCPClient {
             return;
           }
 
-          // Get OAuth headers if session requires authentication
-          let headers: Record<string, string> | undefined;
-          try {
-            // Inject existing session data to avoid redundant session store reads in initialize()
-            const client = new MCPClient({
-              userId,
-              sessionId,
-              serverId: sessionData.serverId,
-              serverUrl: sessionData.serverUrl,
-              callbackUrl: sessionData.callbackUrl,
-              serverName: sessionData.serverName,
-              transportType: sessionData.transportType,
-              headers: sessionData.headers,
-            });
-
-            await client.initialize();
-
-            const hasValidTokens = await client.getValidTokens();
-            if (hasValidTokens && client.oauthProvider) {
-              const tokens = await client.oauthProvider.tokens();
-              if (tokens?.access_token) {
-                headers = { Authorization: `Bearer ${tokens.access_token}` };
-              }
-            }
-          } catch (error) {
-            console.warn(`[MCP] Failed to get OAuth tokens for ${sessionId}:`, error);
-          }
-
           // Build server config
           const label = sanitizeServerLabel(
             sessionData.serverName || sessionData.serverId || 'server'
@@ -1178,7 +1124,6 @@ export class MCPClient {
               serverName: sessionData.serverName,
               serverLabel: label,
             }),
-            ...(headers && { headers }),
           };
         } catch (error) {
           await sessions.delete(userId, sessionId);

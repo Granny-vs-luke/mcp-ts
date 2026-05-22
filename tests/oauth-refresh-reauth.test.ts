@@ -14,11 +14,8 @@ test.describe('MCPClient refresh-token reauthorization', () => {
     _setStorageInstanceForTesting(null);
   });
 
-  test('does not refresh expired tokens outside SDK transport auth', async () => {
+  test('does not expose token refresh outside SDK transport auth', async () => {
     _setStorageInstanceForTesting(new MemoryStorageBackend());
-
-    let saveTokensCalled = false;
-    let invalidateCredentialsCalled = false;
 
     (MCPClient.prototype as any).initialize = async function () {
       (this as any).client = {} as any;
@@ -29,12 +26,6 @@ test.describe('MCPClient refresh-token reauthorization', () => {
           token_type: 'Bearer',
         }),
         isTokenExpired: () => true,
-        saveTokens: async () => {
-          saveTokensCalled = true;
-        },
-        invalidateCredentials: async () => {
-          invalidateCredentialsCalled = true;
-        },
       };
     };
 
@@ -48,10 +39,8 @@ test.describe('MCPClient refresh-token reauthorization', () => {
       transportType: 'streamable-http',
     });
 
-    await expect(client.getValidTokens()).resolves.toBe(false);
-    await expect(client.refreshToken()).resolves.toBe(false);
-    expect(saveTokensCalled).toBe(false);
-    expect(invalidateCredentialsCalled).toBe(false);
+    expect('refreshToken' in client).toBe(false);
+    expect('getValidTokens' in client).toBe(false);
   });
 
   test('emits auth_required when SDK transport requests authorization', async () => {
