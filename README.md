@@ -53,8 +53,10 @@
 
 | Package | Description | Install |
 | :--- | :--- | :--- |
-| **[@mcp-ts/sdk](src)** | TypeScript/JavaScript SDK for clients & servers. | `npm i @mcp-ts/sdk` |
-| **[mcpassistant-gateway](packages/mcp-local-agent)** | Python bridge for local MCP support in remote apps. | `pip install mcpassistant-gateway` |
+| **[@mcp-ts/sdk](src)** | Core TypeScript/JavaScript SDK for client applications. | `npm i @mcp-ts/sdk` |
+| **[@mcp-ts/tool-router](packages/tool-router)** | ToolRouter for dynamic tool discovery + routing across many MCP servers. | `npm i @mcp-ts/tool-router` |
+| **[@mcp-ts/codemode](packages/code-mode)** | CodeMode: sandboxed program execution for workflow/tool calling. | `npm i @mcp-ts/codemode` |
+| **[mcpassistant-gateway](packages/local-gateway)** | Python bridge for local MCP support in remote apps. | `pip install mcpassistant-gateway` |
 
 ---
 
@@ -62,14 +64,15 @@
 
 Most features are available out-of-the-box in the **TypeScript SDK**:
 
-- **SSE** - Server-Sent Events for connection state and observability updates
-- **Flexible Storage** - Redis, SQLite, File System, or In-Memory backends
+- **Storage Backends** - Redis, SQLite, File System, or In-Memory backends
 - **Serverless** - Works in serverless environments (Vercel, AWS Lambda, etc.)
 - **React Hook** - `useMcp` hook for easy React integration
 - **Vue Composable** - `useMcp` composable for Vue applications
+- **SSE** - Server-Sent Events for connection state and observability updates
 - **MCP Protocol** - Support for tools, prompts, and resources
 - **Agent Adapters** - Built-in adapters for AI SDK, LangChain, Mastra, and AG-UI
 - **MCP Apps Extension (SEP-1865)** - Interactive UI-driven tool interfaces
+- **ToolRouter** - Discover tools on-demand and route calls across many MCP servers (reduces context bloat)
 
 ## 🧪 Examples
 
@@ -122,7 +125,10 @@ The SDK supports multiple storage backends out of the box:
 
 ### 🚀 Quick Start
 
-#### 🖥️ Server-Side (Next.js)
+Working reference: [examples/next](examples/next)
+
+<details>
+<summary><strong>🖥️ Server-Side (Next.js)</strong></summary>
 
 ```typescript
 // app/api/mcp/route.ts
@@ -138,7 +144,10 @@ export const { GET, POST } = createNextMcpHandler({
 });
 ```
 
-### 🎯 Client-Side (React)
+</details>
+
+<details>
+<summary><strong>🎯 Client-Side (React)</strong></summary>
 
 ```typescript
 'use client';
@@ -174,6 +183,36 @@ function App() {
       ))}
     </div>
   );
+}
+```
+
+</details>
+
+### 🌐 MCP Endpoint (Hosted)
+
+- **Endpoint**: `https://api.mcp-assistant.in/mcp`
+
+#### Antigravity
+
+```json
+{
+  "mcpServers": {
+    "mcp-assistant": {
+      "url": "https://api.mcp-assistant.in/mcp"
+    }
+  }
+}
+```
+
+#### VS Code
+
+```json
+{
+  "mcpServers": {
+    "mcp-assistant": {
+      "url": "https://api.mcp-assistant.in/mcp"
+    }
+  }
 }
 ```
 
