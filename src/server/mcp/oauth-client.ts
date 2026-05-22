@@ -4,9 +4,6 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import {
   UnauthorizedError as SDKUnauthorizedError,
-  refreshAuthorization,
-  discoverOAuthProtectedResourceMetadata,
-  discoverAuthorizationServerMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
 import {
   ListToolsRequest,
@@ -28,7 +25,6 @@ import {
   ReadResourceResult,
   ReadResourceResultSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { OAuthTokens, OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { StorageOAuthClientProvider, type AgentsOAuthProvider } from './storage-oauth-provider.js';
 import { sanitizeServerLabel } from '../../shared/utils.js';
 import { Emitter, type McpConnectionEvent, type McpObservabilityEvent, type McpConnectionState } from '../../shared/events.js';
@@ -58,20 +54,6 @@ interface McpAppClientCapabilities extends Omit<ClientCapabilities, 'extensions'
     };
     [key: string]: any;
   };
-}
-
-function isInvalidRefreshTokenError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const text = `${error.name} ${error.message}`.toLowerCase();
-  return (
-    text.includes('invalidgrant') ||
-    text.includes('invalid_grant') ||
-    text.includes('invalid refresh token') ||
-    /refresh\s+token\s+(?:is\s+)?(?:invalid|expired|revoked)/i.test(text)
-  );
 }
 
 export interface MCPOAuthClientOptions {
@@ -504,9 +486,6 @@ export class MCPClient {
     }
 
     try {
-      this.emitProgress('Validating OAuth tokens...');
-      await this.getValidTokens();
-
       this.emitStateChange('CONNECTING');
 
       /** Use the tryConnect loop to handle transport fallbacks */
@@ -948,58 +927,19 @@ export class MCPClient {
   }
 
   /**
-   * Refreshes the OAuth access token using the refresh token
-   * Discovers OAuth metadata from server and exchanges refresh token for new access token
-   * @returns True if refresh was successful, false otherwise
+   * @deprecated OAuth refresh is owned by the MCP SDK transports. This method
+   * no longer refreshes tokens directly and only reports whether the currently
+   * stored token set is still usable.
+   * @returns True if stored tokens exist and are not expired, false otherwise
    */
   async refreshToken(): Promise<boolean> {
-    await this.initialize();
-
-    if (!this.oauthProvider) {
-      return false;
-    }
-
-    const tokens = await this.oauthProvider.tokens();
-    if (!tokens || !tokens.refresh_token) {
-      return false;
-    }
-
-    const clientInformation = await this.oauthProvider.clientInformation();
-    if (!clientInformation) {
-      return false;
-    }
-
-    try {
-      const resourceMetadata = await discoverOAuthProtectedResourceMetadata(this.serverUrl!);
-      const authServerUrl = resourceMetadata?.authorization_servers?.[0] || this.serverUrl!;
-      const authMetadata = await discoverAuthorizationServerMetadata(authServerUrl);
-
-      const newTokens = await refreshAuthorization(authServerUrl, {
-        metadata: authMetadata,
-        clientInformation,
-        refreshToken: tokens.refresh_token,
-      });
-
-      await this.oauthProvider.saveTokens(newTokens);
-      return true;
-    } catch (error) {
-      console.error('[OAuth] Token refresh failed:', error);
-      if (isInvalidRefreshTokenError(error)) {
-        try {
-          await this.oauthProvider.invalidateCredentials?.('tokens');
-          this.emitProgress('OAuth refresh token is invalid; requesting reauthorization...');
-        } catch (invalidateError) {
-          console.warn('[OAuth] Failed to invalidate stale refresh token credentials:', invalidateError);
-        }
-      }
-      return false;
-    }
+    return this.getValidTokens();
   }
 
   /**
-   * Ensures OAuth tokens are valid, refreshing them if expired
-   * Called automatically by connect() - rarely needs to be called manually
-   * @returns True if valid tokens are available, false otherwise
+   * Checks whether stored OAuth tokens are currently usable.
+   * Token refresh is handled by the MCP SDK transport when it receives 401.
+   * @returns True if non-expired tokens are available, false otherwise
    */
   async getValidTokens(): Promise<boolean> {
     await this.initialize();
@@ -1013,11 +953,7 @@ export class MCPClient {
       return false;
     }
 
-    if (this.oauthProvider.isTokenExpired()) {
-      return await this.refreshToken();
-    }
-
-    return true;
+    return !this.oauthProvider.isTokenExpired();
   }
 
   /**
