@@ -60,6 +60,20 @@ interface McpAppClientCapabilities extends Omit<ClientCapabilities, 'extensions'
   };
 }
 
+function isInvalidRefreshTokenError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const text = `${error.name} ${error.message}`.toLowerCase();
+  return (
+    text.includes('invalidgrant') ||
+    text.includes('invalid_grant') ||
+    text.includes('invalid refresh token') ||
+    /refresh\s+token\s+(?:is\s+)?(?:invalid|expired|revoked)/i.test(text)
+  );
+}
+
 export interface MCPOAuthClientOptions {
   serverUrl?: string;
   serverName?: string;
@@ -970,6 +984,14 @@ export class MCPClient {
       return true;
     } catch (error) {
       console.error('[OAuth] Token refresh failed:', error);
+      if (isInvalidRefreshTokenError(error)) {
+        try {
+          await this.oauthProvider.invalidateCredentials?.('tokens');
+          this.emitProgress('OAuth refresh token is invalid; requesting reauthorization...');
+        } catch (invalidateError) {
+          console.warn('[OAuth] Failed to invalidate stale refresh token credentials:', invalidateError);
+        }
+      }
       return false;
     }
   }
