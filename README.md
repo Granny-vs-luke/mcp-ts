@@ -31,23 +31,26 @@
 
 <br />
 
-## 📖 Table of Contents
+## 📑 Table of Contents
 
-- [✨ Features](#-features)
-- [📦 Packages](#-packages)
-- [🛠️ SDK Setup (@mcp-ts/sdk)](#️-sdk-setup-mcp-tssdk)
-  - [📦 Installation](#-installation)
-  - [🚀 Quick Start](#-quick-start)
-- [🐍 Gateway Setup (mcpassistant-gateway)](#-gateway-setup-mcpassistant-gateway)
-  - [📦 Installation](#-installation-1)
-  - [🚀 Usage](#-usage)
-- [🏗️ Architecture](#️-architecture)
-- [📚 Documentation](#-documentation)
-- [⚙️ Environment Setup](#️-environment-setup)
-- [🧪 Examples](#-examples)
-- [💡 Inspiration](#-inspiration)
+- [Features](#features)
+- [Packages](#packages)
+- [SDK Setup (@mcp-ts/sdk)](#sdk-setup-mcp-tssdk)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+- [Gateway Setup (mcpassistant-gateway)](#gateway-setup-mcpassistant-gateway)
+  - [Installation](#installation-1)
+  - [Usage](#usage)
+- [Documentation](#documentation)
+- [Environment Setup](#environment-setup)
+- [Architecture](#architecture)
+- [Examples](#examples)
+- [Inspiration](#inspiration)
+- [Contributing](#contributing)
 
 ---
+
+<a id="packages"></a>
 
 ## 📦 Packages
 
@@ -59,6 +62,8 @@
 | **[mcpassistant-gateway](packages/local-gateway)** | Python bridge for local MCP support in remote apps. | `pip install mcpassistant-gateway` |
 
 ---
+
+<a id="features"></a>
 
 ## ✨ Features
 
@@ -73,6 +78,8 @@ Most features are available out-of-the-box in the **TypeScript SDK**:
 - **Agent Adapters** - Built-in adapters for AI SDK, LangChain, Mastra, and AG-UI
 - **MCP Apps Extension (SEP-1865)** - Interactive UI-driven tool interfaces
 - **ToolRouter** - Discover tools on-demand and route calls across many MCP servers (reduces context bloat)
+
+<a id="examples"></a>
 
 ## 🧪 Examples
 
@@ -94,9 +101,11 @@ Check out working examples demonstrating the MCP Apps extension and agent integr
   <p><em>Interactive UIs for MCP tools</em></p>
 </div>
 
+<a id="inspiration"></a>
+
 ## 💡 Inspiration
 
-> I got the idea for `@mcp-ts` while working on 🌐 **[MCP Assistant](https://mcp-assistant.in)**.
+> I got the idea for `@mcp-ts` while working on **[MCP Assistant](https://mcp-assistant.in)**.
 As the project grew, I had a few problems: storage, using different AI frameworks like LangGraph and ADK for different use cases, and figuring out how to get progressive SSE updates at each step so I could see what was happening.
 So with that idea in mind, I built this SDK to make setup easier and keep the user experience smooth.
 That’s how `@mcp-ts` started.
@@ -108,6 +117,8 @@ That’s how `@mcp-ts` started.
 </div>
 
 <br/>
+
+<a id="sdk-setup-mcp-tssdk"></a>
 
 ## 🛠️ SDK Setup (@mcp-ts/sdk)
 
@@ -128,7 +139,7 @@ The SDK supports multiple storage backends out of the box:
 Working reference: [examples/next](examples/next)
 
 <details>
-<summary><strong>🖥️ Server-Side (Next.js)</strong></summary>
+<summary><strong>Server-Side (Next.js)</strong></summary>
 
 ```typescript
 // app/api/mcp/route.ts
@@ -147,7 +158,7 @@ export const { GET, POST } = createNextMcpHandler({
 </details>
 
 <details>
-<summary><strong>🎯 Client-Side (React)</strong></summary>
+<summary><strong>Client-Side (React)</strong></summary>
 
 ```typescript
 'use client';
@@ -353,11 +364,13 @@ export function ToolRenderer() {
 
 </details>
 
+<a id="documentation"></a>
+
 ## 📚 Documentation
 
 Full documentation is available at: **[Docs](https://docs.mcp-assistant.in/)**
 
-### 🗂️ Topics Covered:
+### 🗂️ Topics Covered
 
 - **[Getting Started](https://docs.mcp-assistant.in/get-started)** - Quick setup and overview
 - **[Installation](https://docs.mcp-assistant.in/install)** - Detailed installation guide
@@ -365,6 +378,8 @@ Full documentation is available at: **[Docs](https://docs.mcp-assistant.in/)**
 - **[Next.js Integration](https://docs.mcp-assistant.in/nextjs)** - Complete Next.js examples
 - **[React Hook Guide](https://docs.mcp-assistant.in/react)** - Using the useMcp hook
 - **[API Reference](https://docs.mcp-assistant.in/api-reference/server)** - Complete API documentation
+
+<a id="environment-setup"></a>
 
 ## ⚙️ Environment Setup
 
@@ -374,13 +389,13 @@ The library supports multiple storage backends. You can explicitly select one us
 
 ### 🧷 Configuration Examples
 
-1.  **<img src="docs/images/storage-backend/redis.svg" width="20" height="20" align="center" /> Redis** (Recommended for production)
+1.  **Redis** (Recommended for production)
     ```bash
     MCP_TS_STORAGE_TYPE=redis
     REDIS_URL=redis://localhost:6379
     ```
 
-2.  **<img src="docs/images/storage-backend/sqlite.svg" width="20" height="20" align="center" /> SQLite** (Fast & Persistent)
+2.  **SQLite** (Fast & Persistent)
     ```bash
     MCP_TS_STORAGE_TYPE=sqlite
     # Optional path
@@ -393,18 +408,20 @@ The library supports multiple storage backends. You can explicitly select one us
     NEON_DATABASE_URL=postgresql://user:password@host.neon.tech/dbname?sslmode=verify-full&channel_binding=require
     ```
 
-4.  **<img src="docs/images/storage-backend/filesystem.svg" width="20" height="20" align="center" /> File System** (Great for local dev)
+4.  **File System** (Great for local dev)
     ```bash
     MCP_TS_STORAGE_TYPE=file
     MCP_TS_STORAGE_FILE=./sessions.json
     ```
 
-5.  **<img src="docs/images/storage-backend/memory.svg" width="20" height="20" align="center" /> In-Memory** (Default for testing)
+5.  **In-Memory** (Default for testing)
     ```bash
     MCP_TS_STORAGE_TYPE=memory
     ```
 
 ---
+
+<a id="gateway-setup-mcpassistant-gateway"></a>
 
 ## 🐍 Gateway Setup (mcpassistant-gateway)
 
@@ -429,6 +446,8 @@ uvx mcpassistant-gateway run --name "local-files"
 ```
 
 ---
+
+<a id="architecture"></a>
 
 ## 🏗️ Architecture
 
@@ -473,7 +492,7 @@ graph LR
 > [!NOTE]
 > This package (`@mcp-ts/sdk`) provides a unified MCP client with support for adapters and storage backends such as AI SDK, Mastra, LangChain, and Redis.
 > Adapters and storage backends are loaded via **optional peer dependencies** and must be installed independently. This ensures your application only includes the integrations you explicitly choose, keeping bundle size small and avoiding unnecessary dependencies.
-> The SDK includes built-in support for **Memory** and **File** storage, while additional backends (such as Redis) and adapters can be added without impacting users who don’t need them.
+> The SDK includes built-in support for **Memory** and **File** storage, while additional backends (such as Redis) and adapters can be added without impacting users who don't need them.
 
 For more details, refer to the documentation and follow the **installation guide for each adapter or storage backend**.
 
@@ -483,6 +502,8 @@ For more details, refer to the documentation and follow the **installation guide
 - [Redis Storage Installation Guide](https://docs.mcp-assistant.in/storage/redis)
 
 
+<a id="contributing"></a>
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to contribute.
@@ -491,7 +512,6 @@ Contributions are welcome! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for 
 <br />
 
 <p align="center">
-  <em> Thanks for visiting ✨ @mcp-ts!</em><br><br>
-  <img src="https://visitor-badge.laobi.icu/badge?page_id=zonlabs.mcp-ts&style=for-the-badge&color=00d4ff" alt="Views">
+  <em>Thanks for visiting @mcp-ts!</em>
 </p>
 
