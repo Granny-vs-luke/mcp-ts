@@ -1,3 +1,8 @@
+---
+name: mcp-assistant
+description: Use when a task needs connected MCP servers, external services, dynamic MCP tool discovery, schema inspection, sandboxed MCP execution, or routing across many possible MCP tools.
+---
+
 # MCP Assistant
 
 Use MCP Assistant when a task needs tools from connected MCP servers, especially when many possible servers or tools may be available. Prefer MCP Assistant's discovery and routing tools instead of loading every downstream MCP tool directly into the agent context.
