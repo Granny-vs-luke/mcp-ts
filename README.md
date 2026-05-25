@@ -31,6 +31,30 @@
 
 <br />
 
+## Why does `mcp-ts or toolkit` even exist?
+
+MCP makes it possible for AI applications to talk to tools, prompts, and resources, but building applications on top of MCP quickly becomes more than calling `listTools()` and `callTool()`.
+
+You need to manage user sessions, OAuth flows, reconnects, storage, browser updates, framework adapters, and on-demand tool discovery so agents can load and call only what they need instead of flooding the model context, similar to Claude Code's [advanced tool use](https://www.anthropic.com/engineering/advanced-tool-use).
+
+`mcp-ts/toolkit` exists to handle that application layer while keeping your MCP data in infrastructure you own or choose. See [storage backends](https://docs.mcp-assistant.in/storage-backends/overview) and [framework adapters](https://docs.mcp-assistant.in/ai-adapters/overview).
+
+It gives you a practical foundation for building MCP-native apps:
+
+- Have multiple users using your application
+- Already using AI SDK, LangChain, Mastra, and AG-UI Protocol where handling oauth, tokens management for mcp clients seems overhead
+- Reduce large model context with on-demand tool discovery through `ToolRouter`
+- Render interactive MCP Apps in your application.
+- Run programmatic tool calling inside a secure sandbox with `CodeMode`
+
+In short: the official MCP SDK gives you the protocol building blocks. `mcp-ts/toolkit` gives you the application layer for building MCP applications around them.
+
+### When you may not need it
+
+If you already use a managed service/platform such as Smithery, Strata, Composio, or a similar SDK, you may not need `mcp-ts/toolkit`.
+
+---
+
 ## 📑 Table of Contents
 
 - [Features](#features)
@@ -57,8 +81,8 @@
 | Package | Description | Install |
 | :--- | :--- | :--- |
 | **[@mcp-ts/sdk](src)** | Core TypeScript/JavaScript SDK for client applications. | `npm i @mcp-ts/sdk` |
-| **[@mcp-ts/tool-router](packages/tool-router)** | ToolRouter for dynamic tool discovery + routing across many MCP servers. | `npm i @mcp-ts/tool-router` |
-| **[@mcp-ts/codemode](packages/code-mode)** | CodeMode: sandboxed program execution for workflow/tool calling. | `npm i @mcp-ts/codemode` |
+| **[@mcp-ts/tool-router](packages/tool-router)** | ToolRouter for dynamic tool discovery across many MCP servers. | `npm i @mcp-ts/tool-router` |
+| **[@mcp-ts/codemode](packages/code-mode)** | CodeMode: sandboxed program execution for tool calling. | `npm i @mcp-ts/codemode` |
 | **[mcpassistant-gateway](packages/local-gateway)** | Python bridge for local MCP support in remote apps. | `pip install mcpassistant-gateway` |
 
 ---
@@ -77,7 +101,7 @@ Most features are available out-of-the-box in the **TypeScript SDK**:
 - **MCP Protocol** - Support for tools, prompts, and resources
 - **Agent Adapters** - Built-in adapters for AI SDK, LangChain, Mastra, and AG-UI
 - **MCP Apps Extension (SEP-1865)** - Interactive UI-driven tool interfaces
-- **ToolRouter** - Discover tools on-demand and route calls across many MCP servers (reduces context bloat)
+- **ToolRouter** - Discover tools on-demand across multiple MCP servers (reduces context bloat)
 
 <a id="examples"></a>
 
