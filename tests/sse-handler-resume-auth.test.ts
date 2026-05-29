@@ -232,6 +232,8 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
       transportType: 'streamable-http',
       createdAt: Date.now(),
       active: false,
+    });
+    await storage.patchCredentials('user-5', 'auth-session', {
       oauthState: {
         nonce: 'nonce123',
         sessionId: 'auth-session',

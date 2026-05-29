@@ -35,14 +35,15 @@ test.describe('MemoryStorageBackend', () => {
             const session = createMockSession();
             await storage.create(session);
 
-            await storage.update(session.userId, session.sessionId, {
-                active: true,
-                tokens: createMockTokens()
-            });
+            const tokens = createMockTokens();
+            await storage.update(session.userId, session.sessionId, { active: true });
+            await storage.patchCredentials(session.userId, session.sessionId, { tokens });
 
             const retrieved = await storage.get(session.userId, session.sessionId);
+            const credentials = await storage.getCredentials(session.userId, session.sessionId);
             expect(retrieved?.active).toBe(true);
-            expect(retrieved?.tokens).toBeDefined();
+            expect((retrieved as any)?.tokens).toBeUndefined();
+            expect(credentials?.tokens).toEqual(tokens);
             expect(retrieved?.serverId).toBe(session.serverId);
         });
 

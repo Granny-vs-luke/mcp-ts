@@ -127,7 +127,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * @throws Error if session doesn't exist (session must be created by controller layer)
      */
     private async saveCredentials(data: Partial<SessionCredentials>): Promise<void> {
-        await sessions.updateCredentials(this.userId, this.sessionId, data);
+        await sessions.patchCredentials(this.userId, this.sessionId, data);
     }
 
     /**

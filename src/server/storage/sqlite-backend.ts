@@ -1,5 +1,5 @@
 import type { Database } from 'better-sqlite3';
-import type { SessionStore, Session, SessionWithCredentials, SessionCredentials } from './types.js';
+import type { SessionStore, Session, SessionCredentials } from './types.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { generateSessionId } from '../../shared/utils.js';
@@ -12,12 +12,14 @@ export interface SqliteStorageOptions {
 export class SqliteStorage implements SessionStore {
     private db: Database | null = null;
     private table: string;
+    private credentialsTable: string;
     private initialized = false;
     private dbPath: string;
 
     constructor(options: SqliteStorageOptions = {}) {
         this.dbPath = options.path || './sessions.db';
         this.table = options.table || 'mcp_sessions';
+        this.credentialsTable = `${this.table}_credentials`;
     }
 
     async init(): Promise<void> {
@@ -34,6 +36,7 @@ export class SqliteStorage implements SessionStore {
             }
 
             this.db = new DatabaseConstructor(this.dbPath);
+            this.db.pragma('foreign_keys = ON');
             this.db.exec(`
                 CREATE TABLE IF NOT EXISTS ${this.table} (
                     sessionId TEXT PRIMARY KEY,
@@ -42,6 +45,13 @@ export class SqliteStorage implements SessionStore {
                     expiresAt INTEGER
                 );
                 CREATE INDEX IF NOT EXISTS idx_${this.table}_userId ON ${this.table}(userId);
+                CREATE TABLE IF NOT EXISTS ${this.credentialsTable} (
+                    sessionId TEXT NOT NULL,
+                    userId TEXT NOT NULL,
+                    data TEXT NOT NULL,
+                    PRIMARY KEY (userId, sessionId),
+                    FOREIGN KEY (sessionId) REFERENCES ${this.table}(sessionId) ON DELETE CASCADE
+                );
             `);
 
             this.initialized = true;
@@ -66,7 +76,7 @@ export class SqliteStorage implements SessionStore {
         return generateSessionId();
     }
 
-    async create(session: SessionWithCredentials, ttl?: number): Promise<void> {
+    async create(session: Session, ttl?: number): Promise<void> {
         this.ensureInitialized();
         const { sessionId, userId } = session;
 
@@ -89,7 +99,7 @@ export class SqliteStorage implements SessionStore {
         }
     }
 
-    async update(userId: string, sessionId: string, data: Partial<SessionWithCredentials>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
         this.ensureInitialized();
         if (!sessionId || !userId) {
             throw new Error('userId and sessionId required');
@@ -110,11 +120,30 @@ export class SqliteStorage implements SessionStore {
         stmt.run(JSON.stringify(updatedSession), expiresAt, sessionId, userId);
     }
 
-    async updateCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
-        await this.update(userId, sessionId, data, ttl);
+    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+        this.ensureInitialized();
+        if (!await this.get(userId, sessionId)) {
+            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
+        }
+
+        const current = await this.getCredentials(userId, sessionId) ?? { sessionId, userId };
+        const credentials = { ...current, ...data, sessionId, userId };
+        const stmt = this.db!.prepare(
+            `INSERT INTO ${this.credentialsTable} (sessionId, userId, data)
+             VALUES (?, ?, ?)
+             ON CONFLICT(userId, sessionId) DO UPDATE SET data = excluded.data`
+        );
+        stmt.run(sessionId, userId, JSON.stringify(credentials));
+
+        if (ttl !== undefined) {
+            const expiresAt = Date.now() + ttl * 1000;
+            this.db!.prepare(
+                `UPDATE ${this.table} SET expiresAt = ? WHERE sessionId = ? AND userId = ?`
+            ).run(expiresAt, sessionId, userId);
+        }
     }
 
-    async get(userId: string, sessionId: string): Promise<SessionWithCredentials | null> {
+    async get(userId: string, sessionId: string): Promise<Session | null> {
         this.ensureInitialized();
 
         const stmt = this.db!.prepare(
@@ -123,26 +152,22 @@ export class SqliteStorage implements SessionStore {
         const row = stmt.get(sessionId, userId) as { data: string } | undefined;
 
         if (!row) return null;
-        return JSON.parse(row.data) as SessionWithCredentials;
+        return JSON.parse(row.data) as Session;
     }
 
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
-        const session = await this.get(userId, sessionId);
-        if (!session) return null;
+        this.ensureInitialized();
+        if (!await this.get(userId, sessionId)) return null;
 
-        return {
-            sessionId,
-            userId,
-            clientInformation: session.clientInformation,
-            tokens: session.tokens,
-            codeVerifier: session.codeVerifier,
-            clientId: session.clientId,
-            oauthState: session.oauthState,
-        };
+        const stmt = this.db!.prepare(
+            `SELECT data FROM ${this.credentialsTable} WHERE sessionId = ? AND userId = ?`
+        );
+        const row = stmt.get(sessionId, userId) as { data: string } | undefined;
+        return row ? JSON.parse(row.data) as SessionCredentials : { sessionId, userId };
     }
 
     async clearCredentials(userId: string, sessionId: string): Promise<void> {
-        await this.updateCredentials(userId, sessionId, {
+        await this.patchCredentials(userId, sessionId, {
             clientInformation: null,
             tokens: null,
             codeVerifier: null,
@@ -178,6 +203,9 @@ export class SqliteStorage implements SessionStore {
         const stmt = this.db!.prepare(
             `DELETE FROM ${this.table} WHERE sessionId = ? AND userId = ?`
         );
+        this.db!.prepare(
+            `DELETE FROM ${this.credentialsTable} WHERE sessionId = ? AND userId = ?`
+        ).run(sessionId, userId);
         stmt.run(sessionId, userId);
     }
 
@@ -190,6 +218,7 @@ export class SqliteStorage implements SessionStore {
 
     async clearAll(): Promise<void> {
         this.ensureInitialized();
+        this.db!.prepare(`DELETE FROM ${this.credentialsTable}`).run();
         const stmt = this.db!.prepare(`DELETE FROM ${this.table}`);
         stmt.run();
     }
@@ -201,6 +230,14 @@ export class SqliteStorage implements SessionStore {
             `DELETE FROM ${this.table} WHERE expiresAt IS NOT NULL AND expiresAt < ?`
         );
         stmt.run(now);
+        this.db!.prepare(
+            `DELETE FROM ${this.credentialsTable}
+             WHERE NOT EXISTS (
+                SELECT 1 FROM ${this.table}
+                WHERE ${this.table}.sessionId = ${this.credentialsTable}.sessionId
+                  AND ${this.table}.userId = ${this.credentialsTable}.userId
+             )`
+        ).run();
     }
 
     async disconnect(): Promise<void> {

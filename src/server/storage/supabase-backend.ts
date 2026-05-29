@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { SessionStore, Session, SessionWithCredentials, SessionCredentials } from './types.js';
+import type { SessionStore, Session, SessionCredentials } from './types.js';
 import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
@@ -65,16 +65,6 @@ export class SupabaseStorageBackend implements SessionStore {
         };
     }
 
-    private splitCredentialData(data: Partial<SessionWithCredentials>): Partial<SessionCredentials> {
-        const credentialData: Partial<SessionCredentials> = {};
-        if ('clientInformation' in data) credentialData.clientInformation = data.clientInformation;
-        if ('tokens' in data) credentialData.tokens = data.tokens;
-        if ('codeVerifier' in data) credentialData.codeVerifier = data.codeVerifier;
-        if ('clientId' in data) credentialData.clientId = data.clientId;
-        if ('oauthState' in data) credentialData.oauthState = data.oauthState;
-        return credentialData;
-    }
-
     private hasCredentialData(data: Partial<SessionCredentials>): boolean {
         return (
             'clientInformation' in data ||
@@ -85,7 +75,7 @@ export class SupabaseStorageBackend implements SessionStore {
         );
     }
 
-    async create(session: SessionWithCredentials, ttl?: number): Promise<void> {
+    async create(session: Session, ttl?: number): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
@@ -116,13 +106,9 @@ export class SupabaseStorageBackend implements SessionStore {
             throw new Error(`Failed to create session in Supabase: ${error.message}`);
         }
 
-        const credentialData = this.splitCredentialData(session);
-        if (this.hasCredentialData(credentialData)) {
-            await this.updateCredentials(userId, sessionId, credentialData, ttl);
-        }
     }
 
-    async update(userId: string, sessionId: string, data: Partial<SessionWithCredentials>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
         const updateData: any = {
             expires_at: new Date(Date.now() + effectiveTtl * 1000).toISOString(),
@@ -138,8 +124,6 @@ export class SupabaseStorageBackend implements SessionStore {
         if ('headers' in data) updateData.headers = encryptObject(data.headers);
         if ('authUrl' in data) updateData.auth_url = data.authUrl ?? null;
 
-        const credentialData = this.splitCredentialData(data);
-        const shouldUpdateCredentials = this.hasCredentialData(credentialData);
         const shouldUpdateSession = Object.keys(updateData).some((key) => !['expires_at', 'updated_at'].includes(key)) || ttl !== undefined;
 
         let updatedRows: any[] | null = null;
@@ -172,12 +156,9 @@ export class SupabaseStorageBackend implements SessionStore {
             throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
 
-        if (shouldUpdateCredentials) {
-            await this.updateCredentials(userId, sessionId, credentialData, ttl);
-        }
     }
 
-    async updateCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
         if (!this.hasCredentialData(data)) return;
 
         const row: any = {
@@ -216,7 +197,7 @@ export class SupabaseStorageBackend implements SessionStore {
         }
     }
 
-    async get(userId: string, sessionId: string): Promise<SessionWithCredentials | null> {
+    async get(userId: string, sessionId: string): Promise<Session | null> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('*')
@@ -231,11 +212,7 @@ export class SupabaseStorageBackend implements SessionStore {
 
         if (!data) return null;
 
-        const credentials = await this.getCredentials(userId, sessionId);
-        return {
-            ...this.mapRowToSessionData(data),
-            ...(credentials ?? {}),
-        };
+        return this.mapRowToSessionData(data);
     }
 
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {

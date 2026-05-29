@@ -42,8 +42,6 @@ export interface SessionCredentials {
     oauthState?: OAuthState | null;
 }
 
-export type SessionWithCredentials = Session & Omit<Partial<SessionCredentials>, 'sessionId' | 'userId'>;
-
 export type SessionMutationType = 'create' | 'update' | 'delete';
 
 export interface SessionMutationEvent {
@@ -51,8 +49,8 @@ export interface SessionMutationEvent {
     userId: string;
     sessionId: string;
     timestamp: number;
-    session?: SessionWithCredentials;
-    patch?: Partial<SessionWithCredentials>;
+    session?: Session;
+    patch?: Partial<Session>;
     ttl?: number;
 }
 
@@ -89,7 +87,7 @@ export interface SessionStore {
      * @param session - Session data to create
      * @param ttl - Optional TTL in seconds (defaults to backend's default)
      */
-    create(session: SessionWithCredentials, ttl?: number): Promise<void>;
+    create(session: Session, ttl?: number): Promise<void>;
 
     /**
      * Updates an existing session with partial data. Throws if session does not exist.
@@ -98,18 +96,18 @@ export interface SessionStore {
      * @param data - Partial session data to update
      * @param ttl - Optional TTL in seconds (defaults to backend's default)
      */
-    update(userId: string, sessionId: string, data: Partial<SessionWithCredentials>, ttl?: number): Promise<void>;
+    update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void>;
 
     /**
-     * Updates only runtime credentials for an existing session.
+     * Patches runtime credentials for an existing session.
      * These values are separated from connection metadata in durable SQL stores.
      */
-    updateCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void>;
+    patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void>;
 
     /**
      * Retrieves a session
      */
-    get(userId: string, sessionId: string): Promise<SessionWithCredentials | null>;
+    get(userId: string, sessionId: string): Promise<Session | null>;
 
     /**
      * Retrieves runtime credentials for a session.

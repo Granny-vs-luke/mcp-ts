@@ -1,4 +1,4 @@
-import type { SessionStore, Session, SessionWithCredentials, SessionCredentials } from './types.js';
+import type { SessionStore, Session, SessionCredentials } from './types.js';
 import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
@@ -113,16 +113,6 @@ export class NeonStorageBackend implements SessionStore {
         };
     }
 
-    private splitCredentialData(data: Partial<SessionWithCredentials>): Partial<SessionCredentials> {
-        const credentialData: Partial<SessionCredentials> = {};
-        if ('clientInformation' in data) credentialData.clientInformation = data.clientInformation;
-        if ('tokens' in data) credentialData.tokens = data.tokens;
-        if ('codeVerifier' in data) credentialData.codeVerifier = data.codeVerifier;
-        if ('clientId' in data) credentialData.clientId = data.clientId;
-        if ('oauthState' in data) credentialData.oauthState = data.oauthState;
-        return credentialData;
-    }
-
     private hasCredentialData(data: Partial<SessionCredentials>): boolean {
         return (
             'clientInformation' in data ||
@@ -133,7 +123,7 @@ export class NeonStorageBackend implements SessionStore {
         );
     }
 
-    async create(session: SessionWithCredentials, ttl?: number): Promise<void> {
+    async create(session: Session, ttl?: number): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
@@ -181,13 +171,9 @@ export class NeonStorageBackend implements SessionStore {
             throw new Error(`Failed to create session in Neon: ${error.message}`);
         }
 
-        const credentialData = this.splitCredentialData(session);
-        if (this.hasCredentialData(credentialData)) {
-            await this.updateCredentials(userId, sessionId, credentialData, ttl);
-        }
     }
 
-    async update(userId: string, sessionId: string, data: Partial<SessionWithCredentials>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
         const currentSession = await this.get(userId, sessionId);
         if (!currentSession) {
             throw new Error(`Session ${sessionId} not found for userId ${userId}`);
@@ -245,13 +231,9 @@ export class NeonStorageBackend implements SessionStore {
             }
         }
 
-        const credentialData = this.splitCredentialData(data);
-        if (this.hasCredentialData(credentialData)) {
-            await this.updateCredentials(userId, sessionId, credentialData, ttl);
-        }
     }
 
-    async updateCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
         if (!this.hasCredentialData(data)) return;
 
         await this.sql.query(
@@ -299,7 +281,7 @@ export class NeonStorageBackend implements SessionStore {
         }
     }
 
-    async get(userId: string, sessionId: string): Promise<SessionWithCredentials | null> {
+    async get(userId: string, sessionId: string): Promise<Session | null> {
         try {
             const rows = await this.sql.query(
                 `SELECT * FROM ${this.tableName} WHERE user_id = $1 AND session_id = $2`,
@@ -308,11 +290,7 @@ export class NeonStorageBackend implements SessionStore {
 
             if (!rows[0]) return null;
 
-            const credentials = await this.getCredentials(userId, sessionId);
-            return {
-                ...this.mapRowToSessionData(rows[0]),
-                ...(credentials ?? {}),
-            };
+            return this.mapRowToSessionData(rows[0]);
         } catch (error) {
             console.error('[NeonStorage] Failed to get session:', error);
             return null;

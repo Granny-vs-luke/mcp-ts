@@ -204,7 +204,7 @@ test.describe('SupabaseStorageBackend', () => {
             expect(expiresMs).toBeLessThanOrEqual(Date.now() + ttl * 1000 + 100);
         });
 
-        test('persists JSONB fields: tokens, headers, clientInformation, oauthState', async () => {
+        test('keeps headers on sessions and credentials in mcp_credentials', async () => {
             const tokens = createMockTokens();
             const oauthState = {
                 nonce: 'nonce-1',
@@ -212,12 +212,9 @@ test.describe('SupabaseStorageBackend', () => {
                 serverId: 'test-server',
                 createdAt: Date.now(),
             };
-            const session = createMockSession({
-                tokens,
-                headers: { Authorization: 'Bearer xyz' },
-                oauthState,
-            });
+            const session = createMockSession({ headers: { Authorization: 'Bearer xyz' } });
             await storage.create(session);
+            await storage.patchCredentials(session.userId, session.sessionId, { tokens, oauthState });
 
             const row = mockSupabase._listSessions()[0];
             const credentialsRow = mockSupabase._listCredentials()[0];
@@ -241,16 +238,15 @@ test.describe('SupabaseStorageBackend', () => {
             await storage.create(session);
 
             const newTokens = createMockTokens();
-            await storage.update(session.userId, session.sessionId, {
-                active: true,
-                tokens: newTokens,
-                transportType: 'streamable-http',
-            });
+            await storage.update(session.userId, session.sessionId, { active: true, transportType: 'streamable-http' });
+            await storage.patchCredentials(session.userId, session.sessionId, { tokens: newTokens });
 
             const retrieved = await storage.get(session.userId, session.sessionId);
+            const credentials = await storage.getCredentials(session.userId, session.sessionId);
             // Updated
             expect(retrieved?.active).toBe(true);
-            expect(retrieved?.tokens).toEqual(newTokens);
+            expect((retrieved as any)?.tokens).toBeUndefined();
+            expect(credentials?.tokens).toEqual(newTokens);
             expect(retrieved?.transportType).toBe('streamable-http');
             // Preserved
             expect(retrieved?.serverId).toBe(session.serverId);
@@ -259,31 +255,32 @@ test.describe('SupabaseStorageBackend', () => {
         });
 
         test('handles OAuth token refresh safely', async () => {
-            const session = createMockSession({ tokens: createMockTokens() });
+            const session = createMockSession();
             await storage.create(session);
 
             const refreshed = createMockTokens({
                 access_token:  'new-access-token',
                 refresh_token: 'new-refresh-token',
             });
-            await storage.update(session.userId, session.sessionId, { tokens: refreshed });
+            await storage.patchCredentials(session.userId, session.sessionId, { tokens: refreshed });
 
-            const retrieved = await storage.get(session.userId, session.sessionId);
-            expect(retrieved?.tokens?.access_token).toBe('new-access-token');
-            expect(retrieved?.tokens?.refresh_token).toBe('new-refresh-token');
+            const credentials = await storage.getCredentials(session.userId, session.sessionId);
+            expect(credentials?.tokens?.access_token).toBe('new-access-token');
+            expect(credentials?.tokens?.refresh_token).toBe('new-refresh-token');
         });
 
         test('clears OAuth tokens when credentials are invalidated', async () => {
-            const session = createMockSession({ tokens: createMockTokens() });
+            const session = createMockSession();
             await storage.create(session);
+            await storage.patchCredentials(session.userId, session.sessionId, { tokens: createMockTokens() });
 
-            await storage.update(session.userId, session.sessionId, { tokens: undefined });
+            await storage.patchCredentials(session.userId, session.sessionId, { tokens: null });
 
             const row = mockSupabase._listCredentials()[0];
-            const retrieved = await storage.get(session.userId, session.sessionId);
+            const credentials = await storage.getCredentials(session.userId, session.sessionId);
 
             expect(row.tokens).toBeNull();
-            expect(retrieved?.tokens).toBeNull();
+            expect(credentials?.tokens).toBeNull();
         });
 
         test('refreshes expires_at with a new TTL', async () => {

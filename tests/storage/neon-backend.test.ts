@@ -261,20 +261,20 @@ test.describe('NeonStorageBackend', () => {
             serverId: 'test-server',
             createdAt: Date.now(),
         };
-        const session = createMockSession({
-            tokens: createMockTokens(),
-            headers: { Authorization: 'Bearer test' },
-            oauthState,
-        });
+        const tokens = createMockTokens();
+        const session = createMockSession({ headers: { Authorization: 'Bearer test' } });
 
         await storage.create(session);
+        await storage.patchCredentials(session.userId, session.sessionId, { tokens, oauthState });
 
         const retrieved = await storage.get(session.userId, session.sessionId);
+        const credentials = await storage.getCredentials(session.userId, session.sessionId);
         expect(retrieved?.sessionId).toBe(session.sessionId);
         expect(retrieved?.userId).toBe(session.userId);
-        expect(retrieved?.tokens).toEqual(session.tokens);
+        expect((retrieved as any)?.tokens).toBeUndefined();
+        expect(credentials?.tokens).toEqual(tokens);
         expect(retrieved?.headers).toEqual(session.headers);
-        expect(retrieved?.oauthState).toEqual(oauthState);
+        expect(credentials?.oauthState).toEqual(oauthState);
     });
 
     test('throws if a session already exists', async () => {
@@ -289,15 +289,14 @@ test.describe('NeonStorageBackend', () => {
         await storage.create(session);
 
         const tokens = createMockTokens({ access_token: 'refreshed-token' });
-        await storage.update(session.userId, session.sessionId, {
-            active: false,
-            tokens,
-            transportType: 'streamable-http',
-        });
+        await storage.update(session.userId, session.sessionId, { active: false, transportType: 'streamable-http' });
+        await storage.patchCredentials(session.userId, session.sessionId, { tokens });
 
         const retrieved = await storage.get(session.userId, session.sessionId);
+        const credentials = await storage.getCredentials(session.userId, session.sessionId);
         expect(retrieved?.active).toBe(false);
-        expect(retrieved?.tokens).toEqual(tokens);
+        expect((retrieved as any)?.tokens).toBeUndefined();
+        expect(credentials?.tokens).toEqual(tokens);
         expect(retrieved?.transportType).toBe('streamable-http');
         expect(retrieved?.serverUrl).toBe(session.serverUrl);
     });

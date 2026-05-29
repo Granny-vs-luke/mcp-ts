@@ -52,7 +52,7 @@ test.describe('StorageOAuthClientProvider OAuth state', () => {
     expect(nonce).toBeTruthy();
     expect(stateSessionId).toBe(sessionId);
 
-    const stored = await sessions.get(userId, sessionId);
+    const stored = await sessions.getCredentials(userId, sessionId);
     expect(stored?.oauthState).toEqual(expect.objectContaining({
       nonce,
       sessionId,
@@ -87,8 +87,8 @@ test.describe('StorageOAuthClientProvider OAuth state', () => {
       error: 'OAuth state mismatch',
     });
 
-    const stored = await sessions.get(userId, sessionId);
-    await sessions.update(userId, sessionId, {
+    const stored = await sessions.getCredentials(userId, sessionId);
+    await sessions.patchCredentials(userId, sessionId, {
       oauthState: {
         ...stored!.oauthState!,
         createdAt: Date.now() - STATE_EXPIRATION_MS - 1,
@@ -107,7 +107,7 @@ test.describe('StorageOAuthClientProvider OAuth state', () => {
 
     await provider.consumeState(state);
 
-    const stored = await sessions.get(userId, sessionId);
+    const stored = await sessions.getCredentials(userId, sessionId);
     expect(stored?.oauthState ?? null).toBeNull();
     await expect(provider.checkState(state)).resolves.toMatchObject({
       valid: false,
