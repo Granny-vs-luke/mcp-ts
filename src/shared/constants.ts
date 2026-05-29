@@ -13,9 +13,6 @@ export const DEFAULT_HEARTBEAT_INTERVAL_MS = 30000; // 30 seconds
 // Redis Key Prefixes
 export const REDIS_KEY_PREFIX = 'mcp:session:';
 
-// Token Management
-export const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000; // 5 minute buffer before expiry
-
 // Client Information
 export const DEFAULT_CLIENT_NAME = 'MCP Assistant';
 export const DEFAULT_CLIENT_URI = 'https://mcp-assistant.in';

@@ -13,7 +13,6 @@ import {
     DEFAULT_POLICY_URI,
     SOFTWARE_ID,
     SOFTWARE_VERSION,
-    TOKEN_EXPIRY_BUFFER_MS,
 } from '../../shared/constants.js';
 
 /**
@@ -29,8 +28,6 @@ export interface AgentsOAuthProvider extends OAuthClientProvider {
     ): Promise<{ valid: boolean; serverId?: string; error?: string }>;
     consumeState(state: string): Promise<void>;
     deleteCodeVerifier(): Promise<void>;
-    isTokenExpired(): boolean;
-    setTokenExpiresAt(expiresAt: number): void;
 }
 
 export interface StorageOAuthClientProviderOptions {
@@ -66,7 +63,6 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     private _authUrl: string | undefined;
     private _clientId: string | undefined;
     private onRedirectCallback?: (url: string) => void;
-    private tokenExpiresAt?: number;
 
     /**
      * Creates a new session-backed OAuth provider
@@ -170,13 +166,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * Stores OAuth tokens
      */
     async saveTokens(tokens: OAuthTokens): Promise<void> {
-        const data: Partial<Session> = { tokens };
-
-        if (tokens.expires_in) {
-            this.tokenExpiresAt = Date.now() + (tokens.expires_in * 1000) - TOKEN_EXPIRY_BUFFER_MS;
-        }
-
-        await this.saveSessionData(data);
+        await this.saveSessionData({ tokens });
     }
 
     get authUrl() {
@@ -257,16 +247,5 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         }
 
         return data.tokens;
-    }
-
-    isTokenExpired(): boolean {
-        if (!this.tokenExpiresAt) {
-            return false;
-        }
-        return Date.now() >= this.tokenExpiresAt;
-    }
-
-    setTokenExpiresAt(expiresAt: number): void {
-        this.tokenExpiresAt = expiresAt;
     }
 }

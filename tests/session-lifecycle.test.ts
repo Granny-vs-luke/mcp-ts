@@ -35,8 +35,7 @@ test.describe('Session Lifecycle Management', () => {
         // Mock internal methods to simulate success
         (client as any).initialize = async () => { 
             (client as any).oauthProvider = { 
-                tokens: async () => ({ access_token: 'valid' }),
-                isTokenExpired: () => false
+                tokens: async () => ({ access_token: 'valid' })
             };
             (client as any).client = { connect: async () => {} };
         };
@@ -87,8 +86,7 @@ test.describe('Session Lifecycle Management', () => {
         // Mock to throw generic error
         (client as any).initialize = async function() {
             this.oauthProvider = { 
-                tokens: async () => ({ access_token: 'valid' }),
-                isTokenExpired: () => false
+                tokens: async () => ({ access_token: 'valid' })
             };
             this.client = { connect: async () => {} }; // Needs to exist to pass check
         };
@@ -127,8 +125,7 @@ test.describe('Session Lifecycle Management', () => {
 
         (client as any).initialize = async function() {
             this.oauthProvider = {
-                tokens: async () => ({ access_token: 'valid' }),
-                isTokenExpired: () => false
+                tokens: async () => ({ access_token: 'valid' })
             };
             this.client = { connect: async () => {} };
         };
