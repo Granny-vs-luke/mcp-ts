@@ -112,7 +112,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * Loads OAuth credentials from the session store
      * @private
      */
-    private async loadCredentials(): Promise<SessionCredentials> {
+    private async getCredentials(): Promise<SessionCredentials> {
         const data = await sessions.getCredentials(this.userId, this.sessionId);
         if (!data) {
             return { userId: this.userId, sessionId: this.sessionId };
@@ -126,7 +126,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * @private
      * @throws Error if session doesn't exist (session must be created by controller layer)
      */
-    private async saveCredentials(data: Partial<SessionCredentials>): Promise<void> {
+    private async patchCredentials(data: Partial<SessionCredentials>): Promise<void> {
         await sessions.patchCredentials(this.userId, this.sessionId, data);
     }
 
@@ -134,7 +134,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * Retrieves stored OAuth client information
      */
     async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
-        const data = await this.loadCredentials();
+        const data = await this.getCredentials();
 
         if (data.clientId && !this._clientId) {
             this._clientId = data.clientId;
@@ -158,7 +158,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * Stores OAuth client information
      */
     async saveClientInformation(clientInformation: OAuthClientInformationFull): Promise<void> {
-        await this.saveCredentials({
+        await this.patchCredentials({
             clientInformation,
             clientId: clientInformation.client_id
         });
@@ -169,7 +169,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * Stores OAuth tokens
      */
     async saveTokens(tokens: OAuthTokens): Promise<void> {
-        await this.saveCredentials({ tokens });
+        await this.patchCredentials({ tokens });
     }
 
     get authUrl() {
@@ -178,7 +178,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
 
     async state(): Promise<string> {
         const nonce = nanoid(32);
-        await this.saveCredentials({
+        await this.patchCredentials({
             oauthState: {
                 nonce,
                 sessionId: this.sessionId,
@@ -232,7 +232,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
             throw new Error(result.error || "Invalid OAuth state");
         }
 
-        await this.saveCredentials({ oauthState: null });
+        await this.patchCredentials({ oauthState: null });
     }
 
     async redirectToAuthorization(authUrl: URL): Promise<void> {
@@ -259,21 +259,21 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
             } else if (scope === "verifier") {
                 updates.codeVerifier = null;
             }
-            await this.saveCredentials(updates);
+            await this.patchCredentials(updates);
         }
     }
 
     async saveCodeVerifier(verifier: string): Promise<void> {
-        const data = await this.loadCredentials();
+        const data = await this.getCredentials();
         if (data.codeVerifier) {
             return;
         }
 
-        await this.saveCredentials({ codeVerifier: verifier });
+        await this.patchCredentials({ codeVerifier: verifier });
     }
 
     async codeVerifier(): Promise<string> {
-        const data = await this.loadCredentials();
+        const data = await this.getCredentials();
 
         if (data.clientId && !this._clientId) {
             this._clientId = data.clientId;
@@ -286,11 +286,11 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async deleteCodeVerifier(): Promise<void> {
-        await this.saveCredentials({ codeVerifier: null });
+        await this.patchCredentials({ codeVerifier: null });
     }
 
     async tokens(): Promise<OAuthTokens | undefined> {
-        const data = await this.loadCredentials();
+        const data = await this.getCredentials();
 
         if (data.clientId && !this._clientId) {
             this._clientId = data.clientId;
