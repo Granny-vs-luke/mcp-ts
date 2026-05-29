@@ -23,16 +23,16 @@ function createAuthBroadcastChannel(): BroadcastChannel | null {
 function PopupCallbackContent() {
   const searchParams = useSearchParams();
   const code = searchParams.get("code");
-  const sessionId = searchParams.get("state");
+  const state = searchParams.get("state");
 
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const resolvedSessionId = sessionId || searchParams.get("sessionId");
+  const resolvedState = state || searchParams.get("sessionId");
 
   useEffect(() => {
-    if (!code || !resolvedSessionId) {
-      if (!code || !resolvedSessionId) {
+    if (!code || !resolvedState) {
+      if (!code || !resolvedState) {
         setStatus("error");
         setErrorMessage("Missing required OAuth parameters.");
       }
@@ -44,7 +44,8 @@ function PopupCallbackContent() {
     const handleResult = (event: MessageEvent) => {
       if (event.origin && event.origin !== window.location.origin) return;
       if (event.data?.type !== AUTH_RESULT_MESSAGE) return;
-      if (event.data.sessionId !== resolvedSessionId) return;
+      const resultState = typeof event.data.state === "string" ? event.data.state : event.data.sessionId;
+      if (resultState !== resolvedState) return;
 
       if (event.data.success) {
         setStatus("success");
@@ -60,7 +61,7 @@ function PopupCallbackContent() {
     channel?.addEventListener("message", handleResult);
     window.addEventListener("message", handleResult);
 
-    const payload = { type: AUTH_CODE_MESSAGE, code, sessionId: resolvedSessionId, state: resolvedSessionId };
+    const payload = { type: AUTH_CODE_MESSAGE, code, state: resolvedState, sessionId: resolvedState };
 
     if (window.opener) {
       try {
@@ -85,7 +86,7 @@ function PopupCallbackContent() {
       window.removeEventListener("message", handleResult);
       channel?.close();
     };
-  }, [code, resolvedSessionId]);
+  }, [code, resolvedState]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50/50 text-gray-900 font-sans p-4">

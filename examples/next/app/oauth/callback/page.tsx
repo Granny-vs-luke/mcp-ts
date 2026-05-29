@@ -46,9 +46,9 @@ function OAuthCallbackContent() {
       return;
     }
 
-    const sessionId = state || "";
+    const oauthState = state || "";
 
-    if (!sessionId) {
+    if (!oauthState) {
       queueMicrotask(() => {
         setStatus("error");
         setError("Invalid state parameter");
@@ -56,7 +56,7 @@ function OAuthCallbackContent() {
       return;
     }
 
-    finishAuth(sessionId, code)
+    finishAuth(oauthState, code)
       .then(() => {
         setStatus("success");
         setTimeout(() => {

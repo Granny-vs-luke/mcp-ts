@@ -266,7 +266,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
         id: '5',
         method: 'finishAuth',
         params: {
-          sessionId: 'nonce123.auth-session',
+          state: 'nonce123.auth-session',
           code: 'auth-code',
         },
       } as any);

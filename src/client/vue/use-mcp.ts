@@ -166,7 +166,7 @@ export interface McpClient {
     /**
      * Complete OAuth authorization
      */
-    finishAuth: (sessionId: string, code: string) => Promise<FinishAuthResult>;
+    finishAuth: (state: string, code: string) => Promise<FinishAuthResult>;
 
     /**
      * Explicitly resume OAuth flow for an existing session
@@ -573,12 +573,12 @@ export function useMcp(options: UseMcpOptions): McpClient {
     /**
      * Complete OAuth authorization
      */
-    const finishAuth = async (sessionId: string, code: string): Promise<FinishAuthResult> => {
+    const finishAuth = async (state: string, code: string): Promise<FinishAuthResult> => {
         if (!clientRef.value) {
             throw new Error('SSE client not initialized');
         }
 
-        return await clientRef.value.finishAuth(sessionId, code);
+        return await clientRef.value.finishAuth(state, code);
     };
 
     /**

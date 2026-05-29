@@ -506,9 +506,9 @@ export class SSEConnectionManager {
    */
   private async finishAuth(params: FinishAuthParams): Promise<FinishAuthResult> {
     const { code } = params;
-    const oauthState = params.state || params.sessionId;
+    const oauthState = params.state;
     const parsedState = parseOAuthState(oauthState);
-    const sessionId = parsedState?.sessionId || params.sessionId;
+    const sessionId = parsedState?.sessionId || oauthState;
 
     const session = await sessions.get(this.userId, sessionId);
     if (!session) {
