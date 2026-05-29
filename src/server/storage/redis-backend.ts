@@ -1,5 +1,5 @@
 import type { Redis } from 'ioredis';
-import type { SessionStore, Session } from './types.js';
+import type { SessionStore, Session, SessionWithCredentials, SessionCredentials } from './types.js';
 import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 
@@ -78,7 +78,7 @@ export class RedisStorageBackend implements SessionStore {
         return generateSessionId();
     }
 
-    async create(session: Session, ttl?: number): Promise<void> {
+    async create(session: SessionWithCredentials, ttl?: number): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
@@ -101,7 +101,7 @@ export class RedisStorageBackend implements SessionStore {
 
         await this.redis.sadd(userIdKey, sessionId);
     }
-    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<SessionWithCredentials>, ttl?: number): Promise<void> {
         const sessionKey = this.getSessionKey(userId, sessionId);
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
 
@@ -136,7 +136,11 @@ export class RedisStorageBackend implements SessionStore {
         }
     }
 
-    async get(userId: string, sessionId: string): Promise<Session | null> {
+    async updateCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+        await this.update(userId, sessionId, data, ttl);
+    }
+
+    async get(userId: string, sessionId: string): Promise<SessionWithCredentials | null> {
         try {
             const sessionKey = this.getSessionKey(userId, sessionId);
             const sessionDataStr = await this.redis.get(sessionKey);
@@ -145,12 +149,37 @@ export class RedisStorageBackend implements SessionStore {
                 return null;
             }
 
-            const Session: Session = JSON.parse(sessionDataStr);
-            return Session;
+            const session: SessionWithCredentials = JSON.parse(sessionDataStr);
+            return session;
         } catch (error) {
             console.error('[RedisStorageBackend] Failed to get session:', error);
             return null;
         }
+    }
+
+    async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
+        const session = await this.get(userId, sessionId);
+        if (!session) return null;
+
+        return {
+            sessionId,
+            userId,
+            clientInformation: session.clientInformation,
+            tokens: session.tokens,
+            codeVerifier: session.codeVerifier,
+            clientId: session.clientId,
+            oauthState: session.oauthState,
+        };
+    }
+
+    async clearCredentials(userId: string, sessionId: string): Promise<void> {
+        await this.updateCredentials(userId, sessionId, {
+            clientInformation: null,
+            tokens: null,
+            codeVerifier: null,
+            clientId: null,
+            oauthState: null,
+        });
     }
 
     async listIds(userId: string): Promise<string[]> {

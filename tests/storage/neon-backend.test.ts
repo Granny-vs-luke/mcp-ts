@@ -16,15 +16,23 @@ type NeonRow = {
     expires_at: string;
     active: boolean;
     headers?: Record<string, string>;
+    auth_url?: string | null;
+};
+
+type NeonCredentialsRow = {
+    id: string;
+    session_id: string;
+    user_id: string;
     client_information?: unknown;
     tokens?: unknown;
-    code_verifier?: string;
-    client_id?: string;
+    code_verifier?: unknown;
+    client_id?: string | null;
     oauth_state?: unknown;
 };
 
 function createMockNeonSql() {
     let sessions: NeonRow[] = [];
+    let credentials: NeonCredentialsRow[] = [];
     let simulateMissingTable = false;
 
     const query = async (text: string, params: unknown[] = []) => {
@@ -45,12 +53,8 @@ function createMockNeonSql() {
                 callbackUrl,
                 createdAt,
                 headers,
+                authUrl,
                 active,
-                clientInformation,
-                tokens,
-                codeVerifier,
-                clientId,
-                oauthState,
                 expiresAt,
             ] = params;
 
@@ -74,16 +78,46 @@ function createMockNeonSql() {
                 expires_at: expiresAt as string,
                 active: active as boolean,
                 headers: headers as Record<string, string> | undefined,
-                client_information: clientInformation,
-                tokens,
-                code_verifier: codeVerifier as string | undefined,
-                client_id: clientId as string | undefined,
-                oauth_state: oauthState,
+                auth_url: authUrl as string | null,
             });
             return [];
         }
 
-        if (normalized.startsWith('update public.mcp_sessions')) {
+        if (normalized.startsWith('insert into public.mcp_credentials')) {
+            const [
+                userId,
+                sessionId,
+                clientInformation,
+                tokens,
+                codeVerifier,
+                clientId,
+                oauthState,
+                hasClientInformation,
+                hasTokens,
+                hasCodeVerifier,
+                hasClientId,
+                hasOauthState,
+            ] = params;
+
+            let row = credentials.find((item) => item.user_id === userId && item.session_id === sessionId);
+            if (!row) {
+                row = {
+                    id: `credentials-${credentials.length + 1}`,
+                    user_id: userId as string,
+                    session_id: sessionId as string,
+                };
+                credentials.push(row);
+            }
+
+            if (hasClientInformation) row.client_information = clientInformation;
+            if (hasTokens) row.tokens = tokens;
+            if (hasCodeVerifier) row.code_verifier = codeVerifier;
+            if (hasClientId) row.client_id = clientId as string | null;
+            if (hasOauthState) row.oauth_state = oauthState;
+            return [];
+        }
+
+        if (normalized.startsWith('update public.mcp_sessions') && normalized.includes('set server_id')) {
             const [
                 serverId,
                 serverName,
@@ -92,11 +126,7 @@ function createMockNeonSql() {
                 callbackUrl,
                 active,
                 headers,
-                clientInformation,
-                tokens,
-                codeVerifier,
-                clientId,
-                oauthState,
+                authUrl,
                 expiresAt,
                 userId,
                 sessionId,
@@ -113,19 +143,37 @@ function createMockNeonSql() {
             row.callback_url = callbackUrl as string;
             row.active = active as boolean;
             row.headers = headers as Record<string, string> | undefined;
-            row.client_information = clientInformation;
-            row.tokens = tokens;
-            row.code_verifier = codeVerifier as string | undefined;
-            row.client_id = clientId as string | undefined;
-            row.oauth_state = oauthState;
+            row.auth_url = authUrl as string | null;
             row.expires_at = expiresAt as string;
             row.updated_at = new Date().toISOString();
             return [{ id: row.id }];
         }
 
+        if (normalized.startsWith('update public.mcp_sessions') && normalized.includes('set expires_at')) {
+            const [expiresAt, userId, sessionId] = params;
+            const row = sessions.find((item) => item.user_id === userId && item.session_id === sessionId);
+            if (row) {
+                row.expires_at = expiresAt as string;
+                row.updated_at = new Date().toISOString();
+            }
+            return [];
+        }
+
         if (normalized.startsWith('select * from public.mcp_sessions where user_id = $1 and session_id = $2')) {
             const [userId, sessionId] = params;
             return sessions.filter((row) => row.user_id === userId && row.session_id === sessionId);
+        }
+
+        if (normalized.startsWith('select * from public.mcp_credentials where user_id = $1 and session_id = $2')) {
+            const [userId, sessionId] = params;
+            return credentials.filter((row) => row.user_id === userId && row.session_id === sessionId);
+        }
+
+        if (normalized.startsWith('select id from public.mcp_sessions where user_id = $1 and session_id = $2')) {
+            const [userId, sessionId] = params;
+            return sessions
+                .filter((row) => row.user_id === userId && row.session_id === sessionId)
+                .map((row) => ({ id: row.id }));
         }
 
         if (normalized.startsWith('select * from public.mcp_sessions where user_id = $1')) {
@@ -147,6 +195,13 @@ function createMockNeonSql() {
         if (normalized.startsWith('delete from public.mcp_sessions where user_id = $1 and session_id = $2')) {
             const [userId, sessionId] = params;
             sessions = sessions.filter((row) => !(row.user_id === userId && row.session_id === sessionId));
+            credentials = credentials.filter((row) => !(row.user_id === userId && row.session_id === sessionId));
+            return [];
+        }
+
+        if (normalized.startsWith('delete from public.mcp_credentials where user_id = $1 and session_id = $2')) {
+            const [userId, sessionId] = params;
+            credentials = credentials.filter((row) => !(row.user_id === userId && row.session_id === sessionId));
             return [];
         }
 
@@ -161,12 +216,18 @@ function createMockNeonSql() {
             return [];
         }
 
+        if (normalized.startsWith('delete from public.mcp_credentials')) {
+            credentials = [];
+            return [];
+        }
+
         throw new Error(`Unexpected query: ${text}`);
     };
 
     return {
         sql: { query },
         listSessions: () => sessions,
+        listCredentials: () => credentials,
         setMissingTable: (value: boolean) => {
             simulateMissingTable = value;
         },

@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import type { SessionStore, Session, SetClientOptions } from './types.js';
+import type { SessionStore, Session, SessionWithCredentials, SessionCredentials } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
 
 /**
@@ -9,7 +9,7 @@ import { generateSessionId } from '../../shared/utils.js';
  */
 export class FileStorageBackend implements SessionStore {
     private filePath: string;
-    private memoryCache: Map<string, Session> | null = null;
+    private memoryCache: Map<string, SessionWithCredentials> | null = null;
     private initialized = false;
 
     /**
@@ -36,7 +36,7 @@ export class FileStorageBackend implements SessionStore {
 
             this.memoryCache = new Map();
             if (Array.isArray(json)) {
-                json.forEach((s: Session) => {
+                json.forEach((s: SessionWithCredentials) => {
                     this.memoryCache!.set(this.getSessionKey(s.userId || 'unknown', s.sessionId), s);
                 });
             }
@@ -73,7 +73,7 @@ export class FileStorageBackend implements SessionStore {
         return generateSessionId();
     }
 
-    async create(session: Session, ttl?: number): Promise<void> {
+    async create(session: SessionWithCredentials, ttl?: number): Promise<void> {
         await this.ensureInitialized();
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
@@ -88,7 +88,7 @@ export class FileStorageBackend implements SessionStore {
         // Note: TTL is ignored in file backend - sessions don't auto-expire
     }
 
-    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<SessionWithCredentials>, ttl?: number): Promise<void> {
         await this.ensureInitialized();
         if (!userId || !sessionId) throw new Error('userId and sessionId required');
 
@@ -109,10 +109,39 @@ export class FileStorageBackend implements SessionStore {
         // Note: TTL is ignored in file backend - sessions don't auto-expire
     }
 
-    async get(userId: string, sessionId: string): Promise<Session | null> {
+    async updateCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+        await this.update(userId, sessionId, data);
+    }
+
+    async get(userId: string, sessionId: string): Promise<SessionWithCredentials | null> {
         await this.ensureInitialized();
         const sessionKey = this.getSessionKey(userId, sessionId);
         return this.memoryCache!.get(sessionKey) || null;
+    }
+
+    async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
+        const session = await this.get(userId, sessionId);
+        if (!session) return null;
+
+        return {
+            sessionId,
+            userId,
+            clientInformation: session.clientInformation,
+            tokens: session.tokens,
+            codeVerifier: session.codeVerifier,
+            clientId: session.clientId,
+            oauthState: session.oauthState,
+        };
+    }
+
+    async clearCredentials(userId: string, sessionId: string): Promise<void> {
+        await this.updateCredentials(userId, sessionId, {
+            clientInformation: null,
+            tokens: null,
+            codeVerifier: null,
+            clientId: null,
+            oauthState: null,
+        });
     }
 
     async list(userId: string): Promise<Session[]> {

@@ -391,6 +391,9 @@ export class MCPClient {
       createdAt: this.createdAt || Date.now(),
       active,
     };
+    if (active) {
+      (sessionData as typeof sessionData & { authUrl: null }).authUrl = null;
+    }
 
     // Try to update first, create if doesn't exist
     const existingSession = await sessions.get(this.userId, this.sessionId);

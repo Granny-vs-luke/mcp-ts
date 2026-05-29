@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { SessionStore, Session } from './types.js';
+import type { SessionStore, Session, SessionWithCredentials, SessionCredentials } from './types.js';
 import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
@@ -8,26 +8,29 @@ export class SupabaseStorageBackend implements SessionStore {
     private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
 
     constructor(private supabase: SupabaseClient) {}
-    
+
     async init(): Promise<void> {
-        // Validate that the table exists
+        await this.assertTable('mcp_sessions', 'session_id');
+        await this.assertTable('mcp_credentials', 'session_id');
+        console.log('[mcp-ts][Storage] Supabase: storage tables verified.');
+    }
+
+    private async assertTable(table: string, column: string): Promise<void> {
         const { error } = await this.supabase
-            .from('mcp_sessions')
-            .select('session_id')
+            .from(table)
+            .select(column)
             .limit(0);
 
-        if (error) {
-            // Postgres error code 42P01 is "relation does not exist"
-            if (error.code === '42P01') {
-                throw new Error(
-                    '[SupabaseStorage] Table "mcp_sessions" not found in your database. ' +
-                    'Please run "npx mcp-ts supabase-init" in your project to set up the required table and RLS policies.'
-                );
-            }
-            throw new Error(`[SupabaseStorage] Initialization check failed: ${error.message}`);
+        if (!error) return;
+
+        if (error.code === '42P01') {
+            throw new Error(
+                `[SupabaseStorage] Table "${table}" not found in your database. ` +
+                'Please run "npx mcp-ts supabase-init" to set up the required storage schema.'
+            );
         }
 
-        console.log('[mcp-ts][Storage] Supabase: ✓ "mcp_sessions" table verified.');
+        throw new Error(`[SupabaseStorage] Initialization check failed for "${table}": ${error.message}`);
     }
 
     generateSessionId(): string {
@@ -45,16 +48,44 @@ export class SupabaseStorageBackend implements SessionStore {
             createdAt: new Date(row.created_at).getTime(),
             userId: row.user_id,
             headers: decryptObject(row.headers),
+            authUrl: row.auth_url,
             active: row.active,
-            clientInformation: row.client_information,
-            tokens: decryptObject(row.tokens),
-            codeVerifier: row.code_verifier,
-            clientId: row.client_id,
-            oauthState: row.oauth_state,
         };
     }
 
-    async create(session: Session, ttl?: number): Promise<void> {
+    private mapRowToCredentials(row: any, userId: string, sessionId: string): SessionCredentials {
+        return {
+            sessionId,
+            userId,
+            clientInformation: decryptObject(row?.client_information),
+            tokens: decryptObject(row?.tokens),
+            codeVerifier: decryptObject(row?.code_verifier),
+            clientId: row?.client_id,
+            oauthState: row?.oauth_state,
+        };
+    }
+
+    private splitCredentialData(data: Partial<SessionWithCredentials>): Partial<SessionCredentials> {
+        const credentialData: Partial<SessionCredentials> = {};
+        if ('clientInformation' in data) credentialData.clientInformation = data.clientInformation;
+        if ('tokens' in data) credentialData.tokens = data.tokens;
+        if ('codeVerifier' in data) credentialData.codeVerifier = data.codeVerifier;
+        if ('clientId' in data) credentialData.clientId = data.clientId;
+        if ('oauthState' in data) credentialData.oauthState = data.oauthState;
+        return credentialData;
+    }
+
+    private hasCredentialData(data: Partial<SessionCredentials>): boolean {
+        return (
+            'clientInformation' in data ||
+            'tokens' in data ||
+            'codeVerifier' in data ||
+            'clientId' in data ||
+            'oauthState' in data
+        );
+    }
+
+    async create(session: SessionWithCredentials, ttl?: number): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
@@ -65,7 +96,7 @@ export class SupabaseStorageBackend implements SessionStore {
             .from('mcp_sessions')
             .insert({
                 session_id: sessionId,
-                user_id: userId, // Maps user_id to userId to support RLS using auth.uid()
+                user_id: userId,
                 server_id: session.serverId,
                 server_name: session.serverName,
                 server_url: session.serverUrl,
@@ -73,32 +104,29 @@ export class SupabaseStorageBackend implements SessionStore {
                 callback_url: session.callbackUrl,
                 created_at: new Date(session.createdAt || Date.now()).toISOString(),
                 headers: encryptObject(session.headers),
+                auth_url: session.authUrl ?? null,
                 active: session.active ?? false,
-                client_information: session.clientInformation,
-                tokens: encryptObject(session.tokens),
-                code_verifier: session.codeVerifier,
-                client_id: session.clientId,
-                oauth_state: session.oauthState,
-                expires_at: expiresAt
+                expires_at: expiresAt,
             });
 
         if (error) {
-            // Postgres error code 23505 is unique violation
             if (error.code === '23505') {
                 throw new Error(`Session ${sessionId} already exists`);
             }
             throw new Error(`Failed to create session in Supabase: ${error.message}`);
         }
+
+        const credentialData = this.splitCredentialData(session);
+        if (this.hasCredentialData(credentialData)) {
+            await this.updateCredentials(userId, sessionId, credentialData, ttl);
+        }
     }
 
-    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<SessionWithCredentials>, ttl?: number): Promise<void> {
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
-        const expiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
-
-        // Convert the camelCase keys to snake_case for Supabase
         const updateData: any = {
-            expires_at: expiresAt,
-            updated_at: new Date().toISOString()
+            expires_at: new Date(Date.now() + effectiveTtl * 1000).toISOString(),
+            updated_at: new Date().toISOString(),
         };
 
         if ('serverId' in data) updateData.server_id = data.serverId;
@@ -108,29 +136,87 @@ export class SupabaseStorageBackend implements SessionStore {
         if ('callbackUrl' in data) updateData.callback_url = data.callbackUrl;
         if ('active' in data) updateData.active = data.active;
         if ('headers' in data) updateData.headers = encryptObject(data.headers);
-        if ('clientInformation' in data) updateData.client_information = data.clientInformation;
-        if ('tokens' in data) updateData.tokens = data.tokens === undefined ? null : encryptObject(data.tokens);
-        if ('codeVerifier' in data) updateData.code_verifier = data.codeVerifier;
-        if ('clientId' in data) updateData.client_id = data.clientId;
-        if ('oauthState' in data) updateData.oauth_state = data.oauthState ?? null;
+        if ('authUrl' in data) updateData.auth_url = data.authUrl ?? null;
 
-        const { data: updatedRows, error } = await this.supabase
-            .from('mcp_sessions')
-            .update(updateData)
-            .eq('user_id', userId)
-            .eq('session_id', sessionId)
-            .select('id');
+        const credentialData = this.splitCredentialData(data);
+        const shouldUpdateCredentials = this.hasCredentialData(credentialData);
+        const shouldUpdateSession = Object.keys(updateData).some((key) => !['expires_at', 'updated_at'].includes(key)) || ttl !== undefined;
 
-        if (error) {
-            throw new Error(`Failed to update session: ${error.message}`);
+        let updatedRows: any[] | null = null;
+        if (shouldUpdateSession) {
+            const result = await this.supabase
+                .from('mcp_sessions')
+                .update(updateData)
+                .eq('user_id', userId)
+                .eq('session_id', sessionId)
+                .select('id');
+
+            if (result.error) {
+                throw new Error(`Failed to update session: ${result.error.message}`);
+            }
+            updatedRows = result.data;
+        } else {
+            const result = await this.supabase
+                .from('mcp_sessions')
+                .select('id')
+                .eq('user_id', userId)
+                .eq('session_id', sessionId);
+
+            if (result.error) {
+                throw new Error(`Failed to update session: ${result.error.message}`);
+            }
+            updatedRows = result.data;
         }
 
         if (!updatedRows || updatedRows.length === 0) {
             throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
+
+        if (shouldUpdateCredentials) {
+            await this.updateCredentials(userId, sessionId, credentialData, ttl);
+        }
     }
 
-    async get(userId: string, sessionId: string): Promise<Session | null> {
+    async updateCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+        if (!this.hasCredentialData(data)) return;
+
+        const row: any = {
+            user_id: userId,
+            session_id: sessionId,
+            updated_at: new Date().toISOString(),
+        };
+
+        if ('clientInformation' in data) row.client_information = data.clientInformation == null ? null : encryptObject(data.clientInformation);
+        if ('tokens' in data) row.tokens = data.tokens == null ? null : encryptObject(data.tokens);
+        if ('codeVerifier' in data) row.code_verifier = data.codeVerifier == null ? null : encryptObject(data.codeVerifier);
+        if ('clientId' in data) row.client_id = data.clientId ?? null;
+        if ('oauthState' in data) row.oauth_state = data.oauthState ?? null;
+
+        const { error } = await this.supabase
+            .from('mcp_credentials')
+            .upsert(row, { onConflict: 'user_id,session_id' });
+
+        if (error) {
+            throw new Error(`Failed to update credentials: ${error.message}`);
+        }
+
+        if (ttl !== undefined) {
+            const { error: ttlError } = await this.supabase
+                .from('mcp_sessions')
+                .update({
+                    expires_at: new Date(Date.now() + ttl * 1000).toISOString(),
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('user_id', userId)
+                .eq('session_id', sessionId);
+
+            if (ttlError) {
+                throw new Error(`Failed to refresh session TTL: ${ttlError.message}`);
+            }
+        }
+    }
+
+    async get(userId: string, sessionId: string): Promise<SessionWithCredentials | null> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('*')
@@ -145,7 +231,41 @@ export class SupabaseStorageBackend implements SessionStore {
 
         if (!data) return null;
 
-        return this.mapRowToSessionData(data);
+        const credentials = await this.getCredentials(userId, sessionId);
+        return {
+            ...this.mapRowToSessionData(data),
+            ...(credentials ?? {}),
+        };
+    }
+
+    async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
+        const { data, error } = await this.supabase
+            .from('mcp_credentials')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('session_id', sessionId)
+            .maybeSingle();
+
+        if (error) {
+            console.error('[SupabaseStorage] Failed to get credentials:', error);
+            return null;
+        }
+
+        if (data) {
+            return this.mapRowToCredentials(data, userId, sessionId);
+        }
+
+        const { data: sessionRows, error: sessionError } = await this.supabase
+            .from('mcp_sessions')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('session_id', sessionId);
+
+        if (sessionError || !sessionRows || sessionRows.length === 0) {
+            return null;
+        }
+
+        return { sessionId, userId };
     }
 
     async list(userId: string): Promise<Session[]> {
@@ -160,6 +280,18 @@ export class SupabaseStorageBackend implements SessionStore {
         }
 
         return data.map(row => this.mapRowToSessionData(row));
+    }
+
+    async clearCredentials(userId: string, sessionId: string): Promise<void> {
+        const { error } = await this.supabase
+            .from('mcp_credentials')
+            .delete()
+            .eq('user_id', userId)
+            .eq('session_id', sessionId);
+
+        if (error) {
+            throw new Error(`Failed to clear credentials: ${error.message}`);
+        }
     }
 
     async delete(userId: string, sessionId: string): Promise<void> {
@@ -202,12 +334,20 @@ export class SupabaseStorageBackend implements SessionStore {
     }
 
     async clearAll(): Promise<void> {
-        // Warning: This deletes everything. Typically only used in testing.
+        const { error: credentialsError } = await this.supabase
+            .from('mcp_credentials')
+            .delete()
+            .neq('session_id', '');
+
+        if (credentialsError) {
+            console.error('[SupabaseStorage] Failed to clear credentials:', credentialsError);
+        }
+
         const { error } = await this.supabase
             .from('mcp_sessions')
             .delete()
-            .neq('session_id', ''); // Delete all rows trick
-            
+            .neq('session_id', '');
+
         if (error) {
             console.error('[SupabaseStorage] Failed to clear sessions:', error);
         }
@@ -225,7 +365,6 @@ export class SupabaseStorageBackend implements SessionStore {
     }
 
     async disconnect(): Promise<void> {
-        // Supabase client handles its own connection pooling over HTTP, 
-        // there is no explicit disconnect method.
+        // Supabase client handles its own connection pooling over HTTP.
     }
 }

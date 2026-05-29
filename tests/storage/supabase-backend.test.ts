@@ -11,22 +11,33 @@ import { createMockSession, createMockTokens } from '../test-utils';
  */
 function createMockSupabaseClient() {
     let sessions: any[] = [];
+    let credentials: any[] = [];
     let simulateMissingTable = false;
 
     const mock = {
         /** Test-only helper to inspect internal state */
         _listSessions: () => sessions,
+        _listCredentials: () => credentials,
         get _simulateMissingTable() { return simulateMissingTable; },
         set _simulateMissingTable(v: boolean) { simulateMissingTable = v; },
 
-        from: (_table: string) => {
-            let action: 'insert' | 'update' | 'select' | 'delete' | 'init_check' | null = null;
+        from: (table: string) => {
+            let action: 'insert' | 'upsert' | 'update' | 'select' | 'delete' | 'init_check' | null = null;
             let payload: any = null;
             const filters: Array<(item: any) => boolean> = [];
             let selectAfterMutation = false;
+            const getRows = () => table === 'mcp_credentials' ? credentials : sessions;
+            const setRows = (rows: any[]) => {
+                if (table === 'mcp_credentials') {
+                    credentials = rows;
+                } else {
+                    sessions = rows;
+                }
+            };
 
             const chain: any = {
                 insert: (data: any) => { action = 'insert'; payload = { ...data }; return chain; },
+                upsert: (data: any) => { action = 'upsert'; payload = { ...data }; return chain; },
                 update: (data: any) => { action = 'update'; payload = { ...data }; return chain; },
                 delete: () => { action = 'delete'; return chain; },
                 select: (_cols?: any) => {
@@ -53,7 +64,7 @@ function createMockSupabaseClient() {
 
                 /** Used by getSession */
                 maybeSingle: async () => {
-                    let res = [...sessions];
+                    let res = [...getRows()];
                     for (const f of filters) res = res.filter(f);
                     return { data: res[0] ?? null, error: null };
                 },
@@ -69,21 +80,37 @@ function createMockSupabaseClient() {
                         }
 
                         if (action === 'insert') {
-                            if (sessions.some(s => s.session_id === payload.session_id)) {
+                            const rows = getRows();
+                            const duplicate = table === 'mcp_credentials'
+                                ? rows.some(s => s.user_id === payload.user_id && s.session_id === payload.session_id)
+                                : rows.some(s => s.session_id === payload.session_id);
+                            if (duplicate) {
                                 return resolve({ data: null, error: { code: '23505', message: 'duplicate key violation' } });
                             }
-                            sessions.push({ ...payload });
+                            rows.push({ ...payload });
+                            return resolve({ data: [payload], error: null });
+
+                        } else if (action === 'upsert') {
+                            const rows = getRows();
+                            const existing = rows.find(s => s.user_id === payload.user_id && s.session_id === payload.session_id);
+                            if (existing) {
+                                Object.assign(existing, payload);
+                            } else {
+                                rows.push({ ...payload });
+                            }
                             return resolve({ data: [payload], error: null });
 
                         } else if (action === 'update') {
-                            const matched = sessions.filter(s => filters.every(f => f(s)));
+                            const matched = getRows().filter(s => filters.every(f => f(s)));
                             matched.forEach(s => Object.assign(s, payload));
                             return resolve({ data: selectAfterMutation ? matched : null, error: null });
 
                         } else if (action === 'delete') {
-                            const before = sessions.length;
-                            sessions = sessions.filter(s => !filters.every(f => f(s)));
-                            const removed = before - sessions.length;
+                            const rows = getRows();
+                            const before = rows.length;
+                            const nextRows = rows.filter(s => !filters.every(f => f(s)));
+                            setRows(nextRows);
+                            const removed = before - nextRows.length;
                             return resolve({ data: selectAfterMutation ? Array(removed).fill(null) : null, error: null });
 
                         } else if (action === 'init_check') {
@@ -93,7 +120,7 @@ function createMockSupabaseClient() {
                             return resolve({ data: [], error: null });
 
                         } else if (action === 'select') {
-                            const res = sessions.filter(s => filters.every(f => f(s)));
+                            const res = getRows().filter(s => filters.every(f => f(s)));
                             return resolve({ data: res, error: null });
 
                         } else {
@@ -161,6 +188,9 @@ test.describe('SupabaseStorageBackend', () => {
             expect(row.transport_type).toBe(session.transportType);
             expect(row.callback_url).toBe(session.callbackUrl);
             expect(row.active).toBe(session.active);
+            expect(row.tokens).toBeUndefined();
+            expect(row.client_information).toBeUndefined();
+            expect(row.code_verifier).toBeUndefined();
         });
 
         test('sets expires_at correctly from TTL', async () => {
@@ -190,9 +220,11 @@ test.describe('SupabaseStorageBackend', () => {
             await storage.create(session);
 
             const row = mockSupabase._listSessions()[0];
-            expect(row.tokens).toEqual(tokens);
+            const credentialsRow = mockSupabase._listCredentials()[0];
+            expect(row.tokens).toBeUndefined();
             expect(row.headers).toEqual({ Authorization: 'Bearer xyz' });
-            expect(row.oauth_state).toEqual(oauthState);
+            expect(credentialsRow.tokens).toEqual(tokens);
+            expect(credentialsRow.oauth_state).toEqual(oauthState);
         });
 
         test('throws on duplicate session (unique key violation)', async () => {
@@ -247,7 +279,7 @@ test.describe('SupabaseStorageBackend', () => {
 
             await storage.update(session.userId, session.sessionId, { tokens: undefined });
 
-            const row = mockSupabase._listSessions()[0];
+            const row = mockSupabase._listCredentials()[0];
             const retrieved = await storage.get(session.userId, session.sessionId);
 
             expect(row.tokens).toBeNull();
@@ -414,4 +446,3 @@ test.describe('SupabaseStorageBackend', () => {
         });
     });
 });
-

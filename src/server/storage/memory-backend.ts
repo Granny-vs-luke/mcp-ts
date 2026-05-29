@@ -1,4 +1,4 @@
-import type { SessionStore, Session, SetClientOptions } from './types.js';
+import type { SessionStore, Session, SessionWithCredentials, SessionCredentials } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
 
 /**
@@ -7,7 +7,7 @@ import { generateSessionId } from '../../shared/utils.js';
  */
 export class MemoryStorageBackend implements SessionStore {
     // Map<userId:sessionId, Session>
-    private sessions = new Map<string, Session>();
+    private sessions = new Map<string, SessionWithCredentials>();
 
     // Map<userId, Set<sessionId>>
     private userIdSessions = new Map<string, Set<string>>();
@@ -26,7 +26,7 @@ export class MemoryStorageBackend implements SessionStore {
         return generateSessionId();
     }
 
-    async create(session: Session, ttl?: number): Promise<void> {
+    async create(session: SessionWithCredentials, ttl?: number): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
@@ -45,7 +45,7 @@ export class MemoryStorageBackend implements SessionStore {
         // Note: TTL is ignored in memory backend - sessions don't auto-expire
     }
 
-    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<SessionWithCredentials>, ttl?: number): Promise<void> {
         if (!userId || !sessionId) throw new Error('userId and sessionId required');
 
         const sessionKey = this.getSessionKey(userId, sessionId);
@@ -64,10 +64,39 @@ export class MemoryStorageBackend implements SessionStore {
         // Note: TTL is ignored in memory backend - sessions don't auto-expire
     }
 
+    async updateCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+        await this.update(userId, sessionId, data);
+    }
 
-    async get(userId: string, sessionId: string): Promise<Session | null> {
+
+    async get(userId: string, sessionId: string): Promise<SessionWithCredentials | null> {
         const sessionKey = this.getSessionKey(userId, sessionId);
         return this.sessions.get(sessionKey) || null;
+    }
+
+    async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
+        const session = await this.get(userId, sessionId);
+        if (!session) return null;
+
+        return {
+            sessionId,
+            userId,
+            clientInformation: session.clientInformation,
+            tokens: session.tokens,
+            codeVerifier: session.codeVerifier,
+            clientId: session.clientId,
+            oauthState: session.oauthState,
+        };
+    }
+
+    async clearCredentials(userId: string, sessionId: string): Promise<void> {
+        await this.updateCredentials(userId, sessionId, {
+            clientInformation: null,
+            tokens: null,
+            codeVerifier: null,
+            clientId: null,
+            oauthState: null,
+        });
     }
 
     async listIds(userId: string): Promise<string[]> {

@@ -22,6 +22,7 @@ export interface Session {
     createdAt: number;
     userId: string;
     headers?: Record<string, string>;
+    authUrl?: string | null;
     /**
      * Session status marker used for TTL transitions:
      * - false: short-lived intermediate/error/auth-pending session state
@@ -29,13 +30,19 @@ export interface Session {
      * - true: active long-lived session state after successful connection/auth completion
      */
     active?: boolean;
-    // OAuth data (consolidated)
-    clientInformation?: OAuthClientInformationMixed;
-    tokens?: OAuthTokens;
+}
+
+export interface SessionCredentials {
+    sessionId: string;
+    userId: string;
+    clientInformation?: OAuthClientInformationMixed | null;
+    tokens?: OAuthTokens | null;
     codeVerifier?: string | null;
-    clientId?: string;
+    clientId?: string | null;
     oauthState?: OAuthState | null;
 }
+
+export type SessionWithCredentials = Session & Omit<Partial<SessionCredentials>, 'sessionId' | 'userId'>;
 
 export type SessionMutationType = 'create' | 'update' | 'delete';
 
@@ -44,8 +51,8 @@ export interface SessionMutationEvent {
     userId: string;
     sessionId: string;
     timestamp: number;
-    session?: Session;
-    patch?: Partial<Session>;
+    session?: SessionWithCredentials;
+    patch?: Partial<SessionWithCredentials>;
     ttl?: number;
 }
 
@@ -82,7 +89,7 @@ export interface SessionStore {
      * @param session - Session data to create
      * @param ttl - Optional TTL in seconds (defaults to backend's default)
      */
-    create(session: Session, ttl?: number): Promise<void>;
+    create(session: SessionWithCredentials, ttl?: number): Promise<void>;
 
     /**
      * Updates an existing session with partial data. Throws if session does not exist.
@@ -91,12 +98,28 @@ export interface SessionStore {
      * @param data - Partial session data to update
      * @param ttl - Optional TTL in seconds (defaults to backend's default)
      */
-    update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void>;
+    update(userId: string, sessionId: string, data: Partial<SessionWithCredentials>, ttl?: number): Promise<void>;
+
+    /**
+     * Updates only runtime credentials for an existing session.
+     * These values are separated from connection metadata in durable SQL stores.
+     */
+    updateCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void>;
 
     /**
      * Retrieves a session
      */
-    get(userId: string, sessionId: string): Promise<Session | null>;
+    get(userId: string, sessionId: string): Promise<SessionWithCredentials | null>;
+
+    /**
+     * Retrieves runtime credentials for a session.
+     */
+    getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null>;
+
+    /**
+     * Clears runtime credentials without removing connection metadata.
+     */
+    clearCredentials(userId: string, sessionId: string): Promise<void>;
 
     /**
      * Gets full session data for all sessions owned by a user

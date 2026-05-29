@@ -5,7 +5,7 @@ import { FileStorageBackend } from './file-backend';
 import { SqliteStorage } from './sqlite-backend.js';
 import { SupabaseStorageBackend } from './supabase-backend.js';
 import { NeonStorageBackend, type NeonStorageOptions } from './neon-backend.js';
-import type { SessionStore, Session, SessionMutationEvent, SessionMutationListener } from './types.js';
+import type { SessionStore, SessionWithCredentials, SessionMutationEvent, SessionMutationListener } from './types.js';
 
 // Re-export types
 export * from './types.js';
@@ -63,7 +63,7 @@ function createSessionMutationEvent(prop: PropertyKey, args: any[]): SessionMuta
     const timestamp = Date.now();
 
     if (prop === 'create') {
-        const [session, ttl] = args as [Session, number | undefined];
+        const [session, ttl] = args as [SessionWithCredentials, number | undefined];
         if (!session?.userId || !session?.sessionId) return null;
         return {
             type: 'create',
@@ -76,7 +76,7 @@ function createSessionMutationEvent(prop: PropertyKey, args: any[]): SessionMuta
     }
 
     if (prop === 'update') {
-        const [userId, sessionId, patch, ttl] = args as [string, string, Partial<Session>, number | undefined];
+        const [userId, sessionId, patch, ttl] = args as [string, string, Partial<SessionWithCredentials>, number | undefined];
         if (!userId || !sessionId) return null;
         return {
             type: 'update',

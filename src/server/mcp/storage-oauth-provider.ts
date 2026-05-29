@@ -6,7 +6,7 @@ import type {
     OAuthTokens
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { nanoid } from "nanoid";
-import { sessions, type Session } from "../storage/index.js";
+import { sessions, type SessionCredentials } from "../storage/index.js";
 import {
     DEFAULT_CLIENT_NAME,
     DEFAULT_CLIENT_URI,
@@ -109,32 +109,32 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     /**
-     * Loads OAuth data from the session store
+     * Loads OAuth credentials from the session store
      * @private
      */
-    private async getSessionData(): Promise<Session> {
-        const data = await sessions.get(this.userId, this.sessionId);
+    private async loadCredentials(): Promise<SessionCredentials> {
+        const data = await sessions.getCredentials(this.userId, this.sessionId);
         if (!data) {
-            return {} as Session;
+            return { userId: this.userId, sessionId: this.sessionId };
         }
         return data;
     }
 
     /**
-     * Saves OAuth data to the session store
-     * @param data - Partial OAuth data to save
+     * Saves OAuth credentials to the session store
+     * @param data - Partial OAuth credentials to save
      * @private
      * @throws Error if session doesn't exist (session must be created by controller layer)
      */
-    private async saveSessionData(data: Partial<Session>): Promise<void> {
-        await sessions.update(this.userId, this.sessionId, data);
+    private async saveCredentials(data: Partial<SessionCredentials>): Promise<void> {
+        await sessions.updateCredentials(this.userId, this.sessionId, data);
     }
 
     /**
      * Retrieves stored OAuth client information
      */
     async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
-        const data = await this.getSessionData();
+        const data = await this.loadCredentials();
 
         if (data.clientId && !this._clientId) {
             this._clientId = data.clientId;
@@ -158,7 +158,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * Stores OAuth client information
      */
     async saveClientInformation(clientInformation: OAuthClientInformationFull): Promise<void> {
-        await this.saveSessionData({
+        await this.saveCredentials({
             clientInformation,
             clientId: clientInformation.client_id
         });
@@ -169,7 +169,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * Stores OAuth tokens
      */
     async saveTokens(tokens: OAuthTokens): Promise<void> {
-        await this.saveSessionData({ tokens });
+        await this.saveCredentials({ tokens });
     }
 
     get authUrl() {
@@ -178,7 +178,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
 
     async state(): Promise<string> {
         const nonce = nanoid(32);
-        await this.saveSessionData({
+        await this.saveCredentials({
             oauthState: {
                 nonce,
                 sessionId: this.sessionId,
@@ -200,7 +200,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
             return { valid: false, error: "OAuth state mismatch" };
         }
 
-        const data = await sessions.get(this.userId, parsed.sessionId);
+        const data = await sessions.getCredentials(this.userId, parsed.sessionId);
 
         if (!data) {
             return { valid: false, error: "Session not found" };
@@ -232,11 +232,12 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
             throw new Error(result.error || "Invalid OAuth state");
         }
 
-        await this.saveSessionData({ oauthState: null });
+        await this.saveCredentials({ oauthState: null });
     }
 
     async redirectToAuthorization(authUrl: URL): Promise<void> {
         this._authUrl = authUrl.toString();
+        await sessions.update(this.userId, this.sessionId, { authUrl: this._authUrl });
         if (this.onRedirectCallback) {
             this.onRedirectCallback(authUrl.toString());
         }
@@ -248,31 +249,31 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         if (scope === "all") {
             await sessions.delete(this.userId, this.sessionId);
         } else {
-            const updates: Partial<Session> = {};
+            const updates: Partial<SessionCredentials> = {};
 
             if (scope === "client") {
-                updates.clientInformation = undefined;
-                updates.clientId = undefined;
+                updates.clientInformation = null;
+                updates.clientId = null;
             } else if (scope === "tokens") {
-                updates.tokens = undefined;
+                updates.tokens = null;
             } else if (scope === "verifier") {
-                updates.codeVerifier = undefined;
+                updates.codeVerifier = null;
             }
-            await this.saveSessionData(updates);
+            await this.saveCredentials(updates);
         }
     }
 
     async saveCodeVerifier(verifier: string): Promise<void> {
-        const data = await this.getSessionData();
+        const data = await this.loadCredentials();
         if (data.codeVerifier) {
             return;
         }
 
-        await this.saveSessionData({ codeVerifier: verifier });
+        await this.saveCredentials({ codeVerifier: verifier });
     }
 
     async codeVerifier(): Promise<string> {
-        const data = await this.getSessionData();
+        const data = await this.loadCredentials();
 
         if (data.clientId && !this._clientId) {
             this._clientId = data.clientId;
@@ -285,16 +286,16 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async deleteCodeVerifier(): Promise<void> {
-        await this.saveSessionData({ codeVerifier: undefined });
+        await this.saveCredentials({ codeVerifier: null });
     }
 
     async tokens(): Promise<OAuthTokens | undefined> {
-        const data = await this.getSessionData();
+        const data = await this.loadCredentials();
 
         if (data.clientId && !this._clientId) {
             this._clientId = data.clientId;
         }
 
-        return data.tokens;
+        return data.tokens ?? undefined;
     }
 }

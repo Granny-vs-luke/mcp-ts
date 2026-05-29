@@ -1,5 +1,5 @@
 import type { Database } from 'better-sqlite3';
-import type { SessionStore, Session } from './types.js';
+import type { SessionStore, Session, SessionWithCredentials, SessionCredentials } from './types.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { generateSessionId } from '../../shared/utils.js';
@@ -66,7 +66,7 @@ export class SqliteStorage implements SessionStore {
         return generateSessionId();
     }
 
-    async create(session: Session, ttl?: number): Promise<void> {
+    async create(session: SessionWithCredentials, ttl?: number): Promise<void> {
         this.ensureInitialized();
         const { sessionId, userId } = session;
 
@@ -89,7 +89,7 @@ export class SqliteStorage implements SessionStore {
         }
     }
 
-    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<SessionWithCredentials>, ttl?: number): Promise<void> {
         this.ensureInitialized();
         if (!sessionId || !userId) {
             throw new Error('userId and sessionId required');
@@ -110,7 +110,11 @@ export class SqliteStorage implements SessionStore {
         stmt.run(JSON.stringify(updatedSession), expiresAt, sessionId, userId);
     }
 
-    async get(userId: string, sessionId: string): Promise<Session | null> {
+    async updateCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+        await this.update(userId, sessionId, data, ttl);
+    }
+
+    async get(userId: string, sessionId: string): Promise<SessionWithCredentials | null> {
         this.ensureInitialized();
 
         const stmt = this.db!.prepare(
@@ -119,7 +123,32 @@ export class SqliteStorage implements SessionStore {
         const row = stmt.get(sessionId, userId) as { data: string } | undefined;
 
         if (!row) return null;
-        return JSON.parse(row.data) as Session;
+        return JSON.parse(row.data) as SessionWithCredentials;
+    }
+
+    async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
+        const session = await this.get(userId, sessionId);
+        if (!session) return null;
+
+        return {
+            sessionId,
+            userId,
+            clientInformation: session.clientInformation,
+            tokens: session.tokens,
+            codeVerifier: session.codeVerifier,
+            clientId: session.clientId,
+            oauthState: session.oauthState,
+        };
+    }
+
+    async clearCredentials(userId: string, sessionId: string): Promise<void> {
+        await this.updateCredentials(userId, sessionId, {
+            clientInformation: null,
+            tokens: null,
+            codeVerifier: null,
+            clientId: null,
+            oauthState: null,
+        });
     }
 
     async list(userId: string): Promise<Session[]> {
