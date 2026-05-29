@@ -13,7 +13,7 @@ test.describe('MCPClient.getMcpServerConfig', () => {
     test('should process multiple sessions in parallel and return the correct config', async () => {
         const session1 = {
             sessionId: 's1',
-            active: true,
+            status: 'active',
             serverId: 'server1',
             serverName: 'Server One',
             serverUrl: 'http://server1',
@@ -22,7 +22,7 @@ test.describe('MCPClient.getMcpServerConfig', () => {
         };
         const session2 = {
             sessionId: 's2',
-            active: true,
+            status: 'active',
             serverId: 'server2',
             serverName: 'Server Two',
             serverUrl: 'http://server2',
@@ -52,10 +52,10 @@ test.describe('MCPClient.getMcpServerConfig', () => {
         });
     });
 
-    test('should remove inactive sessions', async () => {
+    test('should remove non-active sessions', async () => {
         const session1 = {
             sessionId: 's1',
-            active: false,
+            status: 'pending',
             serverId: 'server1',
             serverUrl: 'http://server1',
             callbackUrl: 'http://callback1',

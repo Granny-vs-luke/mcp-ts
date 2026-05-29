@@ -3,6 +3,12 @@ import type { SessionStore, Session, SessionCredentials } from './types.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { generateSessionId } from '../../shared/utils.js';
+import {
+    mergeSessionUpdate,
+    normalizeNewSession,
+    normalizeStoredSession,
+    isSessionExpired,
+} from './lifecycle.js';
 
 export interface SqliteStorageOptions {
     path?: string;
@@ -76,7 +82,7 @@ export class SqliteStorage implements SessionStore {
         return generateSessionId();
     }
 
-    async create(session: Session, ttl?: number): Promise<void> {
+    async create(session: Session): Promise<void> {
         this.ensureInitialized();
         const { sessionId, userId } = session;
 
@@ -84,20 +90,13 @@ export class SqliteStorage implements SessionStore {
             throw new Error('userId and sessionId required');
         }
 
-        const now = Date.now();
-        const createdAt = session.createdAt || now;
-        const sessionWithTimestamps: Session = {
-            ...session,
-            createdAt,
-            updatedAt: session.updatedAt ?? createdAt,
-        };
-        const expiresAt = ttl ? now + ttl * 1000 : null;
+        const sessionWithLifecycle = normalizeNewSession(session);
 
         try {
             const stmt = this.db!.prepare(
                 `INSERT INTO ${this.table} (sessionId, userId, data, expiresAt) VALUES (?, ?, ?, ?)`
             );
-            stmt.run(sessionId, userId, JSON.stringify(sessionWithTimestamps), expiresAt);
+            stmt.run(sessionId, userId, JSON.stringify(sessionWithLifecycle), sessionWithLifecycle.expiresAt ?? null);
         } catch (error: any) {
             if (error.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
                 throw new Error(`Session ${sessionId} already exists`);
@@ -106,7 +105,7 @@ export class SqliteStorage implements SessionStore {
         }
     }
 
-    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
         this.ensureInitialized();
         if (!sessionId || !userId) {
             throw new Error('userId and sessionId required');
@@ -117,17 +116,16 @@ export class SqliteStorage implements SessionStore {
             throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
 
-        const updatedSession = { ...currentSession, ...data, updatedAt: data.updatedAt ?? Date.now() };
-        const expiresAt = ttl ? Date.now() + ttl * 1000 : null;
+        const updatedSession = mergeSessionUpdate(currentSession, data);
 
         const stmt = this.db!.prepare(
             `UPDATE ${this.table} SET data = ?, expiresAt = ? WHERE sessionId = ? AND userId = ?`
         );
 
-        stmt.run(JSON.stringify(updatedSession), expiresAt, sessionId, userId);
+        stmt.run(JSON.stringify(updatedSession), updatedSession.expiresAt ?? null, sessionId, userId);
     }
 
-    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void> {
         this.ensureInitialized();
         if (!await this.get(userId, sessionId)) {
             throw new Error(`Session ${sessionId} not found for userId ${userId}`);
@@ -142,12 +140,6 @@ export class SqliteStorage implements SessionStore {
         );
         stmt.run(sessionId, userId, JSON.stringify(credentials));
 
-        if (ttl !== undefined) {
-            const expiresAt = Date.now() + ttl * 1000;
-            this.db!.prepare(
-                `UPDATE ${this.table} SET expiresAt = ? WHERE sessionId = ? AND userId = ?`
-            ).run(expiresAt, sessionId, userId);
-        }
     }
 
     async get(userId: string, sessionId: string): Promise<Session | null> {
@@ -159,7 +151,7 @@ export class SqliteStorage implements SessionStore {
         const row = stmt.get(sessionId, userId) as { data: string } | undefined;
 
         if (!row) return null;
-        return JSON.parse(row.data) as Session;
+        return normalizeStoredSession(JSON.parse(row.data) as Session);
     }
 
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
@@ -191,7 +183,7 @@ export class SqliteStorage implements SessionStore {
         );
         const rows = stmt.all(userId) as { data: string }[];
 
-        return rows.map(row => JSON.parse(row.data) as Session);
+        return rows.map(row => normalizeStoredSession(JSON.parse(row.data) as Session));
     }
 
     async listIds(userId: string): Promise<string[]> {
@@ -232,11 +224,20 @@ export class SqliteStorage implements SessionStore {
 
     async cleanupExpired(): Promise<void> {
         this.ensureInitialized();
-        const now = Date.now();
-        const stmt = this.db!.prepare(
-            `DELETE FROM ${this.table} WHERE expiresAt IS NOT NULL AND expiresAt < ?`
-        );
-        stmt.run(now);
+        const rows = this.db!.prepare(`SELECT sessionId, userId, data FROM ${this.table}`).all() as {
+            sessionId: string;
+            userId: string;
+            data: string;
+        }[];
+        const deleteStmt = this.db!.prepare(`DELETE FROM ${this.table} WHERE sessionId = ? AND userId = ?`);
+
+        for (const row of rows) {
+            const session = normalizeStoredSession(JSON.parse(row.data) as Session);
+            if (isSessionExpired(session)) {
+                deleteStmt.run(row.sessionId, row.userId);
+            }
+        }
+
         this.db!.prepare(
             `DELETE FROM ${this.credentialsTable}
              WHERE NOT EXISTS (

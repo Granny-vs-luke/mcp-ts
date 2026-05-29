@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { NeonStorageBackend } from '../../src/server/storage/neon-backend';
 import { createMockSession, createMockTokens } from '../test-utils';
+import { STATE_EXPIRATION_MS } from '../../src/shared/constants';
+import type { SessionStatus } from '../../src/server/storage/types';
 
 type NeonRow = {
     id: string;
@@ -13,8 +15,8 @@ type NeonRow = {
     callback_url: string;
     created_at: string;
     updated_at: string;
-    expires_at: string;
-    active: boolean;
+    expires_at: string | null;
+    status: SessionStatus;
     headers?: Record<string, string>;
     auth_url?: string | null;
 };
@@ -55,7 +57,7 @@ function createMockNeonSql() {
                 updatedAt,
                 headers,
                 authUrl,
-                active,
+                status,
                 expiresAt,
             ] = params;
 
@@ -76,8 +78,8 @@ function createMockNeonSql() {
                 callback_url: callbackUrl as string,
                 created_at: createdAt as string,
                 updated_at: updatedAt as string,
-                expires_at: expiresAt as string,
-                active: active as boolean,
+                expires_at: expiresAt as string | null,
+                status: status as SessionStatus,
                 headers: headers as Record<string, string> | undefined,
                 auth_url: authUrl as string | null,
             });
@@ -125,7 +127,7 @@ function createMockNeonSql() {
                 serverUrl,
                 transportType,
                 callbackUrl,
-                active,
+                status,
                 headers,
                 authUrl,
                 expiresAt,
@@ -142,10 +144,10 @@ function createMockNeonSql() {
             row.server_url = serverUrl as string;
             row.transport_type = transportType as 'sse' | 'streamable-http';
             row.callback_url = callbackUrl as string;
-            row.active = active as boolean;
+            row.status = status as SessionStatus;
             row.headers = headers as Record<string, string> | undefined;
             row.auth_url = authUrl as string | null;
-            row.expires_at = expiresAt as string;
+            row.expires_at = expiresAt as string | null;
             row.updated_at = new Date().toISOString();
             return [{ id: row.id }];
         }
@@ -206,9 +208,22 @@ function createMockNeonSql() {
             return [];
         }
 
-        if (normalized.startsWith('delete from public.mcp_sessions where expires_at <')) {
+        if (normalized.startsWith('delete from public.mcp_sessions where expires_at is not null')) {
             const [expiresAt] = params;
-            sessions = sessions.filter((row) => new Date(row.expires_at).getTime() >= new Date(expiresAt as string).getTime());
+            sessions = sessions.filter((row) => (
+                row.status === 'active' ||
+                row.expires_at === null ||
+                new Date(row.expires_at).getTime() >= new Date(expiresAt as string).getTime()
+            ));
+            return [];
+        }
+
+        if (normalized.startsWith("delete from public.mcp_sessions where status = 'active'")) {
+            const [updatedAt] = params;
+            sessions = sessions.filter((row) => (
+                row.status !== 'active' ||
+                new Date(row.updated_at).getTime() >= new Date(updatedAt as string).getTime()
+            ));
             return [];
         }
 
@@ -290,12 +305,12 @@ test.describe('NeonStorageBackend', () => {
         await storage.create(session);
 
         const tokens = createMockTokens({ access_token: 'refreshed-token' });
-        await storage.update(session.userId, session.sessionId, { active: false, transportType: 'streamable-http' });
+        await storage.update(session.userId, session.sessionId, { status: 'pending', transportType: 'streamable-http' });
         await storage.patchCredentials(session.userId, session.sessionId, { tokens });
 
         const retrieved = await storage.get(session.userId, session.sessionId);
         const credentials = await storage.getCredentials(session.userId, session.sessionId);
-        expect(retrieved?.active).toBe(false);
+        expect(retrieved?.status).toBe('pending');
         expect((retrieved as any)?.tokens).toBeUndefined();
         expect(credentials?.tokens).toEqual(tokens);
         expect(retrieved?.transportType).toBe('streamable-http');
@@ -304,14 +319,19 @@ test.describe('NeonStorageBackend', () => {
 
     test('throws when updating a missing session', async () => {
         await expect(
-            storage.update('missing-user', 'missing-session', { active: true })
+            storage.update('missing-user', 'missing-session', { status: 'active' })
         ).rejects.toThrow('not found');
     });
 
     test('lists, removes, clears, and cleans up sessions', async () => {
-        await storage.create(createMockSession({ sessionId: 'a', userId: 'user-a' }), 3600);
-        await storage.create(createMockSession({ sessionId: 'b', userId: 'user-a' }), -1);
-        await storage.create(createMockSession({ sessionId: 'c', userId: 'user-b' }), 3600);
+        await storage.create(createMockSession({ sessionId: 'a', userId: 'user-a' }));
+        await storage.create(createMockSession({
+            sessionId: 'b',
+            userId: 'user-a',
+            status: 'pending',
+            createdAt: Date.now() - STATE_EXPIRATION_MS - 1000,
+        }));
+        await storage.create(createMockSession({ sessionId: 'c', userId: 'user-b' }));
 
         expect((await storage.listIds('user-a')).sort()).toEqual(['a', 'b']);
         expect((await storage.listAllIds()).sort()).toEqual(['a', 'b', 'c']);

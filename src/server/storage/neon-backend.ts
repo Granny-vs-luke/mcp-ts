@@ -1,7 +1,9 @@
 import type { SessionStore, Session, SessionCredentials } from './types.js';
-import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
+import type { SessionStatus } from './types.js';
+import { DORMANT_SESSION_EXPIRATION_MS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
+import { resolveSessionExpiresAt } from './lifecycle.js';
 
 export interface NeonStorageOptions {
     schema?: string;
@@ -23,10 +25,11 @@ type NeonSessionRow = {
     callback_url: string;
     created_at: string | Date;
     updated_at?: string | Date | null;
+    expires_at?: string | Date | null;
     user_id: string;
     headers?: unknown;
     auth_url?: string | null;
-    active?: boolean | null;
+    status?: SessionStatus | null;
 };
 
 type NeonCredentialsRow = {
@@ -40,7 +43,6 @@ type NeonCredentialsRow = {
 };
 
 export class NeonStorageBackend implements SessionStore {
-    private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
     private readonly tableName: string;
     private readonly credentialsTableName: string;
 
@@ -96,10 +98,11 @@ export class NeonStorageBackend implements SessionStore {
             callbackUrl: row.callback_url,
             createdAt: new Date(row.created_at).getTime(),
             updatedAt: new Date(row.updated_at ?? row.created_at).getTime(),
+            expiresAt: row.expires_at ? new Date(row.expires_at).getTime() : null,
             userId: row.user_id,
             headers: decryptObject(row.headers),
             authUrl: row.auth_url ?? undefined,
-            active: row.active ?? false,
+            status: row.status ?? 'pending',
         };
     }
 
@@ -125,14 +128,14 @@ export class NeonStorageBackend implements SessionStore {
         );
     }
 
-    async create(session: Session, ttl?: number): Promise<void> {
+    async create(session: Session): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
-        const effectiveTtl = ttl ?? this.DEFAULT_TTL;
+        const status = session.status ?? 'pending';
         const createdAt = new Date(session.createdAt || Date.now()).toISOString();
         const updatedAt = new Date(session.updatedAt ?? session.createdAt ?? Date.now()).toISOString();
-        const expiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
+        const expiresAt = resolveSessionExpiresAt(status, new Date(createdAt).getTime());
 
         try {
             await this.sql.query(
@@ -148,7 +151,7 @@ export class NeonStorageBackend implements SessionStore {
                     updated_at,
                     headers,
                     auth_url,
-                    active,
+                    status,
                     expires_at
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8,
@@ -166,8 +169,8 @@ export class NeonStorageBackend implements SessionStore {
                     updatedAt,
                     encryptObject(session.headers),
                     session.authUrl ?? null,
-                    session.active ?? false,
-                    expiresAt,
+                    status,
+                    expiresAt === null ? null : new Date(expiresAt).toISOString(),
                 ]
             );
         } catch (error: any) {
@@ -179,15 +182,15 @@ export class NeonStorageBackend implements SessionStore {
 
     }
 
-    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
         const currentSession = await this.get(userId, sessionId);
         if (!currentSession) {
             throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
 
         const updatedSession = { ...currentSession, ...data };
-        const effectiveTtl = ttl ?? this.DEFAULT_TTL;
-        const expiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
+        const status = updatedSession.status ?? 'pending';
+        const expiresAt = resolveSessionExpiresAt(status);
 
         const shouldUpdateSession = (
             'serverId' in data ||
@@ -195,10 +198,9 @@ export class NeonStorageBackend implements SessionStore {
             'serverUrl' in data ||
             'transportType' in data ||
             'callbackUrl' in data ||
-            'active' in data ||
+            'status' in data ||
             'headers' in data ||
-            'authUrl' in data ||
-            ttl !== undefined
+            'authUrl' in data
         );
 
         if (shouldUpdateSession) {
@@ -210,7 +212,7 @@ export class NeonStorageBackend implements SessionStore {
                     server_url = $3,
                     transport_type = $4,
                     callback_url = $5,
-                    active = $6,
+                    status = $6,
                     headers = $7,
                     auth_url = $8,
                     expires_at = $9,
@@ -223,10 +225,10 @@ export class NeonStorageBackend implements SessionStore {
                     updatedSession.serverUrl,
                     updatedSession.transportType,
                     updatedSession.callbackUrl,
-                    updatedSession.active ?? false,
+                    status,
                     encryptObject(updatedSession.headers),
                     updatedSession.authUrl ?? null,
-                    expiresAt,
+                    expiresAt === null ? null : new Date(expiresAt).toISOString(),
                     userId,
                     sessionId,
                 ]
@@ -239,7 +241,7 @@ export class NeonStorageBackend implements SessionStore {
 
     }
 
-    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void> {
         if (!this.hasCredentialData(data)) return;
 
         await this.sql.query(
@@ -277,14 +279,6 @@ export class NeonStorageBackend implements SessionStore {
             ]
         );
 
-        if (ttl !== undefined) {
-            await this.sql.query(
-                `UPDATE ${this.tableName}
-                 SET expires_at = $1, updated_at = now()
-                 WHERE user_id = $2 AND session_id = $3`,
-                [new Date(Date.now() + ttl * 1000).toISOString(), userId, sessionId]
-            );
-        }
     }
 
     async get(userId: string, sessionId: string): Promise<Session | null> {
@@ -398,8 +392,16 @@ export class NeonStorageBackend implements SessionStore {
     async cleanupExpired(): Promise<void> {
         try {
             await this.sql.query(
-                `DELETE FROM ${this.tableName} WHERE expires_at < $1`,
+                `DELETE FROM ${this.tableName}
+                 WHERE expires_at IS NOT NULL
+                   AND expires_at < $1
+                   AND status <> 'active'`,
                 [new Date().toISOString()]
+            );
+            await this.sql.query(
+                `DELETE FROM ${this.tableName}
+                 WHERE status = 'active' AND updated_at < $1`,
+                [new Date(Date.now() - DORMANT_SESSION_EXPIRATION_MS).toISOString()]
             );
         } catch (error) {
             console.error('[NeonStorage] Failed to cleanup expired sessions:', error);

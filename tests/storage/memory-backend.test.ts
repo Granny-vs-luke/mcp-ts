@@ -31,17 +31,39 @@ test.describe('MemoryStorageBackend', () => {
     });
 
     test.describe('update', () => {
+        test('should manage lifecycle with explicit session status', async () => {
+            const session = createMockSession({ status: undefined });
+
+            await storage.create(session);
+
+            let retrieved = await storage.get(session.userId, session.sessionId);
+            expect(retrieved?.status).toBe('pending');
+            expect(retrieved?.expiresAt).toBeGreaterThan(Date.now());
+
+            await storage.update(session.userId, session.sessionId, { status: 'active' });
+
+            retrieved = await storage.get(session.userId, session.sessionId);
+            expect(retrieved?.status).toBe('active');
+            expect(retrieved?.expiresAt).toBeNull();
+
+            await storage.update(session.userId, session.sessionId, { status: 'failed' });
+
+            retrieved = await storage.get(session.userId, session.sessionId);
+            expect(retrieved?.status).toBe('failed');
+            expect(retrieved?.expiresAt).toBeGreaterThan(Date.now());
+        });
+
         test('should update existing session', async () => {
             const session = createMockSession();
             await storage.create(session);
 
             const tokens = createMockTokens();
-            await storage.update(session.userId, session.sessionId, { active: true });
+            await storage.update(session.userId, session.sessionId, { status: 'active' });
             await storage.patchCredentials(session.userId, session.sessionId, { tokens });
 
             const retrieved = await storage.get(session.userId, session.sessionId);
             const credentials = await storage.getCredentials(session.userId, session.sessionId);
-            expect(retrieved?.active).toBe(true);
+            expect(retrieved?.status).toBe('active');
             expect((retrieved as any)?.tokens).toBeUndefined();
             expect(credentials?.tokens).toEqual(tokens);
             expect(retrieved?.serverId).toBe(session.serverId);
@@ -49,7 +71,7 @@ test.describe('MemoryStorageBackend', () => {
 
         test('should throw if session does not exist', async () => {
             await expect(
-                storage.update('unknown', 'unknown', { active: true })
+                storage.update('unknown', 'unknown', { status: 'active' })
             ).rejects.toThrow('not found');
         });
     });

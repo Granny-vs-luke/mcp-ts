@@ -48,12 +48,12 @@ test.describe('FileStorageBackend', () => {
             await storage.create(session);
 
             const tokens = createMockTokens();
-            await storage.update(session.userId, session.sessionId, { active: true });
+            await storage.update(session.userId, session.sessionId, { status: 'active' });
             await storage.patchCredentials(session.userId, session.sessionId, { tokens });
 
             const retrieved = await storage.get(session.userId, session.sessionId);
             const credentials = await storage.getCredentials(session.userId, session.sessionId);
-            expect(retrieved?.active).toBe(true);
+            expect(retrieved?.status).toBe('active');
             expect((retrieved as any)?.tokens).toBeUndefined();
             expect(credentials?.tokens).toEqual(tokens);
             expect(retrieved?.serverId).toBe(session.serverId);
@@ -61,7 +61,7 @@ test.describe('FileStorageBackend', () => {
 
         test('should throw if session does not exist', async () => {
             await expect(
-                storage.update('unknown', 'unknown', { active: true })
+                storage.update('unknown', 'unknown', { status: 'active' })
             ).rejects.toThrow('not found');
         });
     });

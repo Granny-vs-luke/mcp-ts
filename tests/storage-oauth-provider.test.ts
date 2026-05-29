@@ -19,7 +19,7 @@ async function createSession() {
     callbackUrl: redirectUrl,
     transportType: 'streamable-http',
     createdAt: Date.now(),
-    active: false,
+    status: 'pending',
   });
 }
 

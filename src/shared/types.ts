@@ -168,6 +168,7 @@ export type ToolInfo = {
 
 // Transport type
 export type TransportType = 'sse' | 'streamable-http';
+export type SessionStatus = 'pending' | 'active' | 'failed';
 
 // SSE/RPC types
 export type McpRpcMethod =
@@ -259,9 +260,10 @@ export interface SessionInfo {
   updatedAt?: number;
   /**
    * Session readiness for auto-restore.
-   * false means auth is pending and should be resumed explicitly by user action.
+   * `pending` means auth is in progress and should be resumed explicitly by user action.
+   * `failed` means setup/auth failed and the session is retained only until cleanup.
    */
-  active?: boolean;
+  status: SessionStatus;
 }
 
 export interface SessionListResult {

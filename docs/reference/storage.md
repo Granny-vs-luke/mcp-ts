@@ -44,7 +44,7 @@ const sessionId = sessions.generateSessionId();
 
 ---
 
-**`create(session: Session, ttl?: number): Promise<void>`**
+**`create(session: Session): Promise<void>`**
 
 Create a new session. Throws if session already exists.
 
@@ -57,26 +57,24 @@ await sessions.create({
   serverUrl: 'https://mcp.example.com',
   callbackUrl: 'https://myapp.com/callback',
   transportType: 'sse',
-  active: true,
+  status: 'active',
   createdAt: Date.now(),
-}, 3600); // Optional TTL in seconds
+});
 ```
 
 ---
 
-**`update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void>`**
+**`update(userId: string, sessionId: string, data: Partial<Session>): Promise<void>`**
 
 Update an existing session with partial data. Throws if session doesn't exist.
 
 ```typescript
 await sessions.update('user-123', 'abc123', {
-  active: false,
-  tokens: {
-    access_token: 'new-token',
-    token_type: 'Bearer',
-  },
-}, 3600); // Optional TTL refresh
+  status: 'pending',
+});
 ```
+
+Expiration is managed by the backend. Pending and failed sessions (`status: 'pending' | 'failed'`) receive a short OAuth-window expiration; active sessions (`status: 'active'`) are retained until explicit deletion or dormant-session cleanup.
 
 ---
 
@@ -142,7 +140,7 @@ await sessions.clearAll();
 
 **`cleanupExpired(): Promise<void>`**
 
-Clean up expired sessions (Redis only, no-op for others).
+Clean up expired pending sessions and dormant active sessions where the backend supports scheduled/manual cleanup.
 
 ```typescript
 await sessions.cleanupExpired();

@@ -3,9 +3,11 @@
  * Eliminates magic numbers and enables consistent configuration
  */
 
-// Redis TTL and Session Management
-export const SESSION_TTL_SECONDS = 43200; // 12 hours
+// Session lifecycle
 export const STATE_EXPIRATION_MS = 10 * 60 * 1000; // 10 minutes for OAuth state
+export const PENDING_SESSION_EXPIRATION_SECONDS = Math.floor(STATE_EXPIRATION_MS / 1000);
+export const DORMANT_SESSION_EXPIRATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+export const DORMANT_SESSION_EXPIRATION_SECONDS = Math.floor(DORMANT_SESSION_EXPIRATION_MS / 1000);
 
 // Heartbeat and Connection
 export const DEFAULT_HEARTBEAT_INTERVAL_MS = 30000; // 30 seconds

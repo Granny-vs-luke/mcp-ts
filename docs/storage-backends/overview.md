@@ -54,7 +54,7 @@ graph TD
 |---------|----------|----------|----------|----------|----------------|--------------|
 | **Persistence** | Yes | Yes | Yes | Yes | Yes | No |
 | **Distributed** | Yes | Yes | Yes | No | No | No |
-| **Auto-Expiry** | Yes (TTL) | Yes (Manual) | Yes (Manual) | Yes (Manual) | No | No |
+| **Auto-Expiry** | Yes | Yes (Manual) | Yes (Manual) | Yes (Manual) | Yes (Manual) | Yes (Manual) |
 | **Performance** | Fast | Fast | Fast | Very Fast | Medium | Fastest |
 | **Setup** | External | Cloud | Cloud | Native | Built-in | Built-in |
 | **Serverless** | Yes | Recommended | Recommended | Limited | No | Yes |
@@ -110,13 +110,12 @@ interface Session {
   serverUrl: string;
   callbackUrl: string;
   transportType: 'sse' | 'streamable-http';
-  active: boolean;
+  status: 'pending' | 'active' | 'failed';
   createdAt: number;
+  updatedAt?: number;
+  expiresAt?: number | null;
   headers?: Record<string, string>;
-  // OAuth data
-  tokens?: OAuthTokens;
-  clientInformation?: OAuthClientInformation;
-  codeVerifier?: string;
-  clientId?: string;
 }
 ```
+
+OAuth runtime credentials are stored separately from connection metadata in durable SQL backends.

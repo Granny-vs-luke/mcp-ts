@@ -22,7 +22,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
       callbackUrl: 'https://app.local/oauth/callback',
       transportType: 'streamable-http',
       createdAt: Date.now(),
-      active: false,
+      status: 'pending',
     });
 
     const manager = new SSEConnectionManager(
@@ -70,7 +70,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
       callbackUrl: 'https://app.local/oauth/callback',
       transportType: 'streamable-http',
       createdAt: Date.now(),
-      active: true,
+      status: 'active',
     });
 
     const manager = new SSEConnectionManager(
@@ -109,7 +109,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
       transportType: 'streamable-http',
       createdAt: 1780076200000,
       updatedAt: 1780076300000,
-      active: true,
+      status: 'active',
     });
 
     const manager = new SSEConnectionManager(
@@ -147,7 +147,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
       callbackUrl: 'https://app.local/oauth/callback',
       transportType: 'streamable-http',
       createdAt: Date.now(),
-      active: true,
+      status: 'active',
     });
 
     const manager = new SSEConnectionManager(
@@ -270,7 +270,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
       callbackUrl: 'https://app.local/oauth/callback',
       transportType: 'streamable-http',
       createdAt: Date.now(),
-      active: false,
+      status: 'pending',
     });
     await storage.patchCredentials('user-5', 'auth-session', {
       oauthState: {

@@ -1,13 +1,17 @@
 import type { Redis } from 'ioredis';
 import type { SessionStore, Session, SessionCredentials } from './types.js';
-import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
+import {
+    mergeSessionUpdate,
+    normalizeNewSession,
+    normalizeStoredSession,
+    resolveSessionRedisTtlSeconds,
+} from './lifecycle.js';
 
 /**
  * Redis implementation of SessionStore
  */
 export class RedisStorageBackend implements SessionStore {
-    private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
     private readonly KEY_PREFIX = 'mcp:session:';
     private readonly CREDENTIALS_KEY_PREFIX = 'mcp:credentials:';
     private readonly USER_ID_KEY_PREFIX = 'mcp:userId:';
@@ -83,25 +87,18 @@ export class RedisStorageBackend implements SessionStore {
         return generateSessionId();
     }
 
-    async create(session: Session, ttl?: number): Promise<void> {
+    async create(session: Session): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
         const sessionKey = this.getSessionKey(userId, sessionId);
         const userIdKey = this.getUserIdKey(userId);
-        const effectiveTtl = ttl ?? this.DEFAULT_TTL;
-        const now = Date.now();
-        const createdAt = session.createdAt || now;
-        const sessionWithTimestamps: Session = {
-            ...session,
-            createdAt,
-            updatedAt: session.updatedAt ?? createdAt,
-        };
+        const sessionWithLifecycle = normalizeNewSession(session);
+        const effectiveTtl = resolveSessionRedisTtlSeconds(sessionWithLifecycle);
 
-        /** ioredis syntax: set(key, val, 'EX', ttl, 'NX') */
         const result = await this.redis.set(
             sessionKey,
-            JSON.stringify(sessionWithTimestamps),
+            JSON.stringify(sessionWithLifecycle),
             'EX',
             effectiveTtl,
             'NX'
@@ -113,15 +110,10 @@ export class RedisStorageBackend implements SessionStore {
 
         await this.redis.sadd(userIdKey, sessionId);
     }
-    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
         const sessionKey = this.getSessionKey(userId, sessionId);
-        const effectiveTtl = ttl ?? this.DEFAULT_TTL;
-        const updateData = {
-            ...data,
-            updatedAt: data.updatedAt ?? Date.now(),
-        };
 
-        /** Lua script for atomic parsing, merging, and saving */
+        /** Lua script for atomic get-and-set with expiration refresh. */
         const script = `
             local currentStr = redis.call("GET", KEYS[1])
             if not currentStr then
@@ -129,21 +121,25 @@ export class RedisStorageBackend implements SessionStore {
             end
 
             local current = cjson.decode(currentStr)
-            local updates = cjson.decode(ARGV[1])
+            local updated = cjson.decode(ARGV[1])
 
-            for k,v in pairs(updates) do
-                current[k] = v
-            end
-
-            redis.call("SET", KEYS[1], cjson.encode(current), "EX", ARGV[2])
+            redis.call("SET", KEYS[1], cjson.encode(updated), "EX", ARGV[2])
             return 1
         `;
+
+        const current = await this.get(userId, sessionId);
+        if (!current) {
+            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
+        }
+
+        const updated = mergeSessionUpdate(current, data);
+        const effectiveTtl = resolveSessionRedisTtlSeconds(updated);
 
         const result = await this.redis.eval(
             script,
             1,
             sessionKey,
-            JSON.stringify(updateData),
+            JSON.stringify(updated),
             effectiveTtl
         );
 
@@ -152,15 +148,19 @@ export class RedisStorageBackend implements SessionStore {
         }
     }
 
-    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void> {
         const sessionKey = this.getSessionKey(userId, sessionId);
         const credentialsKey = this.getCredentialsKey(userId, sessionId);
-        const effectiveTtl = ttl ?? await this.redis.ttl(sessionKey);
         const sessionExists = await this.redis.exists(sessionKey);
         if (!sessionExists) {
             throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
 
+        const session = await this.get(userId, sessionId);
+        const currentTtl = await this.redis.ttl(sessionKey);
+        const effectiveTtl = currentTtl > 0 && session
+            ? currentTtl
+            : resolveSessionRedisTtlSeconds(session ?? { status: 'pending' });
         const currentStr = await this.redis.get(credentialsKey);
         const current = currentStr ? JSON.parse(currentStr) as SessionCredentials : { sessionId, userId };
         const credentials = { ...current, ...data, sessionId, userId };
@@ -181,7 +181,7 @@ export class RedisStorageBackend implements SessionStore {
             }
 
             const session: Session = JSON.parse(sessionDataStr);
-            return session;
+            return normalizeStoredSession(session);
         } catch (error) {
             console.error('[RedisStorageBackend] Failed to get session:', error);
             return null;
@@ -229,7 +229,9 @@ export class RedisStorageBackend implements SessionStore {
                 await this.redis.srem(userIdKey, ...staleSessionIds);
             }
 
-            return results.filter((session): session is Session => session !== null);
+            return results
+                .filter((session): session is Session => session !== null)
+                .map((session) => normalizeStoredSession(session));
         } catch (error) {
             console.error(`[RedisStorageBackend] Failed to get session data for ${userId}:`, error);
             return [];
@@ -260,7 +262,7 @@ export class RedisStorageBackend implements SessionStore {
                     }
 
                     try {
-                        return (JSON.parse(data) as Session).sessionId;
+                        return normalizeStoredSession(JSON.parse(data) as Session).sessionId;
                     } catch (error) {
                         console.error('[RedisStorageBackend] Failed to parse session while listing all session IDs:', error);
                         return null;

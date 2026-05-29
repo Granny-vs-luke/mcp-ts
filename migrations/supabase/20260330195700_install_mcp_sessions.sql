@@ -10,8 +10,9 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     callback_url TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL,
-    active BOOLEAN DEFAULT false,
+    expires_at TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'active', 'failed')),
     headers JSONB,
     auth_url TEXT,
     CONSTRAINT mcp_sessions_user_session_unique

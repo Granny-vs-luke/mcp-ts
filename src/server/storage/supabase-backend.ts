@@ -1,12 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SessionStore, Session, SessionCredentials } from './types.js';
-import { SESSION_TTL_SECONDS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
+import { resolveSessionExpiresAt } from './lifecycle.js';
+import { DORMANT_SESSION_EXPIRATION_MS } from '../../shared/constants.js';
 
 export class SupabaseStorageBackend implements SessionStore {
-    private readonly DEFAULT_TTL = SESSION_TTL_SECONDS;
-
     constructor(private supabase: SupabaseClient) {}
 
     async init(): Promise<void> {
@@ -47,10 +46,11 @@ export class SupabaseStorageBackend implements SessionStore {
             callbackUrl: row.callback_url,
             createdAt: new Date(row.created_at).getTime(),
             updatedAt: new Date(row.updated_at ?? row.created_at).getTime(),
+            expiresAt: row.expires_at ? new Date(row.expires_at).getTime() : null,
             userId: row.user_id,
             headers: decryptObject(row.headers),
             authUrl: row.auth_url,
-            active: row.active,
+            status: row.status ?? 'pending',
         };
     }
 
@@ -76,14 +76,14 @@ export class SupabaseStorageBackend implements SessionStore {
         );
     }
 
-    async create(session: Session, ttl?: number): Promise<void> {
+    async create(session: Session): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
-        const effectiveTtl = ttl ?? this.DEFAULT_TTL;
+        const status = session.status ?? 'pending';
         const createdAt = new Date(session.createdAt || Date.now()).toISOString();
         const updatedAt = new Date(session.updatedAt ?? session.createdAt ?? Date.now()).toISOString();
-        const expiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
+        const expiresAt = resolveSessionExpiresAt(status, new Date(createdAt).getTime());
 
         const { error } = await this.supabase
             .from('mcp_sessions')
@@ -99,8 +99,8 @@ export class SupabaseStorageBackend implements SessionStore {
                 updated_at: updatedAt,
                 headers: encryptObject(session.headers),
                 auth_url: session.authUrl ?? null,
-                active: session.active ?? false,
-                expires_at: expiresAt,
+                status,
+                expires_at: expiresAt === null ? null : new Date(expiresAt).toISOString(),
             });
 
         if (error) {
@@ -112,10 +112,8 @@ export class SupabaseStorageBackend implements SessionStore {
 
     }
 
-    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
-        const effectiveTtl = ttl ?? this.DEFAULT_TTL;
+    async update(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
         const updateData: any = {
-            expires_at: new Date(Date.now() + effectiveTtl * 1000).toISOString(),
             updated_at: new Date().toISOString(),
         };
 
@@ -124,11 +122,16 @@ export class SupabaseStorageBackend implements SessionStore {
         if ('serverUrl' in data) updateData.server_url = data.serverUrl;
         if ('transportType' in data) updateData.transport_type = data.transportType;
         if ('callbackUrl' in data) updateData.callback_url = data.callbackUrl;
-        if ('active' in data) updateData.active = data.active;
+        if ('status' in data) {
+            const status = data.status ?? 'pending';
+            const expiresAt = resolveSessionExpiresAt(status);
+            updateData.status = status;
+            updateData.expires_at = expiresAt === null ? null : new Date(expiresAt).toISOString();
+        }
         if ('headers' in data) updateData.headers = encryptObject(data.headers);
         if ('authUrl' in data) updateData.auth_url = data.authUrl ?? null;
 
-        const shouldUpdateSession = Object.keys(updateData).some((key) => !['expires_at', 'updated_at'].includes(key)) || ttl !== undefined;
+        const shouldUpdateSession = Object.keys(updateData).some((key) => key !== 'updated_at');
 
         let updatedRows: any[] | null = null;
         if (shouldUpdateSession) {
@@ -162,7 +165,7 @@ export class SupabaseStorageBackend implements SessionStore {
 
     }
 
-    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void> {
         if (!this.hasCredentialData(data)) return;
 
         const row: any = {
@@ -185,20 +188,6 @@ export class SupabaseStorageBackend implements SessionStore {
             throw new Error(`Failed to update credentials: ${error.message}`);
         }
 
-        if (ttl !== undefined) {
-            const { error: ttlError } = await this.supabase
-                .from('mcp_sessions')
-                .update({
-                    expires_at: new Date(Date.now() + ttl * 1000).toISOString(),
-                    updated_at: new Date().toISOString(),
-                })
-                .eq('user_id', userId)
-                .eq('session_id', sessionId);
-
-            if (ttlError) {
-                throw new Error(`Failed to refresh session TTL: ${ttlError.message}`);
-            }
-        }
     }
 
     async get(userId: string, sessionId: string): Promise<Session | null> {
@@ -335,13 +324,26 @@ export class SupabaseStorageBackend implements SessionStore {
     }
 
     async cleanupExpired(): Promise<void> {
-        const { error } = await this.supabase
+        const { error: transientError } = await this.supabase
             .from('mcp_sessions')
             .delete()
+            .not('expires_at', 'is', null)
+            .neq('status', 'active')
             .lt('expires_at', new Date().toISOString());
 
-        if (error) {
-            console.error('[SupabaseStorage] Failed to cleanup expired sessions:', error);
+        if (transientError) {
+            console.error('[SupabaseStorage] Failed to cleanup expired inactive sessions:', transientError);
+        }
+
+        const dormantCutoff = new Date(Date.now() - DORMANT_SESSION_EXPIRATION_MS).toISOString();
+        const { error: dormantError } = await this.supabase
+            .from('mcp_sessions')
+            .delete()
+            .eq('status', 'active')
+            .lt('updated_at', dormantCutoff);
+
+        if (dormantError) {
+            console.error('[SupabaseStorage] Failed to cleanup dormant active sessions:', dormantError);
         }
     }
 

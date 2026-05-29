@@ -4,6 +4,7 @@
 import { test, expect } from '@playwright/test';
 import { SqliteStorage } from '../../src/server/storage/sqlite-backend';
 import { createMockSession, createMockTokens } from '../test-utils';
+import { DORMANT_SESSION_EXPIRATION_MS, STATE_EXPIRATION_MS } from '../../src/shared/constants';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -60,12 +61,12 @@ test.describe('SqliteStorage', () => {
             await storage.create(session);
 
             const tokens = createMockTokens();
-            await storage.update(session.userId, session.sessionId, { active: true });
+            await storage.update(session.userId, session.sessionId, { status: 'active' });
             await storage.patchCredentials(session.userId, session.sessionId, { tokens });
 
             const retrieved = await storage.get(session.userId, session.sessionId);
             const credentials = await storage.getCredentials(session.userId, session.sessionId);
-            expect(retrieved?.active).toBe(true);
+            expect(retrieved?.status).toBe('active');
             expect((retrieved as any)?.tokens).toBeUndefined();
             expect(credentials?.tokens).toEqual(tokens);
             expect(retrieved?.serverId).toBe(session.serverId);
@@ -73,7 +74,7 @@ test.describe('SqliteStorage', () => {
 
         test('should throw if session does not exist', async () => {
             await expect(
-                storage.update('unknown', 'unknown', { active: true })
+                storage.update('unknown', 'unknown', { status: 'active' })
             ).rejects.toThrow('not found');
         });
     });
@@ -94,8 +95,11 @@ test.describe('SqliteStorage', () => {
 
     test.describe('cleanupExpired', () => {
         test('should remove expired sessions', async () => {
-            const session = createMockSession();
-            await storage.create(session, -1); // Expired immediately (ttl -1)
+            const session = createMockSession({
+                status: 'pending',
+                createdAt: Date.now() - STATE_EXPIRATION_MS - 1000,
+            });
+            await storage.create(session);
             await storage.cleanupExpired();
 
             const retrieved = await storage.get(session.userId, session.sessionId);
@@ -104,12 +108,25 @@ test.describe('SqliteStorage', () => {
 
         test('should keep active sessions', async () => {
             const session = createMockSession();
-            await storage.create(session, 100);
+            await storage.create(session);
 
             await storage.cleanupExpired();
 
             const retrieved = await storage.get(session.userId, session.sessionId);
             expect(retrieved).toBeDefined();
+        });
+
+        test('should remove dormant active sessions', async () => {
+            const session = createMockSession({
+                status: 'active',
+                updatedAt: Date.now() - DORMANT_SESSION_EXPIRATION_MS - 1000,
+            });
+            await storage.create(session);
+
+            await storage.cleanupExpired();
+
+            const retrieved = await storage.get(session.userId, session.sessionId);
+            expect(retrieved).toBeNull();
         });
     });
 });

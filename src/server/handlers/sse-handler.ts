@@ -240,7 +240,7 @@ export class SSEConnectionManager {
         transport: s.transportType,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt ?? s.createdAt,
-        active: s.active !== false,
+        status: s.status ?? 'pending',
       })),
     };
   }
@@ -267,7 +267,7 @@ export class SSEConnectionManager {
     if (duplicate) {
       // If the existing session is still pending OAuth, treat connect as "resume auth"
       // instead of failing with duplicate connection error.
-      if (duplicate.active === false) {
+      if (duplicate.status === 'pending') {
         await this.getSession({ sessionId: duplicate.sessionId });
         return {
           sessionId: duplicate.sessionId,

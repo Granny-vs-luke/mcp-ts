@@ -63,27 +63,25 @@ function createSessionMutationEvent(prop: PropertyKey, args: any[]): SessionMuta
     const timestamp = Date.now();
 
     if (prop === 'create') {
-        const [session, ttl] = args as [Session, number | undefined];
+        const [session] = args as [Session];
         if (!session?.userId || !session?.sessionId) return null;
         return {
             type: 'create',
             userId: session.userId,
             sessionId: session.sessionId,
             session,
-            ttl,
             timestamp,
         };
     }
 
     if (prop === 'update') {
-        const [userId, sessionId, patch, ttl] = args as [string, string, Partial<Session>, number | undefined];
+        const [userId, sessionId, patch] = args as [string, string, Partial<Session>];
         if (!userId || !sessionId) return null;
         return {
             type: 'update',
             userId,
             sessionId,
             patch,
-            ttl,
             timestamp,
         };
     }

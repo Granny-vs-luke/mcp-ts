@@ -400,7 +400,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                     serverName: s.serverName ?? 'Unknown Server',
                     serverUrl: s.serverUrl,
                     transport: s.transport,
-                    state: (s.active === false ? 'AUTHENTICATING' : 'VALIDATING') as McpConnectionState,
+                    state: (s.status === 'active' ? 'VALIDATING' : 'AUTHENTICATING') as McpConnectionState,
                     createdAt: new Date(s.createdAt),
                     updatedAt: new Date(s.updatedAt ?? s.createdAt),
                     tools: [],
@@ -413,7 +413,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                     if (clientRef.value) {
                         try {
                             // Pending auth sessions should not auto-trigger popup/redirect on reload.
-                            if (session.active === false) {
+                            if (session.status !== 'active') {
                                 return;
                             }
                             suppressAuthRedirectSessions.value.add(session.sessionId);

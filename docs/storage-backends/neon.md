@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     callback_url TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ,
     active BOOLEAN DEFAULT false,
     headers JSONB,
     client_information JSONB,
@@ -136,7 +136,7 @@ const sessionList = await neonBackend.list('user-123');
 
 ## Cleanup
 
-Expired sessions are removed when `sessions.cleanupExpired()` runs. Schedule that call from your application or platform cron if you want cleanup without database cron support.
+Expired pending sessions and dormant active sessions are removed when `sessions.cleanupExpired()` runs. Schedule that call from your application or platform cron if you want cleanup without database cron support.
 
 If your Neon project has `pg_cron` enabled, you can also run the optional migration at `migrations/neon/20260513020000_add_session_cleanup_cron.sql`. Neon requires endpoint-level `cron.database_name` configuration before `pg_cron` can be installed and used. After that setup, the migration schedules:
 

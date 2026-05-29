@@ -121,7 +121,7 @@ async function test() {
     serverUrl: 'https://example.com',
     callbackUrl: 'https://example.com/callback',
     transportType: 'sse',
-    active: true,
+    status: 'active',
     createdAt: Date.now(),
   });
 

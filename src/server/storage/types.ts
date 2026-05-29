@@ -12,6 +12,8 @@ export interface OAuthState {
     createdAt: number;
 }
 
+export type SessionStatus = 'pending' | 'active' | 'failed';
+
 export interface Session {
     sessionId: string;
     serverId?: string; // Database server ID for mapping
@@ -21,16 +23,21 @@ export interface Session {
     callbackUrl: string;
     createdAt: number;
     updatedAt?: number;
+    /**
+     * Storage-owned expiration timestamp for pending/inactive sessions.
+     * Active sessions use updatedAt-based dormancy cleanup instead.
+     */
+    expiresAt?: number | null;
     userId: string;
     headers?: Record<string, string>;
     authUrl?: string | null;
     /**
-     * Session status marker used for TTL transitions:
-     * - false: short-lived intermediate/error/auth-pending session state
-     *          (keep this value when connection/auth is incomplete or failed)
-     * - true: active long-lived session state after successful connection/auth completion
+     * Session status marker used for lifecycle cleanup:
+     * - pending: short-lived intermediate/auth-pending session state
+     * - active: restorable session after successful connection/auth completion
+     * - failed: short-lived terminal failure state retained until cleanup
      */
-    active?: boolean;
+    status?: SessionStatus;
 }
 
 export interface SessionCredentials {
@@ -52,7 +59,6 @@ export interface SessionMutationEvent {
     timestamp: number;
     session?: Session;
     patch?: Partial<Session>;
-    ttl?: number;
 }
 
 export type SessionMutationListener = (event: SessionMutationEvent) => void | Promise<void>;
@@ -86,24 +92,22 @@ export interface SessionStore {
     /**
      * Creates a new session. Throws if session already exists.
      * @param session - Session data to create
-     * @param ttl - Optional TTL in seconds (defaults to backend's default)
      */
-    create(session: Session, ttl?: number): Promise<void>;
+    create(session: Session): Promise<void>;
 
     /**
      * Updates an existing session with partial data. Throws if session does not exist.
      * @param userId - User identifier
      * @param sessionId - Session identifier
      * @param data - Partial session data to update
-     * @param ttl - Optional TTL in seconds (defaults to backend's default)
      */
-    update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void>;
+    update(userId: string, sessionId: string, data: Partial<Session>): Promise<void>;
 
     /**
      * Patches runtime credentials for an existing session.
      * These values are separated from connection metadata in durable SQL stores.
      */
-    patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void>;
+    patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void>;
 
     /**
      * Retrieves a session

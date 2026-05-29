@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { SupabaseStorageBackend } from '../../src/server/storage/supabase-backend';
 import { createMockSession, createMockTokens } from '../test-utils';
+import { DORMANT_SESSION_EXPIRATION_MS, STATE_EXPIRATION_MS } from '../../src/shared/constants';
 
 /**
  * A mock Supabase client that faithfully simulates the fluent builder API:
@@ -57,6 +58,14 @@ function createMockSupabaseClient() {
                 },
                 eq:  (k: string, v: any) => { filters.push(row => row[k] === v);  return chain; },
                 neq: (k: string, v: any) => { filters.push(row => row[k] !== v);  return chain; },
+                not: (k: string, op: string, v: any) => {
+                    if (op === 'is' && v === null) {
+                        filters.push(row => row[k] !== null && row[k] !== undefined);
+                    } else if (op === 'is') {
+                        filters.push(row => row[k] !== v);
+                    }
+                    return chain;
+                },
                 lt:  (k: string, v: any) => {
                     filters.push(row => new Date(row[k]).getTime() < new Date(v).getTime());
                     return chain;
@@ -187,21 +196,27 @@ test.describe('SupabaseStorageBackend', () => {
             expect(row.server_url).toBe(session.serverUrl);
             expect(row.transport_type).toBe(session.transportType);
             expect(row.callback_url).toBe(session.callbackUrl);
-            expect(row.active).toBe(session.active);
+            expect(row.status).toBe(session.status);
             expect(row.tokens).toBeUndefined();
             expect(row.client_information).toBeUndefined();
             expect(row.code_verifier).toBeUndefined();
         });
 
-        test('sets expires_at correctly from TTL', async () => {
-            const ttl = 3600;
+        test('sets short expires_at for pending sessions', async () => {
             const before = Date.now();
-            await storage.create(createMockSession(), ttl);
+            await storage.create(createMockSession({ status: 'pending' }));
 
             const row = mockSupabase._listSessions()[0];
             const expiresMs = new Date(row.expires_at).getTime();
-            expect(expiresMs).toBeGreaterThanOrEqual(before + ttl * 1000 - 100);
-            expect(expiresMs).toBeLessThanOrEqual(Date.now() + ttl * 1000 + 100);
+            expect(expiresMs).toBeGreaterThanOrEqual(before + STATE_EXPIRATION_MS - 100);
+            expect(expiresMs).toBeLessThanOrEqual(Date.now() + STATE_EXPIRATION_MS + 100);
+        });
+
+        test('leaves expires_at null for active sessions', async () => {
+            await storage.create(createMockSession({ status: 'active' }));
+
+            const row = mockSupabase._listSessions()[0];
+            expect(row.expires_at).toBeNull();
         });
 
         test('keeps headers on sessions and credentials in mcp_credentials', async () => {
@@ -238,13 +253,13 @@ test.describe('SupabaseStorageBackend', () => {
             await storage.create(session);
 
             const newTokens = createMockTokens();
-            await storage.update(session.userId, session.sessionId, { active: true, transportType: 'streamable-http' });
+            await storage.update(session.userId, session.sessionId, { status: 'active', transportType: 'streamable-http' });
             await storage.patchCredentials(session.userId, session.sessionId, { tokens: newTokens });
 
             const retrieved = await storage.get(session.userId, session.sessionId);
             const credentials = await storage.getCredentials(session.userId, session.sessionId);
             // Updated
-            expect(retrieved?.active).toBe(true);
+            expect(retrieved?.status).toBe('active');
             expect((retrieved as any)?.tokens).toBeUndefined();
             expect(credentials?.tokens).toEqual(newTokens);
             expect(retrieved?.transportType).toBe('streamable-http');
@@ -283,22 +298,20 @@ test.describe('SupabaseStorageBackend', () => {
             expect(credentials?.tokens).toBeNull();
         });
 
-        test('refreshes expires_at with a new TTL', async () => {
-            const session = createMockSession();
-            await storage.create(session, 10);        // 10s TTL on create
+        test('promotion to active clears pending expires_at', async () => {
+            const session = createMockSession({ status: 'pending' });
+            await storage.create(session);
+            expect(mockSupabase._listSessions()[0].expires_at).not.toBeNull();
 
-            const before = Date.now();
-            await storage.update(session.userId, session.sessionId, { active: true }, 7200);
+            await storage.update(session.userId, session.sessionId, { status: 'active' });
 
             const row = mockSupabase._listSessions()[0];
-            const expiresMs = new Date(row.expires_at).getTime();
-            // Should now be ~2 hours from now (not 10 seconds)
-            expect(expiresMs).toBeGreaterThan(before + 7000 * 1000);
+            expect(row.expires_at).toBeNull();
         });
 
         test('throws if session does not exist', async () => {
             await expect(
-                storage.update('no-user', 'no-session', { active: true })
+                storage.update('no-user', 'no-session', { status: 'active' })
             ).rejects.toThrow('not found');
         });
     });
@@ -319,7 +332,7 @@ test.describe('SupabaseStorageBackend', () => {
             expect(result?.transportType).toBe(session.transportType);
             expect(result?.callbackUrl).toBe(session.callbackUrl);
             expect(result?.userId).toBe(session.userId);
-            expect(result?.active).toBe(session.active);
+            expect(result?.status).toBe(session.status);
             expect(typeof result?.createdAt).toBe('number');
         });
 
@@ -419,8 +432,12 @@ test.describe('SupabaseStorageBackend', () => {
     // ── cleanupExpired ───────────────────────────────────────────────────────
     test.describe('cleanupExpired', () => {
         test('deletes rows where expires_at is in the past', async () => {
-            await storage.create(createMockSession({ sessionId: 'alive' }),  3600);  // future
-            await storage.create(createMockSession({ sessionId: 'zombie' }), -3600); // past
+            await storage.create(createMockSession({ sessionId: 'alive', status: 'pending' }));
+            await storage.create(createMockSession({
+                sessionId: 'zombie',
+                status: 'pending',
+                createdAt: Date.now() - STATE_EXPIRATION_MS - 1000,
+            }));
 
             await storage.cleanupExpired();
 
@@ -430,9 +447,21 @@ test.describe('SupabaseStorageBackend', () => {
         });
 
         test('is a no-op when there are no expired sessions', async () => {
-            await storage.create(createMockSession({ sessionId: 'fresh' }), 3600);
+            await storage.create(createMockSession({ sessionId: 'fresh' }));
             await storage.cleanupExpired();
             expect(mockSupabase._listSessions().length).toBe(1);
+        });
+
+        test('deletes dormant active sessions by updated_at', async () => {
+            await storage.create(createMockSession({
+                sessionId: 'dormant',
+                status: 'active',
+                updatedAt: Date.now() - DORMANT_SESSION_EXPIRATION_MS - 1000,
+            }));
+
+            await storage.cleanupExpired();
+
+            expect(mockSupabase._listSessions()).toEqual([]);
         });
     });
 

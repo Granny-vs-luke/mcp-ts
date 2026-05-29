@@ -2,6 +2,12 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import type { SessionStore, Session, SessionCredentials } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
+import {
+    mergeSessionUpdate,
+    normalizeNewSession,
+    normalizeStoredSession,
+    isSessionExpired,
+} from './lifecycle.js';
 
 /**
  * File system implementation of SessionStore
@@ -39,7 +45,8 @@ export class FileStorageBackend implements SessionStore {
             this.credentialsCache = new Map();
             if (Array.isArray(json.sessions)) {
                 json.sessions.forEach((s: Session) => {
-                    this.memoryCache!.set(this.getSessionKey(s.userId || 'unknown', s.sessionId), s);
+                    const session = normalizeStoredSession(s);
+                    this.memoryCache!.set(this.getSessionKey(session.userId || 'unknown', session.sessionId), session);
                 });
             }
             if (Array.isArray(json.credentials)) {
@@ -83,7 +90,7 @@ export class FileStorageBackend implements SessionStore {
         return generateSessionId();
     }
 
-    async create(session: Session, ttl?: number): Promise<void> {
+    async create(session: Session): Promise<void> {
         await this.ensureInitialized();
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
@@ -93,18 +100,11 @@ export class FileStorageBackend implements SessionStore {
             throw new Error(`Session ${sessionId} already exists`);
         }
 
-        const now = Date.now();
-        const createdAt = session.createdAt || now;
-        this.memoryCache!.set(sessionKey, {
-            ...session,
-            createdAt,
-            updatedAt: session.updatedAt ?? createdAt,
-        });
+        this.memoryCache!.set(sessionKey, normalizeNewSession(session));
         await this.flush();
-        // Note: TTL is ignored in file backend - sessions don't auto-expire
     }
 
-    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
         await this.ensureInitialized();
         if (!userId || !sessionId) throw new Error('userId and sessionId required');
 
@@ -115,18 +115,13 @@ export class FileStorageBackend implements SessionStore {
             throw new Error(`Session ${sessionId} not found`);
         }
 
-        const updated = {
-            ...current,
-            ...data,
-            updatedAt: data.updatedAt ?? Date.now(),
-        };
+        const updated = mergeSessionUpdate(current, data);
 
         this.memoryCache!.set(sessionKey, updated);
         await this.flush();
-        // Note: TTL is ignored in file backend - sessions don't auto-expire
     }
 
-    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void> {
         await this.ensureInitialized();
         const sessionKey = this.getSessionKey(userId, sessionId);
         if (!this.memoryCache!.has(sessionKey)) {
@@ -196,8 +191,20 @@ export class FileStorageBackend implements SessionStore {
     }
 
     async cleanupExpired(): Promise<void> {
-        // Could implement TTL check here using createdAt
         await this.ensureInitialized();
+        let changed = false;
+
+        for (const [key, session] of this.memoryCache!.entries()) {
+            if (!isSessionExpired(session)) continue;
+
+            this.memoryCache!.delete(key);
+            this.credentialsCache!.delete(key);
+            changed = true;
+        }
+
+        if (changed) {
+            await this.flush();
+        }
     }
 
     async disconnect(): Promise<void> {

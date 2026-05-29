@@ -1,5 +1,6 @@
 import type { SessionStore, Session, SessionCredentials } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
+import { isSessionExpired, mergeSessionUpdate, normalizeNewSession } from './lifecycle.js';
 
 /**
  * In-memory implementation of SessionStore
@@ -27,7 +28,7 @@ export class MemoryStorageBackend implements SessionStore {
         return generateSessionId();
     }
 
-    async create(session: Session, ttl?: number): Promise<void> {
+    async create(session: Session): Promise<void> {
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
@@ -36,23 +37,16 @@ export class MemoryStorageBackend implements SessionStore {
             throw new Error(`Session ${sessionId} already exists`);
         }
 
-        const now = Date.now();
-        const createdAt = session.createdAt || now;
-        this.sessions.set(sessionKey, {
-            ...session,
-            createdAt,
-            updatedAt: session.updatedAt ?? createdAt,
-        });
+        this.sessions.set(sessionKey, normalizeNewSession(session));
 
         // Update index
         if (!this.userIdSessions.has(userId)) {
             this.userIdSessions.set(userId, new Set());
         }
         this.userIdSessions.get(userId)!.add(sessionId);
-        // Note: TTL is ignored in memory backend - sessions don't auto-expire
     }
 
-    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
         if (!userId || !sessionId) throw new Error('userId and sessionId required');
 
         const sessionKey = this.getSessionKey(userId, sessionId);
@@ -62,17 +56,12 @@ export class MemoryStorageBackend implements SessionStore {
             throw new Error(`Session ${sessionId} not found`);
         }
 
-        const updated = {
-            ...current,
-            ...data,
-            updatedAt: data.updatedAt ?? Date.now(),
-        };
+        const updated = mergeSessionUpdate(current, data);
 
         this.sessions.set(sessionKey, updated);
-        // Note: TTL is ignored in memory backend - sessions don't auto-expire
     }
 
-    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>, ttl?: number): Promise<void> {
+    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void> {
         const sessionKey = this.getSessionKey(userId, sessionId);
         if (!this.sessions.has(sessionKey)) {
             throw new Error(`Session ${sessionId} not found`);
@@ -148,9 +137,20 @@ export class MemoryStorageBackend implements SessionStore {
     }
 
     async cleanupExpired(): Promise<void> {
-        // In-memory doesn't implement TTL automatically, 
-        // but we could check createdAt + TTL here if needed.
-        // For now, no-op.
+        for (const [key, session] of this.sessions.entries()) {
+            if (!isSessionExpired(session)) continue;
+
+            this.sessions.delete(key);
+            this.credentials.delete(key);
+
+            const set = this.userIdSessions.get(session.userId);
+            if (set) {
+                set.delete(session.sessionId);
+                if (set.size === 0) {
+                    this.userIdSessions.delete(session.userId);
+                }
+            }
+        }
     }
 
     async disconnect(): Promise<void> {

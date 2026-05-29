@@ -60,14 +60,11 @@ interface Session {
   serverUrl: string;
   callbackUrl: string;
   transportType: 'sse' | 'streamable-http';
-  active: boolean;
+  status: 'pending' | 'active' | 'failed';
   createdAt: number;
+  updatedAt?: number;
+  expiresAt?: number | null;
   headers?: Record<string, string>;
-  // OAuth data
-  tokens?: OAuthTokens;
-  clientInformation?: OAuthClientInformation;
-  codeVerifier?: string;
-  clientId?: string;
 }
 ```
 

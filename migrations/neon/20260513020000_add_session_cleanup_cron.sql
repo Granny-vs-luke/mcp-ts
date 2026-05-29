@@ -18,12 +18,12 @@ WHERE jobname IN (
 );
 
 -- Stage 1: Short-term Transient Purge (every 5 minutes)
--- Removes failed connections, abandoned OAuth flows, and other inactive
--- sessions whose TTL has expired.
+-- Removes failed connections, abandoned OAuth flows, and other transient
+-- sessions whose pending expiration has passed.
 SELECT cron.schedule(
     'mcp-cleanup-transient-sessions',
     '*/5 * * * *',
-    $$DELETE FROM public.mcp_sessions WHERE expires_at < now() AND active IS NOT TRUE;$$
+    $$DELETE FROM public.mcp_sessions WHERE expires_at IS NOT NULL AND expires_at < now() AND status <> 'active';$$
 );
 
 -- Stage 2: Long-term Dormancy Eviction (daily at midnight UTC)
@@ -31,5 +31,5 @@ SELECT cron.schedule(
 SELECT cron.schedule(
     'mcp-cleanup-dormant-sessions',
     '0 0 * * *',
-    $$DELETE FROM public.mcp_sessions WHERE active = true AND updated_at < now() - interval '30 days';$$
+    $$DELETE FROM public.mcp_sessions WHERE status = 'active' AND updated_at < now() - interval '30 days';$$
 );

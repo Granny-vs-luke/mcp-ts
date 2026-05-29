@@ -5,27 +5,27 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Stage 1: Short-term Transient Purge (every 5 minutes)
 -- ─────────────────────────────────────────────────────────────────────────────
--- Targets sessions that are NOT active (failed connections, abandoned OAuth
--- flows, mid-flow errors) whose TTL has expired. Active sessions are explicitly
+-- Targets transient sessions (pending/failed OAuth or setup states) whose
+-- expiration has passed. Active sessions are explicitly
 -- excluded from this sweep to preserve automation credentials.
 --
 -- The idx_mcp_sessions_expires_at index ensures this is a fast indexed scan.
 SELECT cron.schedule(
     'cleanup-transient-sessions',
     '*/5 * * * *',
-    $$DELETE FROM public.mcp_sessions WHERE expires_at < now() AND active IS NOT TRUE;$$
+    $$DELETE FROM public.mcp_sessions WHERE expires_at IS NOT NULL AND expires_at < now() AND status <> 'active';$$
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Stage 2: Long-term Dormancy Eviction (daily at midnight UTC)
 -- ─────────────────────────────────────────────────────────────────────────────
--- Safety net for sessions that were successfully established (active = true)
--- but have been completely untouched for 30+ days. This prevents "active"
+-- Safety net for sessions that were successfully established (status = 'active')
+-- but have been completely untouched for 30+ days. This prevents active
 -- records from persisting indefinitely if they are genuinely abandoned.
 SELECT cron.schedule(
     'cleanup-dormant-sessions',
     '0 0 * * *',
-    $$DELETE FROM public.mcp_sessions WHERE active = true AND updated_at < now() - interval '30 days';$$
+    $$DELETE FROM public.mcp_sessions WHERE status = 'active' AND updated_at < now() - interval '30 days';$$
 );
 
 -- Add a comment on the extension for visibility in Supabase Dashboard
