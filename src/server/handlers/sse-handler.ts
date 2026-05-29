@@ -36,6 +36,7 @@ import type {
 import { RpcErrorCodes } from '../../shared/errors.js';
 import { UnauthorizedError } from '../../shared/errors.js';
 import { isConnectionEvent, isRpcResponseEvent } from '../../shared/event-routing.js';
+import { parseOAuthState } from '../../shared/utils.js';
 import { MCPClient } from '../mcp/oauth-client.js';
 import { sessions } from '../storage/index.js';
 
@@ -504,7 +505,10 @@ export class SSEConnectionManager {
    * Complete OAuth authorization flow
    */
   private async finishAuth(params: FinishAuthParams): Promise<FinishAuthResult> {
-    const { sessionId, code } = params;
+    const { code } = params;
+    const oauthState = params.state || params.sessionId;
+    const parsedState = parseOAuthState(oauthState);
+    const sessionId = parsedState?.sessionId || params.sessionId;
 
     const session = await sessions.get(this.userId, sessionId);
     if (!session) {
@@ -533,7 +537,7 @@ export class SSEConnectionManager {
 
       client.onConnectionEvent((event) => this.emitConnectionEvent(event));
 
-      await client.finishAuth(code);
+      await client.finishAuth(code, oauthState);
       this.clients.set(sessionId, client);
 
       const tools = await client.listTools();

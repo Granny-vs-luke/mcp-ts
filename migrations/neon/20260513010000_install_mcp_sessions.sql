@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     client_information JSONB,
     tokens JSONB,
     code_verifier TEXT,
-    client_id TEXT
+    client_id TEXT,
+    oauth_state JSONB
 );
 
 CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user_id ON public.mcp_sessions(user_id);

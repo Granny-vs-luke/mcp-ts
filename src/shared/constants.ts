@@ -19,7 +19,7 @@ export const DEFAULT_CLIENT_URI = 'https://mcp-assistant.in';
 export const DEFAULT_LOGO_URI = 'https://mcp-assistant.in/logo.svg';
 export const DEFAULT_POLICY_URI = 'https://mcp-assistant.in/privacy';
 export const SOFTWARE_ID = '@mcp-ts';
-export const SOFTWARE_VERSION = '1.3.4';
+export const SOFTWARE_VERSION = '2.3.4';
 
 // MCP Client Configuration
 export const MCP_CLIENT_NAME = 'mcp-ts-oauth-client';

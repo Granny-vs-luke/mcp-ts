@@ -174,17 +174,25 @@ test.describe('SupabaseStorageBackend', () => {
             expect(expiresMs).toBeLessThanOrEqual(Date.now() + ttl * 1000 + 100);
         });
 
-        test('persists JSONB fields: tokens, headers, clientInformation', async () => {
+        test('persists JSONB fields: tokens, headers, clientInformation, oauthState', async () => {
             const tokens = createMockTokens();
+            const oauthState = {
+                nonce: 'nonce-1',
+                sessionId: 'test-session-123',
+                serverId: 'test-server',
+                createdAt: Date.now(),
+            };
             const session = createMockSession({
                 tokens,
                 headers: { Authorization: 'Bearer xyz' },
+                oauthState,
             });
             await storage.create(session);
 
             const row = mockSupabase._listSessions()[0];
             expect(row.tokens).toEqual(tokens);
             expect(row.headers).toEqual({ Authorization: 'Bearer xyz' });
+            expect(row.oauth_state).toEqual(oauthState);
         });
 
         test('throws on duplicate session (unique key violation)', async () => {

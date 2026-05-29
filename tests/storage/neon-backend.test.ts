@@ -20,6 +20,7 @@ type NeonRow = {
     tokens?: unknown;
     code_verifier?: string;
     client_id?: string;
+    oauth_state?: unknown;
 };
 
 function createMockNeonSql() {
@@ -49,6 +50,7 @@ function createMockNeonSql() {
                 tokens,
                 codeVerifier,
                 clientId,
+                oauthState,
                 expiresAt,
             ] = params;
 
@@ -76,6 +78,7 @@ function createMockNeonSql() {
                 tokens,
                 code_verifier: codeVerifier as string | undefined,
                 client_id: clientId as string | undefined,
+                oauth_state: oauthState,
             });
             return [];
         }
@@ -93,6 +96,7 @@ function createMockNeonSql() {
                 tokens,
                 codeVerifier,
                 clientId,
+                oauthState,
                 expiresAt,
                 userId,
                 sessionId,
@@ -113,6 +117,7 @@ function createMockNeonSql() {
             row.tokens = tokens;
             row.code_verifier = codeVerifier as string | undefined;
             row.client_id = clientId as string | undefined;
+            row.oauth_state = oauthState;
             row.expires_at = expiresAt as string;
             row.updated_at = new Date().toISOString();
             return [{ id: row.id }];
@@ -189,9 +194,16 @@ test.describe('NeonStorageBackend', () => {
     });
 
     test('stores and retrieves a session', async () => {
+        const oauthState = {
+            nonce: 'nonce-1',
+            sessionId: 'test-session-123',
+            serverId: 'test-server',
+            createdAt: Date.now(),
+        };
         const session = createMockSession({
             tokens: createMockTokens(),
             headers: { Authorization: 'Bearer test' },
+            oauthState,
         });
 
         await storage.create(session);
@@ -201,6 +213,7 @@ test.describe('NeonStorageBackend', () => {
         expect(retrieved?.userId).toBe(session.userId);
         expect(retrieved?.tokens).toEqual(session.tokens);
         expect(retrieved?.headers).toEqual(session.headers);
+        expect(retrieved?.oauthState).toEqual(oauthState);
     });
 
     test('throws if a session already exists', async () => {

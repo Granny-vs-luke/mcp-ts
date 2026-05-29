@@ -58,6 +58,12 @@ export interface MockSession {
         refresh_token?: string;
     };
     headers?: Record<string, string>;
+    oauthState?: {
+        nonce: string;
+        sessionId: string;
+        serverId: string;
+        createdAt: number;
+    } | null;
 }
 
 /**

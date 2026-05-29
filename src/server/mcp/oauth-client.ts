@@ -593,7 +593,7 @@ export class MCPClient {
    */
 
   // TODO: needs to be optimized
-  async finishAuth(authCode: string): Promise<void> {
+  async finishAuth(authCode: string, state?: string): Promise<void> {
     this.emitStateChange('AUTHENTICATING');
     this.emitProgress('Exchanging authorization code for tokens...');
 
@@ -604,6 +604,18 @@ export class MCPClient {
       this.emitError(error, 'auth');
       this.emitStateChange('FAILED');
       throw new Error(error);
+    }
+
+    if (state) {
+      const stateCheck = await this.oauthProvider.checkState(state);
+      if (!stateCheck.valid) {
+        const error = stateCheck.error || 'Invalid OAuth state';
+        this.emitError(error, 'auth');
+        this.emitStateChange('FAILED');
+        throw new Error(error);
+      }
+
+      await this.oauthProvider.consumeState(state);
     }
 
     /**

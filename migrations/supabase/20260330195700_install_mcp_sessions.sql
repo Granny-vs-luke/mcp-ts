@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     client_information JSONB,
     tokens JSONB,
     code_verifier TEXT,
-    client_id TEXT
+    client_id TEXT,
+    oauth_state JSONB
 );
 
 -- Add an index on user_id for faster lookups

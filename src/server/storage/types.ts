@@ -5,6 +5,13 @@ import type {
     OAuthClientInformationMixed,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 
+export interface OAuthState {
+    nonce: string;
+    sessionId: string;
+    serverId: string;
+    createdAt: number;
+}
+
 export interface Session {
     sessionId: string;
     serverId?: string; // Database server ID for mapping
@@ -25,8 +32,9 @@ export interface Session {
     // OAuth data (consolidated)
     clientInformation?: OAuthClientInformationMixed;
     tokens?: OAuthTokens;
-    codeVerifier?: string;
+    codeVerifier?: string | null;
     clientId?: string;
+    oauthState?: OAuthState | null;
 }
 
 export type SessionMutationType = 'create' | 'update' | 'delete';

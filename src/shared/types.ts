@@ -236,6 +236,7 @@ export interface ReadResourceParams {
 export interface FinishAuthParams {
   sessionId: string;
   code: string;
+  state?: string;
 }
 
 export type McpRpcParams =

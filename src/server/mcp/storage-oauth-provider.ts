@@ -5,6 +5,7 @@ import type {
     OAuthClientMetadata,
     OAuthTokens
 } from "@modelcontextprotocol/sdk/shared/auth.js";
+import { nanoid } from "nanoid";
 import { sessions, type Session } from "../storage/index.js";
 import {
     DEFAULT_CLIENT_NAME,
@@ -13,7 +14,9 @@ import {
     DEFAULT_POLICY_URI,
     SOFTWARE_ID,
     SOFTWARE_VERSION,
+    STATE_EXPIRATION_MS,
 } from '../../shared/constants.js';
+import { formatOAuthState, parseOAuthState } from '../../shared/utils.js';
 
 /**
  * Extension of OAuthClientProvider interface with additional methods
@@ -174,21 +177,62 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async state(): Promise<string> {
-        return this.sessionId;
+        const nonce = nanoid(32);
+        await this.saveSessionData({
+            oauthState: {
+                nonce,
+                sessionId: this.sessionId,
+                serverId: this.serverId,
+                createdAt: Date.now(),
+            },
+            codeVerifier: null,
+        });
+        return formatOAuthState(nonce, this.sessionId);
     }
 
-    async checkState(_state: string): Promise<{ valid: boolean; serverId?: string; error?: string }> {
-        const data = await sessions.get(this.userId, this.sessionId);
+    async checkState(state: string): Promise<{ valid: boolean; serverId?: string; error?: string }> {
+        const parsed = parseOAuthState(state);
+        if (!parsed) {
+            return { valid: false, error: "Invalid OAuth state" };
+        }
+
+        if (parsed.sessionId !== this.sessionId) {
+            return { valid: false, error: "OAuth state mismatch" };
+        }
+
+        const data = await sessions.get(this.userId, parsed.sessionId);
 
         if (!data) {
             return { valid: false, error: "Session not found" };
         }
 
-        return { valid: true, serverId: this.serverId };
+        const oauthState = data.oauthState;
+        if (!oauthState) {
+            return { valid: false, error: "OAuth state not found" };
+        }
+
+        if (
+            oauthState.nonce !== parsed.nonce ||
+            oauthState.sessionId !== parsed.sessionId ||
+            oauthState.serverId !== this.serverId
+        ) {
+            return { valid: false, error: "OAuth state mismatch" };
+        }
+
+        if (Date.now() - oauthState.createdAt > STATE_EXPIRATION_MS) {
+            return { valid: false, error: "OAuth state expired" };
+        }
+
+        return { valid: true, serverId: oauthState.serverId };
     }
 
-    async consumeState(_state: string): Promise<void> {
-        // No-op
+    async consumeState(state: string): Promise<void> {
+        const result = await this.checkState(state);
+        if (!result.valid) {
+            throw new Error(result.error || "Invalid OAuth state");
+        }
+
+        await this.saveSessionData({ oauthState: null });
     }
 
     async redirectToAuthorization(authUrl: URL): Promise<void> {
@@ -219,6 +263,11 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async saveCodeVerifier(verifier: string): Promise<void> {
+        const data = await this.getSessionData();
+        if (data.codeVerifier) {
+            return;
+        }
+
         await this.saveSessionData({ codeVerifier: verifier });
     }
 

@@ -50,6 +50,7 @@ export class SupabaseStorageBackend implements SessionStore {
             tokens: decryptObject(row.tokens),
             codeVerifier: row.code_verifier,
             clientId: row.client_id,
+            oauthState: row.oauth_state,
         };
     }
 
@@ -77,6 +78,7 @@ export class SupabaseStorageBackend implements SessionStore {
                 tokens: encryptObject(session.tokens),
                 code_verifier: session.codeVerifier,
                 client_id: session.clientId,
+                oauth_state: session.oauthState,
                 expires_at: expiresAt
             });
 
@@ -110,6 +112,7 @@ export class SupabaseStorageBackend implements SessionStore {
         if ('tokens' in data) updateData.tokens = data.tokens === undefined ? null : encryptObject(data.tokens);
         if ('codeVerifier' in data) updateData.code_verifier = data.codeVerifier;
         if ('clientId' in data) updateData.client_id = data.clientId;
+        if ('oauthState' in data) updateData.oauth_state = data.oauthState ?? null;
 
         const { data: updatedRows, error } = await this.supabase
             .from('mcp_sessions')

@@ -27,6 +27,7 @@ type NeonSessionRow = {
     tokens?: unknown;
     code_verifier?: string | null;
     client_id?: string | null;
+    oauth_state?: unknown;
 };
 
 export class NeonStorageBackend implements SessionStore {
@@ -85,6 +86,7 @@ export class NeonStorageBackend implements SessionStore {
             tokens: decryptObject(row.tokens),
             codeVerifier: row.code_verifier ?? undefined,
             clientId: row.client_id ?? undefined,
+            oauthState: row.oauth_state as Session['oauthState'],
         };
     }
 
@@ -112,10 +114,11 @@ export class NeonStorageBackend implements SessionStore {
                     tokens,
                     code_verifier,
                     client_id,
+                    oauth_state,
                     expires_at
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8,
-                    $9, $10, $11, $12, $13, $14, $15
+                    $9, $10, $11, $12, $13, $14, $15, $16
                 )`,
                 [
                     sessionId,
@@ -132,6 +135,7 @@ export class NeonStorageBackend implements SessionStore {
                     encryptObject(session.tokens),
                     session.codeVerifier,
                     session.clientId,
+                    session.oauthState,
                     expiresAt,
                 ]
             );
@@ -167,9 +171,10 @@ export class NeonStorageBackend implements SessionStore {
                 tokens = $9,
                 code_verifier = $10,
                 client_id = $11,
-                expires_at = $12,
+                oauth_state = $12,
+                expires_at = $13,
                 updated_at = now()
-             WHERE user_id = $13 AND session_id = $14
+             WHERE user_id = $14 AND session_id = $15
              RETURNING id`,
             [
                 updatedSession.serverId,
@@ -183,6 +188,7 @@ export class NeonStorageBackend implements SessionStore {
                 updatedSession.tokens === undefined ? null : encryptObject(updatedSession.tokens),
                 updatedSession.codeVerifier,
                 updatedSession.clientId,
+                updatedSession.oauthState ?? null,
                 expiresAt,
                 userId,
                 sessionId,

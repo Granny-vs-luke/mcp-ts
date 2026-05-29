@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { parseOAuthState } from '../../shared/utils.js';
 
 export interface OAuthPopupConnectionLike {
   sessionId: string;
@@ -169,7 +170,8 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
       const popupWindow = event.source && 'postMessage' in event.source
         ? event.source as WindowProxy
         : null;
-      const targetSessionId = typeof event.data.sessionId === 'string' ? event.data.sessionId : '';
+      const rawState = typeof event.data.sessionId === 'string' ? event.data.sessionId : '';
+      const targetSessionId = rawState ? parseOAuthState(rawState)?.sessionId || rawState : '';
 
       if (popupWindow && targetSessionId) {
         pendingPopupsRef.current.set(targetSessionId, popupWindow);
@@ -204,7 +206,7 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
       processingCodesRef.current.add(codeKey);
 
       try {
-        await finishAuth(targetSession.sessionId, code);
+        await finishAuth(rawState, code);
       } catch (error) {
         processingCodesRef.current.delete(codeKey);
         pendingPopupsRef.current.delete(targetSession.sessionId);
