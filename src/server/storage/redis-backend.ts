@@ -90,11 +90,18 @@ export class RedisStorageBackend implements SessionStore {
         const sessionKey = this.getSessionKey(userId, sessionId);
         const userIdKey = this.getUserIdKey(userId);
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
+        const now = Date.now();
+        const createdAt = session.createdAt || now;
+        const sessionWithTimestamps: Session = {
+            ...session,
+            createdAt,
+            updatedAt: session.updatedAt ?? createdAt,
+        };
 
         /** ioredis syntax: set(key, val, 'EX', ttl, 'NX') */
         const result = await this.redis.set(
             sessionKey,
-            JSON.stringify(session),
+            JSON.stringify(sessionWithTimestamps),
             'EX',
             effectiveTtl,
             'NX'
@@ -109,6 +116,10 @@ export class RedisStorageBackend implements SessionStore {
     async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
         const sessionKey = this.getSessionKey(userId, sessionId);
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
+        const updateData = {
+            ...data,
+            updatedAt: data.updatedAt ?? Date.now(),
+        };
 
         /** Lua script for atomic parsing, merging, and saving */
         const script = `
@@ -132,7 +143,7 @@ export class RedisStorageBackend implements SessionStore {
             script,
             1,
             sessionKey,
-            JSON.stringify(data),
+            JSON.stringify(updateData),
             effectiveTtl
         );
 

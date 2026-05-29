@@ -93,7 +93,13 @@ export class FileStorageBackend implements SessionStore {
             throw new Error(`Session ${sessionId} already exists`);
         }
 
-        this.memoryCache!.set(sessionKey, session);
+        const now = Date.now();
+        const createdAt = session.createdAt || now;
+        this.memoryCache!.set(sessionKey, {
+            ...session,
+            createdAt,
+            updatedAt: session.updatedAt ?? createdAt,
+        });
         await this.flush();
         // Note: TTL is ignored in file backend - sessions don't auto-expire
     }
@@ -111,7 +117,8 @@ export class FileStorageBackend implements SessionStore {
 
         const updated = {
             ...current,
-            ...data
+            ...data,
+            updatedAt: data.updatedAt ?? Date.now(),
         };
 
         this.memoryCache!.set(sessionKey, updated);

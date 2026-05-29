@@ -12,6 +12,8 @@ export interface Connection {
     state: string;
     error?: string;
     tools?: Tool[];
+    createdAt?: Date | string | number;
+    updatedAt?: Date | string | number;
 }
 
 export interface ConnectConfig {

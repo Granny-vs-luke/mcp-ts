@@ -36,7 +36,13 @@ export class MemoryStorageBackend implements SessionStore {
             throw new Error(`Session ${sessionId} already exists`);
         }
 
-        this.sessions.set(sessionKey, session);
+        const now = Date.now();
+        const createdAt = session.createdAt || now;
+        this.sessions.set(sessionKey, {
+            ...session,
+            createdAt,
+            updatedAt: session.updatedAt ?? createdAt,
+        });
 
         // Update index
         if (!this.userIdSessions.has(userId)) {
@@ -58,7 +64,8 @@ export class MemoryStorageBackend implements SessionStore {
 
         const updated = {
             ...current,
-            ...data
+            ...data,
+            updatedAt: data.updatedAt ?? Date.now(),
         };
 
         this.sessions.set(sessionKey, updated);

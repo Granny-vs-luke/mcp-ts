@@ -31,6 +31,18 @@ function stateBadgeClass(state: string) {
   }
 }
 
+function formatTimestamp(value?: Date | string | number) {
+  if (!value) return "N/A";
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "N/A";
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
 export default function ConnectionItem({
   connection,
   onDisconnect,
@@ -133,6 +145,14 @@ export default function ConnectionItem({
             <dt className="text-muted-foreground">Transport</dt>
             <dd className="text-foreground">
               {connection.transport || "sse"}
+            </dd>
+            <dt className="text-muted-foreground">Created</dt>
+            <dd className="text-foreground">
+              {formatTimestamp(connection.createdAt)}
+            </dd>
+            <dt className="text-muted-foreground">Updated</dt>
+            <dd className="text-foreground">
+              {formatTimestamp(connection.updatedAt ?? connection.createdAt)}
             </dd>
           </dl>
         </CollapsibleContent>

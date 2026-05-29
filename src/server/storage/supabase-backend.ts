@@ -46,6 +46,7 @@ export class SupabaseStorageBackend implements SessionStore {
             transportType: row.transport_type,
             callbackUrl: row.callback_url,
             createdAt: new Date(row.created_at).getTime(),
+            updatedAt: new Date(row.updated_at ?? row.created_at).getTime(),
             userId: row.user_id,
             headers: decryptObject(row.headers),
             authUrl: row.auth_url,
@@ -80,6 +81,8 @@ export class SupabaseStorageBackend implements SessionStore {
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
+        const createdAt = new Date(session.createdAt || Date.now()).toISOString();
+        const updatedAt = new Date(session.updatedAt ?? session.createdAt ?? Date.now()).toISOString();
         const expiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
 
         const { error } = await this.supabase
@@ -92,7 +95,8 @@ export class SupabaseStorageBackend implements SessionStore {
                 server_url: session.serverUrl,
                 transport_type: session.transportType,
                 callback_url: session.callbackUrl,
-                created_at: new Date(session.createdAt || Date.now()).toISOString(),
+                created_at: createdAt,
+                updated_at: updatedAt,
                 headers: encryptObject(session.headers),
                 auth_url: session.authUrl ?? null,
                 active: session.active ?? false,

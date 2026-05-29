@@ -239,6 +239,7 @@ export class SSEConnectionManager {
         serverUrl: s.serverUrl,
         transport: s.transportType,
         createdAt: s.createdAt,
+        updatedAt: s.updatedAt ?? s.createdAt,
         active: s.active !== false,
       })),
     };

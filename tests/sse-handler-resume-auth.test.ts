@@ -95,6 +95,45 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     manager.dispose();
   });
 
+  test('listSessions includes created and updated timestamps', async () => {
+    const storage = new MemoryStorageBackend();
+    _setStorageInstanceForTesting(storage);
+
+    await storage.create({
+      sessionId: 'timestamped-session',
+      userId: 'user-timestamps',
+      serverId: 'srv-timestamps',
+      serverName: 'Timestamped Server',
+      serverUrl: 'https://example.com/mcp-timestamps',
+      callbackUrl: 'https://app.local/oauth/callback',
+      transportType: 'streamable-http',
+      createdAt: 1780076200000,
+      updatedAt: 1780076300000,
+      active: true,
+    });
+
+    const manager = new SSEConnectionManager(
+      { userId: 'user-timestamps' },
+      () => { }
+    );
+
+    const response = await manager.handleRequest({
+      id: 'timestamps',
+      method: 'listSessions',
+    } as any);
+
+    expect((response as any).error).toBeUndefined();
+    expect((response as any).result.sessions).toEqual([
+      expect.objectContaining({
+        sessionId: 'timestamped-session',
+        createdAt: 1780076200000,
+        updatedAt: 1780076300000,
+      }),
+    ]);
+
+    manager.dispose();
+  });
+
   test('rehydrated RPC client reuses stored transport metadata', async () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);

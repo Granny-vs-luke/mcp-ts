@@ -20,6 +20,7 @@ export interface Session {
     transportType: 'sse' | 'streamable-http';
     callbackUrl: string;
     createdAt: number;
+    updatedAt?: number;
     userId: string;
     headers?: Record<string, string>;
     authUrl?: string | null;

@@ -23,6 +23,7 @@ export async function clearMockRedis(redis: Redis): Promise<void> {
  * Create a mock session for testing
  */
 export function createMockSession(overrides: Partial<MockSession> = {}): MockSession {
+    const now = Date.now();
     return {
         sessionId: 'test-session-123',
         userId: 'test-user-456',
@@ -32,7 +33,8 @@ export function createMockSession(overrides: Partial<MockSession> = {}): MockSes
         callbackUrl: 'https://app.example.com/callback',
         transportType: 'sse',
         active: true,
-        createdAt: Date.now(),
+        createdAt: now,
+        updatedAt: now,
         ...overrides,
     };
 }
@@ -47,6 +49,7 @@ export interface MockSession {
     transportType: 'sse' | 'streamable-http';
     active: boolean;
     createdAt: number;
+    updatedAt?: number;
     clientInformation?: {
         client_id: string;
         client_name: string;

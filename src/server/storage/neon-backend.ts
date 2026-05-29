@@ -22,6 +22,7 @@ type NeonSessionRow = {
     transport_type: 'sse' | 'streamable-http';
     callback_url: string;
     created_at: string | Date;
+    updated_at?: string | Date | null;
     user_id: string;
     headers?: unknown;
     auth_url?: string | null;
@@ -94,6 +95,7 @@ export class NeonStorageBackend implements SessionStore {
             transportType: row.transport_type,
             callbackUrl: row.callback_url,
             createdAt: new Date(row.created_at).getTime(),
+            updatedAt: new Date(row.updated_at ?? row.created_at).getTime(),
             userId: row.user_id,
             headers: decryptObject(row.headers),
             authUrl: row.auth_url ?? undefined,
@@ -128,6 +130,8 @@ export class NeonStorageBackend implements SessionStore {
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
 
         const effectiveTtl = ttl ?? this.DEFAULT_TTL;
+        const createdAt = new Date(session.createdAt || Date.now()).toISOString();
+        const updatedAt = new Date(session.updatedAt ?? session.createdAt ?? Date.now()).toISOString();
         const expiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
 
         try {
@@ -141,13 +145,14 @@ export class NeonStorageBackend implements SessionStore {
                     transport_type,
                     callback_url,
                     created_at,
+                    updated_at,
                     headers,
                     auth_url,
                     active,
                     expires_at
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8,
-                    $9, $10, $11, $12
+                    $9, $10, $11, $12, $13
                 )`,
                 [
                     sessionId,
@@ -157,7 +162,8 @@ export class NeonStorageBackend implements SessionStore {
                     session.serverUrl,
                     session.transportType,
                     session.callbackUrl,
-                    new Date(session.createdAt || Date.now()).toISOString(),
+                    createdAt,
+                    updatedAt,
                     encryptObject(session.headers),
                     session.authUrl ?? null,
                     session.active ?? false,

@@ -84,13 +84,20 @@ export class SqliteStorage implements SessionStore {
             throw new Error('userId and sessionId required');
         }
 
-        const expiresAt = ttl ? Date.now() + ttl * 1000 : null;
+        const now = Date.now();
+        const createdAt = session.createdAt || now;
+        const sessionWithTimestamps: Session = {
+            ...session,
+            createdAt,
+            updatedAt: session.updatedAt ?? createdAt,
+        };
+        const expiresAt = ttl ? now + ttl * 1000 : null;
 
         try {
             const stmt = this.db!.prepare(
                 `INSERT INTO ${this.table} (sessionId, userId, data, expiresAt) VALUES (?, ?, ?, ?)`
             );
-            stmt.run(sessionId, userId, JSON.stringify(session), expiresAt);
+            stmt.run(sessionId, userId, JSON.stringify(sessionWithTimestamps), expiresAt);
         } catch (error: any) {
             if (error.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
                 throw new Error(`Session ${sessionId} already exists`);
@@ -110,7 +117,7 @@ export class SqliteStorage implements SessionStore {
             throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
 
-        const updatedSession = { ...currentSession, ...data };
+        const updatedSession = { ...currentSession, ...data, updatedAt: data.updatedAt ?? Date.now() };
         const expiresAt = ttl ? Date.now() + ttl * 1000 : null;
 
         const stmt = this.db!.prepare(

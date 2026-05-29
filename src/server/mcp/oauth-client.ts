@@ -348,6 +348,7 @@ export class MCPClient {
     const existingSession = await sessions.get(this.userId, this.sessionId);
     if (!existingSession && this.serverId && this.serverUrl && this.callbackUrl) {
       this.createdAt = Date.now();
+      const updatedAt = this.createdAt;
       console.log(`[MCPClient] Creating initial session ${this.sessionId} for OAuth flow`);
       await sessions.create({
         sessionId: this.sessionId,
@@ -359,6 +360,7 @@ export class MCPClient {
         transportType: this.transportType || 'streamable-http',
         headers: this.headers,
         createdAt: this.createdAt,
+        updatedAt,
         active: false,
       }, Math.floor(STATE_EXPIRATION_MS / 1000)); // Short TTL until connection succeeds
     }
@@ -389,6 +391,7 @@ export class MCPClient {
       transportType: (this.transportType || 'streamable-http') as TransportType,
       headers: this.headers,
       createdAt: this.createdAt || Date.now(),
+      updatedAt: Date.now(),
       active,
     };
     if (active) {

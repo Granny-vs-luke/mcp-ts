@@ -84,6 +84,7 @@ export interface McpConnection {
   authUrl?: string;
   error?: string;
   createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface McpClient {
@@ -344,12 +345,14 @@ export function useMcp(options: UseMcpOptions): McpClient {
                 ? existing.state
                 : normalizedState;
 
+            const updatedAt = new Date();
             return prev.map((c: McpConnection) =>
               c.sessionId === event.sessionId ? {
                 ...c,
                 state: nextState,
                 // update createdAt if present in event, otherwise keep existing
-                createdAt: event.createdAt ? new Date(event.createdAt) : c.createdAt
+                createdAt: event.createdAt ? new Date(event.createdAt) : c.createdAt,
+                updatedAt,
               } : c
             );
           } else {
@@ -369,6 +372,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                 // only against the server-reported previous state.
                 state: getVisibleState(event.state, undefined, event.previousState),
                 createdAt: event.createdAt ? new Date(event.createdAt) : undefined,
+                updatedAt: new Date(),
                 tools: [],
               },
             ];
@@ -382,7 +386,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
           }
 
           return prev.map((c: McpConnection) =>
-            c.sessionId === event.sessionId ? { ...c, tools: event.tools, state: 'READY' } : c
+            c.sessionId === event.sessionId ? { ...c, tools: event.tools, state: 'READY', updatedAt: new Date() } : c
           );
         }
 
@@ -455,6 +459,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
             transport: s.transport,
             state: (s.active === false ? 'AUTHENTICATING' : 'VALIDATING') as McpConnectionState,
             createdAt: new Date(s.createdAt),
+            updatedAt: new Date(s.updatedAt ?? s.createdAt),
             tools: [],
           }))
         );

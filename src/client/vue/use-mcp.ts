@@ -83,6 +83,7 @@ export interface McpConnection {
     authUrl?: string;
     error?: string;
     createdAt?: Date;
+    updatedAt?: Date;
 }
 
 export interface McpClient {
@@ -300,7 +301,8 @@ export function useMcp(options: UseMcpOptions): McpClient {
                         ...existing,
                         state: nextState,
                         // update createdAt if present in event, otherwise keep existing
-                        createdAt: event.createdAt ? new Date(event.createdAt) : existing.createdAt
+                        createdAt: event.createdAt ? new Date(event.createdAt) : existing.createdAt,
+                        updatedAt: new Date(),
                     };
                 } else {
                     // Fix: Don't add back disconnected sessions that were just removed
@@ -316,6 +318,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                         // only against the server-reported previous state.
                         state: getVisibleState(event.state, undefined, event.previousState),
                         createdAt: event.createdAt ? new Date(event.createdAt) : undefined,
+                        updatedAt: new Date(),
                         tools: [],
                     }];
                 }
@@ -325,7 +328,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
             case 'tools_discovered': {
                 const index = connections.value.findIndex((c) => c.sessionId === event.sessionId);
                 if (index !== -1) {
-                    connections.value[index] = { ...connections.value[index], tools: event.tools, state: 'READY' };
+                    connections.value[index] = { ...connections.value[index], tools: event.tools, state: 'READY', updatedAt: new Date() };
                 }
                 break;
             }
@@ -399,6 +402,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                     transport: s.transport,
                     state: (s.active === false ? 'AUTHENTICATING' : 'VALIDATING') as McpConnectionState,
                     createdAt: new Date(s.createdAt),
+                    updatedAt: new Date(s.updatedAt ?? s.createdAt),
                     tools: [],
                 }));
             }
