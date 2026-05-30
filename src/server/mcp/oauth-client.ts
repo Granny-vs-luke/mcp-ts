@@ -351,7 +351,7 @@ export class MCPClient {
     if (!existingSession && this.serverId && this.serverUrl && this.callbackUrl) {
       this.createdAt = Date.now();
       const updatedAt = this.createdAt;
-      console.log(`[MCPClient] Creating initial session ${this.sessionId} for OAuth flow`);
+      console.log(`[MCPClient] Creating pending session ${this.sessionId} for connection setup`);
       await sessions.create({
         sessionId: this.sessionId,
         userId: this.userId,
