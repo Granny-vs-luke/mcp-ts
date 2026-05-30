@@ -46,7 +46,7 @@ test.describe('Session Lifecycle Management', () => {
         let savedWithStatus = 'pending';
         
         const originalSaveSession = (client as any).saveSession.bind(client);
-        (client as any).saveSession = async (status: 'pending' | 'active' | 'failed') => {
+        (client as any).saveSession = async (status: 'pending' | 'active') => {
             savedWithStatus = status;
             return originalSaveSession(status);
         };
@@ -60,7 +60,7 @@ test.describe('Session Lifecycle Management', () => {
         expect(session?.expiresAt).toBeNull();
     });
 
-    test('Scenario 2: Proactive Cleanup on Generic Error for transient session', async () => {
+    test('Scenario 2: Generic error removes transient session', async () => {
         const client = new MCPClient({
             userId,
             sessionId,
@@ -91,13 +91,9 @@ test.describe('Session Lifecycle Management', () => {
             throw new Error('ECONNREFUSED');
         };
 
-        let deleteSessionCalled = false;
-        mockStorage.delete = async (id, sId) => {
-            if (id === userId && sId === sessionId) deleteSessionCalled = true;
-        };
-
         await expect(client.connect()).rejects.toThrow('ECONNREFUSED');
-        expect(deleteSessionCalled).toBe(true);
+
+        await expect(mockStorage.get(userId, sessionId)).resolves.toBeNull();
     });
 
     test('Scenario 2b: Generic reconnect error preserves active session credentials', async () => {
@@ -139,7 +135,7 @@ test.describe('Session Lifecycle Management', () => {
         expect(deleteSessionCalled).toBe(false);
     });
 
-    test('Scenario 3: Proactive Cleanup on Terminal Auth Failure (no URL)', async () => {
+    test('Scenario 3: Terminal Auth Failure (no URL) removes session', async () => {
         const client = new MCPClient({
             userId,
             sessionId,
@@ -160,13 +156,9 @@ test.describe('Session Lifecycle Management', () => {
             throw new SDKUnauthorizedError('Unauthorized');
         };
 
-        let deleteSessionCalled = false;
-        mockStorage.delete = async (id, sId) => {
-            if (id === userId && sId === sessionId) deleteSessionCalled = true;
-        };
-
         await expect(client.connect()).rejects.toThrow('OAuth authorization URL not available');
-        expect(deleteSessionCalled).toBe(true);
+
+        await expect(mockStorage.get(userId, sessionId)).resolves.toBeNull();
     });
 
     test('Scenario 4: Short-lived Pending State (status: pending)', async () => {
@@ -192,7 +184,7 @@ test.describe('Session Lifecycle Management', () => {
 
         let savedWithStatus = 'active';
         
-        (client as any).saveSession = async (status: 'pending' | 'active' | 'failed') => {
+        (client as any).saveSession = async (status: 'pending' | 'active') => {
             savedWithStatus = status;
         };
 

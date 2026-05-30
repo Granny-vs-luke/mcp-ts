@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ,
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'active', 'failed')),
+        CHECK (status IN ('pending', 'active')),
     headers JSONB,
     auth_url TEXT,
     CONSTRAINT mcp_sessions_user_session_unique

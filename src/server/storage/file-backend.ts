@@ -7,7 +7,7 @@ import {
     normalizeNewSession,
     normalizeStoredSession,
     isSessionExpired,
-} from './lifecycle.js';
+} from './session-lifecycle.js';
 
 /**
  * File system implementation of SessionStore

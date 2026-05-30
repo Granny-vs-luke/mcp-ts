@@ -18,7 +18,7 @@ WHERE jobname IN (
 );
 
 -- Stage 1: Short-term Transient Purge (every 5 minutes)
--- Removes failed connections, abandoned OAuth flows, and other transient
+-- Removes abandoned OAuth flows and other transient
 -- sessions whose pending expiration has passed.
 SELECT cron.schedule(
     'mcp-cleanup-transient-sessions',

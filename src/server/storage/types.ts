@@ -12,7 +12,7 @@ export interface OAuthState {
     createdAt: number;
 }
 
-export type SessionStatus = 'pending' | 'active' | 'failed';
+export type SessionStatus = 'pending' | 'active';
 
 export interface Session {
     sessionId: string;
@@ -35,7 +35,6 @@ export interface Session {
      * Session status marker used for lifecycle cleanup:
      * - pending: short-lived intermediate/auth-pending session state
      * - active: restorable session after successful connection/auth completion
-     * - failed: short-lived terminal failure state retained until cleanup
      */
     status?: SessionStatus;
 }

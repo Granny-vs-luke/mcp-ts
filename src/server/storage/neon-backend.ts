@@ -3,7 +3,7 @@ import type { SessionStatus } from './types.js';
 import { DORMANT_SESSION_EXPIRATION_MS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
-import { resolveSessionExpiresAt } from './lifecycle.js';
+import { resolveSessionExpiresAt } from './session-lifecycle.js';
 
 export interface NeonStorageOptions {
     schema?: string;

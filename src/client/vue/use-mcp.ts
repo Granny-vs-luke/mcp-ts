@@ -6,6 +6,11 @@
 
 import { ref, onMounted, onUnmounted, watch, computed, shallowRef } from 'vue';
 import { SSEClient, type SSEClientOptions } from '../core/sse-client';
+import {
+    getInitialConnectionState,
+    getVisibleConnectionState,
+    isTransientReconnectState,
+} from '../utils/session-state';
 import type { McpConnectionEvent, McpConnectionState } from '../../shared/events';
 import type {
     ToolInfo,
@@ -244,51 +249,13 @@ export function useMcp(options: UseMcpOptions): McpClient {
     const updateConnectionsFromEvent = (event: McpConnectionEvent) => {
         if (!isMountedRef.value) return;
 
-        const isTransientReconnectState = (state: McpConnectionState): boolean =>
-            state === 'INITIALIZING' ||
-            state === 'VALIDATING' ||
-            state === 'RECONNECTING' ||
-            state === 'CONNECTING' ||
-            state === 'CONNECTED' ||
-            state === 'DISCOVERING';
-
-        const getVisibleState = (
-            incomingState: McpConnectionState,
-            existingState?: McpConnectionState,
-            previousState?: McpConnectionState
-        ): McpConnectionState => {
-            // `INITIALIZING` has two meanings in practice:
-            // 1. genuine cold start / reconnect work
-            // 2. an internal setup step that happens mid-OAuth completion
-            //
-            // For case (2), showing raw `INITIALIZING` creates a confusing user-facing
-            // sequence like AUTHENTICATING -> INITIALIZING -> AUTHENTICATED.
-            // We keep the raw event stream intact for observability, but collapse the
-            // visible state back into the current auth phase in the UI.
-            if (
-                incomingState === 'INITIALIZING' &&
-                (
-                    existingState === 'AUTHENTICATING' ||
-                    existingState === 'AUTHENTICATED' ||
-                    previousState === 'AUTHENTICATING' ||
-                    previousState === 'AUTHENTICATED'
-                )
-            ) {
-                return existingState === 'AUTHENTICATED' || previousState === 'AUTHENTICATED'
-                    ? 'AUTHENTICATED'
-                    : 'AUTHENTICATING';
-            }
-
-            return incomingState;
-        };
-
         switch (event.type) {
             case 'state_changed': {
                 const existing = connections.value.find((c) => c.sessionId === event.sessionId);
                 if (existing) {
                     // Normalize the incoming backend state into the smoother user-facing
                     // state we want to render for this existing connection.
-                    const normalizedState = getVisibleState(event.state, existing.state, event.previousState);
+                    const normalizedState = getVisibleConnectionState(event.state, existing.state, event.previousState);
                     // In stateless per-request transport, tool calls can emit transient reconnect states.
                     // Keep READY sticky to avoid UI flicker from READY -> CONNECTING -> CONNECTED.
                     const nextState =
@@ -316,7 +283,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                         serverName: event.serverName,
                         // New connections do not have prior local state, so we normalize
                         // only against the server-reported previous state.
-                        state: getVisibleState(event.state, undefined, event.previousState),
+                        state: getVisibleConnectionState(event.state, undefined, event.previousState),
                         createdAt: event.createdAt ? new Date(event.createdAt) : undefined,
                         updatedAt: new Date(),
                         tools: [],
@@ -400,7 +367,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                     serverName: s.serverName ?? 'Unknown Server',
                     serverUrl: s.serverUrl,
                     transport: s.transport,
-                    state: (s.status === 'active' ? 'VALIDATING' : 'AUTHENTICATING') as McpConnectionState,
+                    state: getInitialConnectionState(s.status),
                     createdAt: new Date(s.createdAt),
                     updatedAt: new Date(s.updatedAt ?? s.createdAt),
                     tools: [],

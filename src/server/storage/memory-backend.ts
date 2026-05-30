@@ -1,6 +1,6 @@
 import type { SessionStore, Session, SessionCredentials } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
-import { isSessionExpired, mergeSessionUpdate, normalizeNewSession } from './lifecycle.js';
+import { isSessionExpired, mergeSessionUpdate, normalizeNewSession } from './session-lifecycle.js';
 
 /**
  * In-memory implementation of SessionStore

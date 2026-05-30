@@ -110,7 +110,7 @@ interface Session {
   serverUrl: string;
   callbackUrl: string;
   transportType: 'sse' | 'streamable-http';
-  status: 'pending' | 'active' | 'failed';
+  status: 'pending' | 'active';
   createdAt: number;
   updatedAt?: number;
   expiresAt?: number | null;

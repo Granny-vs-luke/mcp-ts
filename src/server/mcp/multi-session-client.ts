@@ -66,7 +66,7 @@ export class MultiSessionClient {
      *
      * A session is considered connectable when:
      * - It has a `serverId`, `serverUrl`, and `callbackUrl` (i.e. it was fully initialized)
-     * - Its status is `active`. Pending or failed sessions are skipped here
+     * - Its status is `active`. Pending sessions are skipped here
      *   and let the OAuth flow complete separately before we try to reconnect them.
      */
     private async getActiveSessions(): Promise<Session[]> {

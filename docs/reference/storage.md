@@ -74,7 +74,7 @@ await sessions.update('user-123', 'abc123', {
 });
 ```
 
-Expiration is managed by the backend. Pending and failed sessions (`status: 'pending' | 'failed'`) receive a short OAuth-window expiration; active sessions (`status: 'active'`) are retained until explicit deletion or dormant-session cleanup.
+Expiration is managed by the backend. Pending sessions (`status: 'pending'`) receive a short OAuth-window expiration; active sessions (`status: 'active'`) are retained until explicit deletion or dormant-session cleanup.
 
 ---
 

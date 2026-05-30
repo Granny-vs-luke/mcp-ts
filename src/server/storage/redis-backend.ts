@@ -6,7 +6,7 @@ import {
     normalizeNewSession,
     normalizeStoredSession,
     resolveSessionRedisTtlSeconds,
-} from './lifecycle.js';
+} from './session-lifecycle.js';
 
 /**
  * Redis implementation of SessionStore

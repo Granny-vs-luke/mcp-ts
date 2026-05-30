@@ -5,7 +5,7 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Stage 1: Short-term Transient Purge (every 5 minutes)
 -- ─────────────────────────────────────────────────────────────────────────────
--- Targets transient sessions (pending/failed OAuth or setup states) whose
+-- Targets transient sessions (pending OAuth or setup states) whose
 -- expiration has passed. Active sessions are explicitly
 -- excluded from this sweep to preserve automation credentials.
 --

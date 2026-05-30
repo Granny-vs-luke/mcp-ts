@@ -26,11 +26,10 @@ import {
   ReadResourceResultSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { StorageOAuthClientProvider, type AgentsOAuthProvider } from './storage-oauth-provider.js';
-import { sanitizeServerLabel } from '../../shared/utils.js';
 import { Emitter, type McpConnectionEvent, type McpObservabilityEvent, type McpConnectionState } from '../../shared/events.js';
 import { UnauthorizedError } from '../../shared/errors.js';
 import { sessions } from '../storage/index.js';
-import type { SessionStatus } from '../storage/types.js';
+import type { Session, SessionStatus } from '../storage/types.js';
 import {
   MCP_CLIENT_NAME,
   MCP_CLIENT_VERSION,
@@ -277,23 +276,25 @@ export class MCPClient {
     this.emitStateChange('INITIALIZING');
     this.emitProgress('Loading session configuration...');
 
+    let existingSession: Session | null = null;
+
     if (!this.serverUrl || !this.callbackUrl || !this.serverId) {
-      const sessionData = await sessions.get(this.userId, this.sessionId);
-      if (!sessionData) {
+      existingSession = await sessions.get(this.userId, this.sessionId);
+      if (!existingSession) {
         throw new Error(`Session not found: ${this.sessionId}`);
       }
 
-      this.serverUrl = this.serverUrl || sessionData.serverUrl;
-      this.callbackUrl = this.callbackUrl || sessionData.callbackUrl;
+      this.serverUrl = this.serverUrl || existingSession.serverUrl;
+      this.callbackUrl = this.callbackUrl || existingSession.callbackUrl;
       /**
        * Do NOT load transportType from session if not explicitly provided.
        * We want to re-negotiate (try streamable -> sse) on new connections if in "Auto" mode.
        * this.transportType = this.transportType || sessionData.transportType; 
        */
-      this.serverName = this.serverName || sessionData.serverName;
-      this.serverId = this.serverId || sessionData.serverId || 'unknown';
-      this.headers = this.headers || sessionData.headers;
-      this.createdAt = sessionData.createdAt;
+      this.serverName = this.serverName || existingSession.serverName;
+      this.serverId = this.serverId || existingSession.serverId || 'unknown';
+      this.headers = this.headers || existingSession.headers;
+      this.createdAt = existingSession.createdAt;
     }
 
     if (!this.serverUrl || !this.callbackUrl || !this.serverId) {
@@ -344,7 +345,9 @@ export class MCPClient {
     // Create session in the session store if it doesn't exist yet
     // This is needed BEFORE OAuth flow starts because the OAuth provider
     // will call saveCodeVerifier() which requires the session to exist
-    const existingSession = await sessions.get(this.userId, this.sessionId);
+    if (existingSession === null) {
+      existingSession = await sessions.get(this.userId, this.sessionId);
+    }
     if (!existingSession && this.serverId && this.serverUrl && this.callbackUrl) {
       this.createdAt = Date.now();
       const updatedAt = this.createdAt;
@@ -372,7 +375,8 @@ export class MCPClient {
    * @private
    */
   private async saveSession(
-    status: SessionStatus = 'active'
+    status: SessionStatus = 'active',
+    existingSession?: Session | null
   ): Promise<void> {
     if (!this.sessionId || !this.serverId || !this.serverUrl || !this.callbackUrl) {
       return;
@@ -396,11 +400,25 @@ export class MCPClient {
     }
 
     // Try to update first, create if doesn't exist
-    const existingSession = await sessions.get(this.userId, this.sessionId);
+    if (existingSession === undefined) {
+      existingSession = await sessions.get(this.userId, this.sessionId);
+    }
     if (existingSession) {
       await sessions.update(this.userId, this.sessionId, sessionData);
     } else {
       await sessions.create(sessionData);
+    }
+  }
+
+  /**
+   * Removes transient setup/auth sessions without masking the original error.
+   * @private
+   */
+  private async deleteTransientSession(): Promise<void> {
+    try {
+      await sessions.delete(this.userId, this.sessionId);
+    } catch {
+      // Best effort only: preserve the original connection/auth error.
     }
   }
 
@@ -532,15 +550,9 @@ export class MCPClient {
           this.emitError(message, 'auth');
           this.emitStateChange('FAILED');
           
-          // Proactive Cleanup: This session has reached a terminal failure state. 
-          // We remove it now to ensure the database remains lean, bypassing the 
-          // automated lifecycle sweep.
-          try {
-            await sessions.delete(this.userId, this.sessionId);
-          } catch {
-            // Non-blocking: Proactive cleanup failures are suppressed to prioritize 
-            // the original error context.
-          }
+          // Remove terminal setup failures immediately. Active sessions are not
+          // deleted here because this branch only runs before OAuth is available.
+          await this.deleteTransientSession();
           
           throw new Error(message);
         }
@@ -571,16 +583,15 @@ export class MCPClient {
       this.emitError(errorMessage, 'connection');
       this.emitStateChange('FAILED');
 
-      // Terminal Handshake Failure: only purge transient sessions. Active
-      // sessions may still hold valid credentials for a later reconnect.
+      // Remove transient sessions that failed before becoming restorable.
+      // Existing active sessions may still hold usable credentials for reconnect.
       try {
         const existingSession = await sessions.get(this.userId, this.sessionId);
         if (!existingSession || existingSession.status !== 'active') {
           await sessions.delete(this.userId, this.sessionId);
         }
       } catch {
-        // Non-blocking: Cleanup is performed on a best-effort basis and should
-        // not interfere with the primary error propagation.
+        // Best effort only: preserve the original connection error.
       }
 
       throw error;
@@ -702,6 +713,7 @@ export class MCPClient {
           const msg = error instanceof Error ? error.message : 'Authentication failed';
           this.emitError(msg, 'auth');
           this.emitStateChange('FAILED');
+          await this.deleteTransientSession();
           throw error;
         }
 
@@ -709,6 +721,7 @@ export class MCPClient {
           const msg = error instanceof Error ? error.message : 'Authentication failed';
           this.emitError(msg, 'auth');
           this.emitStateChange('FAILED');
+          await this.deleteTransientSession();
           throw error;
         }
 
@@ -721,6 +734,7 @@ export class MCPClient {
       const errorMessage = lastError instanceof Error ? lastError.message : 'Authentication failed';
       this.emitError(errorMessage, 'auth');
       this.emitStateChange('FAILED');
+      await this.deleteTransientSession();
       throw lastError;
     }
   }
@@ -1091,61 +1105,6 @@ export class MCPClient {
    */
   getSessionId(): string {
     return this.sessionId;
-  }
-
-  /**
-   * Gets MCP server configuration for all active user sessions
-   * Loads sessions from storage and returns server connection metadata.
-   * OAuth refresh is handled by SDK transports through their authProvider.
-   * @deprecated This returns legacy connection metadata only and does not
-   * include OAuth tokens or generated Authorization headers. Prefer
-   * MultiSessionClient or explicit MCPClient instances so SDK transports can
-   * own OAuth refresh and reauthorization.
-   * @param userId - User ID to fetch sessions for
-   * @returns Object keyed by sanitized server labels containing transport and url.
-   * @static
-   */
-  static async getMcpServerConfig(userId: string): Promise<Record<string, any>> {
-    const mcpConfig: Record<string, any> = {};
-    const sessionList = await sessions.list(userId);
-
-    await Promise.all(
-      sessionList.map(async (sessionData) => {
-        const { sessionId } = sessionData;
-
-        try {
-          // Validate session - remove if missing required fields
-          if (
-            !sessionData.serverId ||
-            !sessionData.transportType ||
-            !sessionData.serverUrl ||
-            !sessionData.callbackUrl
-          ) {
-            await sessions.delete(userId, sessionId);
-            return;
-          }
-
-          // Build server config
-          const label = sanitizeServerLabel(
-            sessionData.serverName || sessionData.serverId || 'server'
-          );
-
-          mcpConfig[label] = {
-            transport: sessionData.transportType,
-            url: sessionData.serverUrl,
-            ...(sessionData.serverName && {
-              serverName: sessionData.serverName,
-              serverLabel: label,
-            }),
-          };
-        } catch (error) {
-          await sessions.delete(userId, sessionId);
-          console.warn(`[MCP] Failed to process session ${sessionId}:`, error);
-        }
-      })
-    );
-
-    return mcpConfig;
   }
 
 }

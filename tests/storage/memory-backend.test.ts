@@ -46,11 +46,6 @@ test.describe('MemoryStorageBackend', () => {
             expect(retrieved?.status).toBe('active');
             expect(retrieved?.expiresAt).toBeNull();
 
-            await storage.update(session.userId, session.sessionId, { status: 'failed' });
-
-            retrieved = await storage.get(session.userId, session.sessionId);
-            expect(retrieved?.status).toBe('failed');
-            expect(retrieved?.expiresAt).toBeGreaterThan(Date.now());
         });
 
         test('should update existing session', async () => {

@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SessionStore, Session, SessionCredentials } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
-import { resolveSessionExpiresAt } from './lifecycle.js';
+import { resolveSessionExpiresAt } from './session-lifecycle.js';
 import { DORMANT_SESSION_EXPIRATION_MS } from '../../shared/constants.js';
 
 export class SupabaseStorageBackend implements SessionStore {

@@ -85,7 +85,7 @@ The `pg_cron` extension is available on all Supabase plans (including Free). The
 
 **Stage 1: Short-term Transient Purge** (Every 5 minutes)
 
-Cleans up "zombie" records that failed during initialization or auth. These are sessions where `status <> 'active'` and the short 10-minute pending expiration has passed.
+Cleans up abandoned setup/auth records. These are sessions where `status <> 'active'` and the short 10-minute pending expiration has passed.
 
 ```sql
 DELETE FROM mcp_sessions
@@ -104,7 +104,7 @@ DELETE FROM mcp_sessions WHERE status = 'active' AND updated_at < now() - interv
 
 ### How It Works
 
-1. **Transient State**: Pending and failed sessions use `status: 'pending' | 'failed'` and a restricted 10-minute pending expiration.
+1. **Transient State**: Pending sessions use `status: 'pending'` and a restricted 10-minute pending expiration.
 2. **Promotion**: Upon successful handshake or OAuth completion, the session is promoted to `status: 'active'` and `expires_at` is cleared.
 3. **Persistence**: Active sessions are **explicitly excluded** from the high-frequency 5-minute sweep. This makes them safe for persistent automation and scheduled workflows.
 4. **Eviction**: If an active session is not used or refreshed for 30 consecutive days, it is considered dormant and is evicted by the daily sweep.

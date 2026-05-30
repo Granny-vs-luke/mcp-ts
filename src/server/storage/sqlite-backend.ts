@@ -8,7 +8,7 @@ import {
     normalizeNewSession,
     normalizeStoredSession,
     isSessionExpired,
-} from './lifecycle.js';
+} from './session-lifecycle.js';
 
 export interface SqliteStorageOptions {
     path?: string;
