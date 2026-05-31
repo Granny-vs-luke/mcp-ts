@@ -37,8 +37,8 @@ test.describe('session mutation events', () => {
             });
         });
 
-        await sessions.create(session, 60);
-        await sessions.update(session.userId, session.sessionId, { active: false }, 120);
+        await sessions.create(session);
+        await sessions.update(session.userId, session.sessionId, { status: 'pending' });
         await sessions.delete(session.userId, session.sessionId);
         unsubscribe();
 
@@ -53,7 +53,7 @@ test.describe('session mutation events', () => {
                 type: 'update',
                 userId: session.userId,
                 sessionId: session.sessionId,
-                patch: { active: false },
+                patch: { status: 'pending' },
             },
             {
                 type: 'delete',
@@ -74,7 +74,7 @@ test.describe('session mutation events', () => {
 
         await sessions.create(session);
         await expect(sessions.create(session)).rejects.toThrow(/already exists/);
-        await expect(sessions.update('missing-user', 'missing-session', { active: true })).rejects.toThrow(/not found/);
+        await expect(sessions.update('missing-user', 'missing-session', { status: 'active' })).rejects.toThrow(/not found/);
 
         expect(events).toEqual(['create']);
     });
@@ -93,10 +93,10 @@ test.describe('session mutation events', () => {
 
         await sessions.create(session);
         unsubscribe();
-        await sessions.update(session.userId, session.sessionId, { active: false });
+        await sessions.update(session.userId, session.sessionId, { status: 'pending' });
 
         expect(events).toEqual(['first:create']);
         const stored = await sessions.get(session.userId, session.sessionId);
-        expect(stored?.active).toBe(false);
+        expect(stored?.status).toBe('pending');
     });
 });

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { parseOAuthState } from '../../shared/utils.js';
 
 export interface OAuthPopupConnectionLike {
   sessionId: string;
@@ -11,7 +12,7 @@ export interface OAuthPopupConnectionLike {
  *
  * These utilities sit on top of the core MCP auth primitives:
  * - `useMcp({ onRedirect })` to decide how auth navigation happens
- * - `finishAuth(sessionId, code)` to complete code exchange
+ * - `finishAuth(state, code)` to complete code exchange
  *
  * Consumers are free to:
  * - use these helpers as-is for a turnkey popup flow
@@ -60,6 +61,7 @@ function postPopupResult(
   popupWindow: WindowProxy | null,
   result: {
     sessionId?: string;
+    state?: string;
     success: boolean;
     error?: string;
   }
@@ -150,9 +152,9 @@ export function createOAuthPopupRedirectHandler(
  */
 export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
   connections: TConnection[],
-  finishAuth: (sessionId: string, code: string) => Promise<unknown>
+  finishAuth: (state: string, code: string) => Promise<unknown>
 ): void {
-  const pendingPopupsRef = useRef<Map<string, WindowProxy>>(new Map());
+  const pendingPopupsRef = useRef<Map<string, { popupWindow: WindowProxy | null; state: string }>>(new Map());
   const processingCodesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -169,10 +171,16 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
       const popupWindow = event.source && 'postMessage' in event.source
         ? event.source as WindowProxy
         : null;
-      const targetSessionId = typeof event.data.sessionId === 'string' ? event.data.sessionId : '';
+      const rawState =
+        typeof event.data.state === 'string'
+          ? event.data.state
+          : typeof event.data.sessionId === 'string'
+            ? event.data.sessionId
+            : '';
+      const targetSessionId = rawState ? parseOAuthState(rawState)?.sessionId || rawState : '';
 
       if (popupWindow && targetSessionId) {
-        pendingPopupsRef.current.set(targetSessionId, popupWindow);
+        pendingPopupsRef.current.set(targetSessionId, { popupWindow, state: rawState });
       }
 
       if (!targetSessionId) {
@@ -190,6 +198,7 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
         if (popupWindow) {
           postPopupResult(popupWindow, {
             sessionId: targetSessionId,
+            state: rawState,
             success: false,
             error: 'OAuth session not found in the current client state',
           });
@@ -204,13 +213,14 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
       processingCodesRef.current.add(codeKey);
 
       try {
-        await finishAuth(targetSession.sessionId, code);
+        await finishAuth(rawState, code);
       } catch (error) {
         processingCodesRef.current.delete(codeKey);
         pendingPopupsRef.current.delete(targetSession.sessionId);
         if (popupWindow) {
           postPopupResult(popupWindow, {
-            sessionId: targetSession.sessionId,
+            sessionId: rawState,
+            state: rawState,
             success: false,
             error: error instanceof Error ? error.message : 'Failed to finish auth',
           });
@@ -237,11 +247,14 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
 
   useEffect(() => {
     for (const connection of connections) {
-      const popupWindow = pendingPopupsRef.current.get(connection.sessionId) || null;
+      const pendingPopup = pendingPopupsRef.current.get(connection.sessionId);
+      const popupWindow = pendingPopup?.popupWindow || null;
+      const resultState = pendingPopup?.state || connection.sessionId;
 
       if (connection.state === 'AUTHENTICATED' || connection.state === 'READY' || connection.state === 'CONNECTED') {
         postPopupResult(popupWindow, {
-          sessionId: connection.sessionId,
+          sessionId: resultState,
+          state: resultState,
           success: true,
         });
         for (const codeKey of processingCodesRef.current) {
@@ -255,7 +268,8 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
 
       if (connection.state === 'FAILED') {
         postPopupResult(popupWindow, {
-          sessionId: connection.sessionId,
+          sessionId: resultState,
+          state: resultState,
           success: false,
           error: connection.error || 'Failed to complete authorization',
         });
@@ -277,7 +291,7 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
  * opener window, waits for success/failure, and closes the popup on success.
  *
  * It is intentionally optional: apps can replace it with their own callback
- * page UI or skip popup auth entirely and call `finishAuth(sessionId, code)`
+ * page UI or skip popup auth entirely and call `finishAuth(state, code)`
  * from any callback route they control.
  */
 export function McpOAuthCallbackContent({
@@ -328,7 +342,14 @@ export function McpOAuthCallbackContent({
         return;
       }
 
-      if (event.data.sessionId !== sessionId) {
+      const resultState =
+        typeof event.data.state === 'string'
+          ? event.data.state
+          : typeof event.data.sessionId === 'string'
+            ? event.data.sessionId
+            : '';
+
+      if (resultState !== sessionId) {
         return;
       }
 
@@ -352,7 +373,7 @@ export function McpOAuthCallbackContent({
     window.addEventListener('message', handleResult);
     channel?.addEventListener('message', handleResult);
 
-    const payload = { type: AUTH_CODE_MESSAGE, code, sessionId };
+    const payload = { type: AUTH_CODE_MESSAGE, code, state: sessionId, sessionId };
 
     if (window.opener) {
       try {

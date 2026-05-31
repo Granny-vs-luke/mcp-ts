@@ -1,12 +1,12 @@
 ---
 title: "Redis"
 sidebarTitle: "Redis"
-description: "Use Redis as the mcp-ts session storage backend for production and serverless deployments, with automatic TTL, atomic operations, and distributed access."
+description: "Use Redis as the mcp-ts session storage backend for production and serverless deployments, with automatic expiration, atomic operations, and distributed access."
 ---
 
 **Recommended for production and serverless deployments.**
 
-Redis provides distributed, persistent storage with automatic TTL (Time To Live) management. Perfect for:
+Redis provides distributed, persistent storage with automatic expiration management. Perfect for:
 - Production environments
 - Serverless deployments (Vercel, AWS Lambda)
 - Multi-instance applications
@@ -33,7 +33,7 @@ REDIS_URL=rediss://default:password@host.upstash.io:6379
 
 ## Features
 
-- **Automatic session expiration** (12 hours TTL)
+- **Automatic session expiration** for pending sessions and dormant active sessions
 - **Atomic operations** for data consistency
 - **Distributed storage** across instances
 - **Production-ready scalability**
@@ -56,7 +56,7 @@ await sessions.create({
   serverUrl: 'https://mcp.example.com',
   callbackUrl: 'https://app.com/callback',
   transportType: 'sse',
-  active: true,
+  status: 'active',
   createdAt: Date.now(),
 });
 ```
@@ -78,7 +78,7 @@ await redisBackend.create({
   serverUrl: 'https://mcp.example.com',
   callbackUrl: 'https://app.com/callback',
   transportType: 'sse',
-  active: true,
+  status: 'active',
   createdAt: Date.now(),
 });
 ```

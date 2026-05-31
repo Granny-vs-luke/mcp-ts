@@ -67,7 +67,7 @@ The migration also defines RLS policies for Supabase's authenticated client path
 - **PostgreSQL persistence** with JSONB support
 - **Row Level Security (RLS)** for tenant isolation
 - **Automatic management** of `updated_at` and `expires_at`
-- **Automatic session cleanup** via `pg_cron` — expired sessions are swept every 5 minutes
+- **Automatic session cleanup** via `pg_cron` — expired pending sessions are swept every 5 minutes
 - **Cloud-native** and serverless friendly
 - **Application-level AES-256-GCM encryption** for `tokens` and `headers`
 
@@ -85,24 +85,27 @@ The `pg_cron` extension is available on all Supabase plans (including Free). The
 
 **Stage 1: Short-term Transient Purge** (Every 5 minutes)
 
-Cleans up "zombie" records that failed during initialization or auth. These are sessions where `active` is not `true` and the short 10-minute TTL has passed.
+Cleans up abandoned setup/auth records. These are sessions where `status <> 'active'` and the short 10-minute pending expiration has passed.
 
 ```sql
-DELETE FROM mcp_sessions WHERE expires_at < now() AND active IS NOT TRUE;
+DELETE FROM mcp_sessions
+WHERE expires_at IS NOT NULL
+  AND expires_at < now()
+  AND status <> 'active';
 ```
 
 **Stage 2: Long-term Dormancy Eviction** (Daily at midnight UTC)
 
-A safety net for successfully established sessions (`active = true`) that have been completely untouched for 30+ days. This ensures that even "active" sessions don't persist forever if they are genuinely abandoned.
+A safety net for successfully established sessions (`status = 'active'`) that have been completely untouched for 30+ days. This ensures that even active sessions don't persist forever if they are genuinely abandoned.
 
 ```sql
-DELETE FROM mcp_sessions WHERE active = true AND updated_at < now() - interval '30 days';
+DELETE FROM mcp_sessions WHERE status = 'active' AND updated_at < now() - interval '30 days';
 ```
 
 ### How It Works
 
-1. **Transient State**: All new sessions start with `active: false` and a restricted 10-minute TTL.
-2. **Promotion**: Upon successful handshake or OAuth completion, the session is promoted to `active: true` with a 12-hour sliding-window `expires_at`.
+1. **Transient State**: Pending sessions use `status: 'pending'` and a restricted 10-minute pending expiration.
+2. **Promotion**: Upon successful handshake or OAuth completion, the session is promoted to `status: 'active'` and `expires_at` is cleared.
 3. **Persistence**: Active sessions are **explicitly excluded** from the high-frequency 5-minute sweep. This makes them safe for persistent automation and scheduled workflows.
 4. **Eviction**: If an active session is not used or refreshed for 30 consecutive days, it is considered dormant and is evicted by the daily sweep.
 
@@ -121,7 +124,7 @@ SELECT cron.alter_job(
 SELECT cron.alter_job(
     (SELECT jobid FROM cron.job WHERE jobname = 'cleanup-dormant-sessions'),
     schedule := '0 0 * * *',
-    command := $$DELETE FROM public.mcp_sessions WHERE active = true AND updated_at < now() - interval '90 days';$$
+    command := $$DELETE FROM public.mcp_sessions WHERE status = 'active' AND updated_at < now() - interval '90 days';$$
 );
 ```
 
@@ -150,7 +153,7 @@ await sessions.create({
   serverUrl: 'https://mcp.example.com',
   callbackUrl: 'https://app.com/callback',
   transportType: 'sse',
-  active: true,
+  status: 'active',
   createdAt: Date.now(),
 });
 ```
@@ -178,7 +181,7 @@ await supabaseBackend.create({
   serverUrl: 'https://mcp.example.com',
   callbackUrl: 'https://app.com/callback',
   transportType: 'sse',
-  active: true,
+  status: 'active',
   createdAt: Date.now(),
 });
 ```

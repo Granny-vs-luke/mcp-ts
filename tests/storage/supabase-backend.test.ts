@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { SupabaseStorageBackend } from '../../src/server/storage/supabase-backend';
 import { createMockSession, createMockTokens } from '../test-utils';
+import { DORMANT_SESSION_EXPIRATION_MS, STATE_EXPIRATION_MS } from '../../src/shared/constants';
 
 /**
  * A mock Supabase client that faithfully simulates the fluent builder API:
@@ -11,22 +12,33 @@ import { createMockSession, createMockTokens } from '../test-utils';
  */
 function createMockSupabaseClient() {
     let sessions: any[] = [];
+    let credentials: any[] = [];
     let simulateMissingTable = false;
 
     const mock = {
         /** Test-only helper to inspect internal state */
         _listSessions: () => sessions,
+        _listCredentials: () => credentials,
         get _simulateMissingTable() { return simulateMissingTable; },
         set _simulateMissingTable(v: boolean) { simulateMissingTable = v; },
 
-        from: (_table: string) => {
-            let action: 'insert' | 'update' | 'select' | 'delete' | 'init_check' | null = null;
+        from: (table: string) => {
+            let action: 'insert' | 'upsert' | 'update' | 'select' | 'delete' | 'init_check' | null = null;
             let payload: any = null;
             const filters: Array<(item: any) => boolean> = [];
             let selectAfterMutation = false;
+            const getRows = () => table === 'mcp_credentials' ? credentials : sessions;
+            const setRows = (rows: any[]) => {
+                if (table === 'mcp_credentials') {
+                    credentials = rows;
+                } else {
+                    sessions = rows;
+                }
+            };
 
             const chain: any = {
                 insert: (data: any) => { action = 'insert'; payload = { ...data }; return chain; },
+                upsert: (data: any) => { action = 'upsert'; payload = { ...data }; return chain; },
                 update: (data: any) => { action = 'update'; payload = { ...data }; return chain; },
                 delete: () => { action = 'delete'; return chain; },
                 select: (_cols?: any) => {
@@ -46,6 +58,14 @@ function createMockSupabaseClient() {
                 },
                 eq:  (k: string, v: any) => { filters.push(row => row[k] === v);  return chain; },
                 neq: (k: string, v: any) => { filters.push(row => row[k] !== v);  return chain; },
+                not: (k: string, op: string, v: any) => {
+                    if (op === 'is' && v === null) {
+                        filters.push(row => row[k] !== null && row[k] !== undefined);
+                    } else if (op === 'is') {
+                        filters.push(row => row[k] !== v);
+                    }
+                    return chain;
+                },
                 lt:  (k: string, v: any) => {
                     filters.push(row => new Date(row[k]).getTime() < new Date(v).getTime());
                     return chain;
@@ -53,7 +73,7 @@ function createMockSupabaseClient() {
 
                 /** Used by getSession */
                 maybeSingle: async () => {
-                    let res = [...sessions];
+                    let res = [...getRows()];
                     for (const f of filters) res = res.filter(f);
                     return { data: res[0] ?? null, error: null };
                 },
@@ -69,21 +89,37 @@ function createMockSupabaseClient() {
                         }
 
                         if (action === 'insert') {
-                            if (sessions.some(s => s.session_id === payload.session_id)) {
+                            const rows = getRows();
+                            const duplicate = table === 'mcp_credentials'
+                                ? rows.some(s => s.user_id === payload.user_id && s.session_id === payload.session_id)
+                                : rows.some(s => s.session_id === payload.session_id);
+                            if (duplicate) {
                                 return resolve({ data: null, error: { code: '23505', message: 'duplicate key violation' } });
                             }
-                            sessions.push({ ...payload });
+                            rows.push({ ...payload });
+                            return resolve({ data: [payload], error: null });
+
+                        } else if (action === 'upsert') {
+                            const rows = getRows();
+                            const existing = rows.find(s => s.user_id === payload.user_id && s.session_id === payload.session_id);
+                            if (existing) {
+                                Object.assign(existing, payload);
+                            } else {
+                                rows.push({ ...payload });
+                            }
                             return resolve({ data: [payload], error: null });
 
                         } else if (action === 'update') {
-                            const matched = sessions.filter(s => filters.every(f => f(s)));
+                            const matched = getRows().filter(s => filters.every(f => f(s)));
                             matched.forEach(s => Object.assign(s, payload));
                             return resolve({ data: selectAfterMutation ? matched : null, error: null });
 
                         } else if (action === 'delete') {
-                            const before = sessions.length;
-                            sessions = sessions.filter(s => !filters.every(f => f(s)));
-                            const removed = before - sessions.length;
+                            const rows = getRows();
+                            const before = rows.length;
+                            const nextRows = rows.filter(s => !filters.every(f => f(s)));
+                            setRows(nextRows);
+                            const removed = before - nextRows.length;
                             return resolve({ data: selectAfterMutation ? Array(removed).fill(null) : null, error: null });
 
                         } else if (action === 'init_check') {
@@ -93,7 +129,7 @@ function createMockSupabaseClient() {
                             return resolve({ data: [], error: null });
 
                         } else if (action === 'select') {
-                            const res = sessions.filter(s => filters.every(f => f(s)));
+                            const res = getRows().filter(s => filters.every(f => f(s)));
                             return resolve({ data: res, error: null });
 
                         } else {
@@ -160,31 +196,47 @@ test.describe('SupabaseStorageBackend', () => {
             expect(row.server_url).toBe(session.serverUrl);
             expect(row.transport_type).toBe(session.transportType);
             expect(row.callback_url).toBe(session.callbackUrl);
-            expect(row.active).toBe(session.active);
+            expect(row.status).toBe(session.status);
+            expect(row.tokens).toBeUndefined();
+            expect(row.client_information).toBeUndefined();
+            expect(row.code_verifier).toBeUndefined();
         });
 
-        test('sets expires_at correctly from TTL', async () => {
-            const ttl = 3600;
+        test('sets short expires_at for pending sessions', async () => {
             const before = Date.now();
-            await storage.create(createMockSession(), ttl);
+            await storage.create(createMockSession({ status: 'pending' }));
 
             const row = mockSupabase._listSessions()[0];
             const expiresMs = new Date(row.expires_at).getTime();
-            expect(expiresMs).toBeGreaterThanOrEqual(before + ttl * 1000 - 100);
-            expect(expiresMs).toBeLessThanOrEqual(Date.now() + ttl * 1000 + 100);
+            expect(expiresMs).toBeGreaterThanOrEqual(before + STATE_EXPIRATION_MS - 100);
+            expect(expiresMs).toBeLessThanOrEqual(Date.now() + STATE_EXPIRATION_MS + 100);
         });
 
-        test('persists JSONB fields: tokens, headers, clientInformation', async () => {
-            const tokens = createMockTokens();
-            const session = createMockSession({
-                tokens,
-                headers: { Authorization: 'Bearer xyz' },
-            });
-            await storage.create(session);
+        test('leaves expires_at null for active sessions', async () => {
+            await storage.create(createMockSession({ status: 'active' }));
 
             const row = mockSupabase._listSessions()[0];
-            expect(row.tokens).toEqual(tokens);
+            expect(row.expires_at).toBeNull();
+        });
+
+        test('keeps headers on sessions and credentials in mcp_credentials', async () => {
+            const tokens = createMockTokens();
+            const oauthState = {
+                nonce: 'nonce-1',
+                sessionId: 'test-session-123',
+                serverId: 'test-server',
+                createdAt: Date.now(),
+            };
+            const session = createMockSession({ headers: { Authorization: 'Bearer xyz' } });
+            await storage.create(session);
+            await storage.patchCredentials(session.userId, session.sessionId, { tokens, oauthState });
+
+            const row = mockSupabase._listSessions()[0];
+            const credentialsRow = mockSupabase._listCredentials()[0];
+            expect(row.tokens).toBeUndefined();
             expect(row.headers).toEqual({ Authorization: 'Bearer xyz' });
+            expect(credentialsRow.tokens).toEqual(tokens);
+            expect(credentialsRow.oauth_state).toEqual(oauthState);
         });
 
         test('throws on duplicate session (unique key violation)', async () => {
@@ -201,16 +253,15 @@ test.describe('SupabaseStorageBackend', () => {
             await storage.create(session);
 
             const newTokens = createMockTokens();
-            await storage.update(session.userId, session.sessionId, {
-                active: true,
-                tokens: newTokens,
-                transportType: 'streamable-http',
-            });
+            await storage.update(session.userId, session.sessionId, { status: 'active', transportType: 'streamable-http' });
+            await storage.patchCredentials(session.userId, session.sessionId, { tokens: newTokens });
 
             const retrieved = await storage.get(session.userId, session.sessionId);
+            const credentials = await storage.getCredentials(session.userId, session.sessionId);
             // Updated
-            expect(retrieved?.active).toBe(true);
-            expect(retrieved?.tokens).toEqual(newTokens);
+            expect(retrieved?.status).toBe('active');
+            expect((retrieved as any)?.tokens).toBeUndefined();
+            expect(credentials?.tokens).toEqual(newTokens);
             expect(retrieved?.transportType).toBe('streamable-http');
             // Preserved
             expect(retrieved?.serverId).toBe(session.serverId);
@@ -219,49 +270,48 @@ test.describe('SupabaseStorageBackend', () => {
         });
 
         test('handles OAuth token refresh safely', async () => {
-            const session = createMockSession({ tokens: createMockTokens() });
+            const session = createMockSession();
             await storage.create(session);
 
             const refreshed = createMockTokens({
                 access_token:  'new-access-token',
                 refresh_token: 'new-refresh-token',
             });
-            await storage.update(session.userId, session.sessionId, { tokens: refreshed });
+            await storage.patchCredentials(session.userId, session.sessionId, { tokens: refreshed });
 
-            const retrieved = await storage.get(session.userId, session.sessionId);
-            expect(retrieved?.tokens?.access_token).toBe('new-access-token');
-            expect(retrieved?.tokens?.refresh_token).toBe('new-refresh-token');
+            const credentials = await storage.getCredentials(session.userId, session.sessionId);
+            expect(credentials?.tokens?.access_token).toBe('new-access-token');
+            expect(credentials?.tokens?.refresh_token).toBe('new-refresh-token');
         });
 
         test('clears OAuth tokens when credentials are invalidated', async () => {
-            const session = createMockSession({ tokens: createMockTokens() });
+            const session = createMockSession();
             await storage.create(session);
+            await storage.patchCredentials(session.userId, session.sessionId, { tokens: createMockTokens() });
 
-            await storage.update(session.userId, session.sessionId, { tokens: undefined });
+            await storage.patchCredentials(session.userId, session.sessionId, { tokens: null });
 
-            const row = mockSupabase._listSessions()[0];
-            const retrieved = await storage.get(session.userId, session.sessionId);
+            const row = mockSupabase._listCredentials()[0];
+            const credentials = await storage.getCredentials(session.userId, session.sessionId);
 
             expect(row.tokens).toBeNull();
-            expect(retrieved?.tokens).toBeNull();
+            expect(credentials?.tokens).toBeNull();
         });
 
-        test('refreshes expires_at with a new TTL', async () => {
-            const session = createMockSession();
-            await storage.create(session, 10);        // 10s TTL on create
+        test('promotion to active clears pending expires_at', async () => {
+            const session = createMockSession({ status: 'pending' });
+            await storage.create(session);
+            expect(mockSupabase._listSessions()[0].expires_at).not.toBeNull();
 
-            const before = Date.now();
-            await storage.update(session.userId, session.sessionId, { active: true }, 7200);
+            await storage.update(session.userId, session.sessionId, { status: 'active' });
 
             const row = mockSupabase._listSessions()[0];
-            const expiresMs = new Date(row.expires_at).getTime();
-            // Should now be ~2 hours from now (not 10 seconds)
-            expect(expiresMs).toBeGreaterThan(before + 7000 * 1000);
+            expect(row.expires_at).toBeNull();
         });
 
         test('throws if session does not exist', async () => {
             await expect(
-                storage.update('no-user', 'no-session', { active: true })
+                storage.update('no-user', 'no-session', { status: 'active' })
             ).rejects.toThrow('not found');
         });
     });
@@ -282,7 +332,7 @@ test.describe('SupabaseStorageBackend', () => {
             expect(result?.transportType).toBe(session.transportType);
             expect(result?.callbackUrl).toBe(session.callbackUrl);
             expect(result?.userId).toBe(session.userId);
-            expect(result?.active).toBe(session.active);
+            expect(result?.status).toBe(session.status);
             expect(typeof result?.createdAt).toBe('number');
         });
 
@@ -382,8 +432,12 @@ test.describe('SupabaseStorageBackend', () => {
     // ── cleanupExpired ───────────────────────────────────────────────────────
     test.describe('cleanupExpired', () => {
         test('deletes rows where expires_at is in the past', async () => {
-            await storage.create(createMockSession({ sessionId: 'alive' }),  3600);  // future
-            await storage.create(createMockSession({ sessionId: 'zombie' }), -3600); // past
+            await storage.create(createMockSession({ sessionId: 'alive', status: 'pending' }));
+            await storage.create(createMockSession({
+                sessionId: 'zombie',
+                status: 'pending',
+                createdAt: Date.now() - STATE_EXPIRATION_MS - 1000,
+            }));
 
             await storage.cleanupExpired();
 
@@ -393,9 +447,21 @@ test.describe('SupabaseStorageBackend', () => {
         });
 
         test('is a no-op when there are no expired sessions', async () => {
-            await storage.create(createMockSession({ sessionId: 'fresh' }), 3600);
+            await storage.create(createMockSession({ sessionId: 'fresh' }));
             await storage.cleanupExpired();
             expect(mockSupabase._listSessions().length).toBe(1);
+        });
+
+        test('deletes dormant active sessions by updated_at', async () => {
+            await storage.create(createMockSession({
+                sessionId: 'dormant',
+                status: 'active',
+                updatedAt: Date.now() - DORMANT_SESSION_EXPIRATION_MS - 1000,
+            }));
+
+            await storage.cleanupExpired();
+
+            expect(mockSupabase._listSessions()).toEqual([]);
         });
     });
 
@@ -406,4 +472,3 @@ test.describe('SupabaseStorageBackend', () => {
         });
     });
 });
-

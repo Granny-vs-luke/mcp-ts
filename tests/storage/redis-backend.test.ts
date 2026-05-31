@@ -6,6 +6,10 @@ import Redis from 'ioredis-mock';
 import { RedisStorageBackend } from '../../src/server/storage/redis-backend';
 import { setRedisInstance } from '../../src/server/storage/redis';
 import { createMockSession, createMockTokens } from '../test-utils';
+import {
+    DORMANT_SESSION_EXPIRATION_SECONDS,
+    PENDING_SESSION_EXPIRATION_SECONDS,
+} from '../../src/shared/constants';
 
 test.describe('RedisStorageBackend', () => {
     let redis: any;
@@ -48,14 +52,24 @@ test.describe('RedisStorageBackend', () => {
             expect(parsed.serverUrl).toBe(session.serverUrl);
         });
 
-        test('should set TTL on session', async () => {
+        test('should set dormant TTL on active sessions', async () => {
             const session = createMockSession();
 
             await storage.create(session);
 
             const ttl = await redis.ttl(`mcp:session:${session.userId}:${session.sessionId}`);
             expect(ttl).toBeGreaterThan(0);
-            expect(ttl).toBeLessThanOrEqual(43200); // 12 hours
+            expect(ttl).toBeLessThanOrEqual(DORMANT_SESSION_EXPIRATION_SECONDS);
+        });
+
+        test('should set short TTL on pending sessions', async () => {
+            const session = createMockSession({ status: 'pending' });
+
+            await storage.create(session);
+
+            const ttl = await redis.ttl(`mcp:session:${session.userId}:${session.sessionId}`);
+            expect(ttl).toBeGreaterThan(0);
+            expect(ttl).toBeLessThanOrEqual(PENDING_SESSION_EXPIRATION_SECONDS);
         });
 
         test('should throw if session already exists', async () => {
@@ -73,20 +87,21 @@ test.describe('RedisStorageBackend', () => {
             const session = createMockSession();
             await storage.create(session);
 
-            await storage.update(session.userId, session.sessionId, {
-                active: true,
-                tokens: createMockTokens()
-            });
+            const tokens = createMockTokens();
+            await storage.update(session.userId, session.sessionId, { status: 'active' });
+            await storage.patchCredentials(session.userId, session.sessionId, { tokens });
 
             const retrieved = await storage.get(session.userId, session.sessionId);
-            expect(retrieved?.active).toBe(true);
-            expect(retrieved?.tokens).toBeDefined();
+            const credentials = await storage.getCredentials(session.userId, session.sessionId);
+            expect(retrieved?.status).toBe('active');
+            expect((retrieved as any)?.tokens).toBeUndefined();
+            expect(credentials?.tokens).toEqual(tokens);
             expect(retrieved?.serverId).toBe(session.serverId); // Original data preserved
         });
 
         test('should throw if session does not exist', async () => {
             await expect(
-                storage.update('unknown', 'unknown', { active: true })
+                storage.update('unknown', 'unknown', { status: 'active' })
             ).rejects.toThrow('not found');
         });
     });

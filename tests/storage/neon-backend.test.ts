@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { NeonStorageBackend } from '../../src/server/storage/neon-backend';
 import { createMockSession, createMockTokens } from '../test-utils';
+import { STATE_EXPIRATION_MS } from '../../src/shared/constants';
+import type { SessionStatus } from '../../src/server/storage/types';
 
 type NeonRow = {
     id: string;
@@ -13,17 +15,26 @@ type NeonRow = {
     callback_url: string;
     created_at: string;
     updated_at: string;
-    expires_at: string;
-    active: boolean;
+    expires_at: string | null;
+    status: SessionStatus;
     headers?: Record<string, string>;
+    auth_url?: string | null;
+};
+
+type NeonCredentialsRow = {
+    id: string;
+    session_id: string;
+    user_id: string;
     client_information?: unknown;
     tokens?: unknown;
-    code_verifier?: string;
-    client_id?: string;
+    code_verifier?: unknown;
+    client_id?: string | null;
+    oauth_state?: unknown;
 };
 
 function createMockNeonSql() {
     let sessions: NeonRow[] = [];
+    let credentials: NeonCredentialsRow[] = [];
     let simulateMissingTable = false;
 
     const query = async (text: string, params: unknown[] = []) => {
@@ -43,12 +54,10 @@ function createMockNeonSql() {
                 transportType,
                 callbackUrl,
                 createdAt,
+                updatedAt,
                 headers,
-                active,
-                clientInformation,
-                tokens,
-                codeVerifier,
-                clientId,
+                authUrl,
+                status,
                 expiresAt,
             ] = params;
 
@@ -68,31 +77,59 @@ function createMockNeonSql() {
                 transport_type: transportType as 'sse' | 'streamable-http',
                 callback_url: callbackUrl as string,
                 created_at: createdAt as string,
-                updated_at: new Date().toISOString(),
-                expires_at: expiresAt as string,
-                active: active as boolean,
+                updated_at: updatedAt as string,
+                expires_at: expiresAt as string | null,
+                status: status as SessionStatus,
                 headers: headers as Record<string, string> | undefined,
-                client_information: clientInformation,
-                tokens,
-                code_verifier: codeVerifier as string | undefined,
-                client_id: clientId as string | undefined,
+                auth_url: authUrl as string | null,
             });
             return [];
         }
 
-        if (normalized.startsWith('update public.mcp_sessions')) {
+        if (normalized.startsWith('insert into public.mcp_credentials')) {
+            const [
+                userId,
+                sessionId,
+                clientInformation,
+                tokens,
+                codeVerifier,
+                clientId,
+                oauthState,
+                hasClientInformation,
+                hasTokens,
+                hasCodeVerifier,
+                hasClientId,
+                hasOauthState,
+            ] = params;
+
+            let row = credentials.find((item) => item.user_id === userId && item.session_id === sessionId);
+            if (!row) {
+                row = {
+                    id: `credentials-${credentials.length + 1}`,
+                    user_id: userId as string,
+                    session_id: sessionId as string,
+                };
+                credentials.push(row);
+            }
+
+            if (hasClientInformation) row.client_information = clientInformation;
+            if (hasTokens) row.tokens = tokens;
+            if (hasCodeVerifier) row.code_verifier = codeVerifier;
+            if (hasClientId) row.client_id = clientId as string | null;
+            if (hasOauthState) row.oauth_state = oauthState;
+            return [];
+        }
+
+        if (normalized.startsWith('update public.mcp_sessions') && normalized.includes('set server_id')) {
             const [
                 serverId,
                 serverName,
                 serverUrl,
                 transportType,
                 callbackUrl,
-                active,
+                status,
                 headers,
-                clientInformation,
-                tokens,
-                codeVerifier,
-                clientId,
+                authUrl,
                 expiresAt,
                 userId,
                 sessionId,
@@ -107,20 +144,39 @@ function createMockNeonSql() {
             row.server_url = serverUrl as string;
             row.transport_type = transportType as 'sse' | 'streamable-http';
             row.callback_url = callbackUrl as string;
-            row.active = active as boolean;
+            row.status = status as SessionStatus;
             row.headers = headers as Record<string, string> | undefined;
-            row.client_information = clientInformation;
-            row.tokens = tokens;
-            row.code_verifier = codeVerifier as string | undefined;
-            row.client_id = clientId as string | undefined;
-            row.expires_at = expiresAt as string;
+            row.auth_url = authUrl as string | null;
+            row.expires_at = expiresAt as string | null;
             row.updated_at = new Date().toISOString();
             return [{ id: row.id }];
+        }
+
+        if (normalized.startsWith('update public.mcp_sessions') && normalized.includes('set expires_at')) {
+            const [expiresAt, userId, sessionId] = params;
+            const row = sessions.find((item) => item.user_id === userId && item.session_id === sessionId);
+            if (row) {
+                row.expires_at = expiresAt as string;
+                row.updated_at = new Date().toISOString();
+            }
+            return [];
         }
 
         if (normalized.startsWith('select * from public.mcp_sessions where user_id = $1 and session_id = $2')) {
             const [userId, sessionId] = params;
             return sessions.filter((row) => row.user_id === userId && row.session_id === sessionId);
+        }
+
+        if (normalized.startsWith('select * from public.mcp_credentials where user_id = $1 and session_id = $2')) {
+            const [userId, sessionId] = params;
+            return credentials.filter((row) => row.user_id === userId && row.session_id === sessionId);
+        }
+
+        if (normalized.startsWith('select id from public.mcp_sessions where user_id = $1 and session_id = $2')) {
+            const [userId, sessionId] = params;
+            return sessions
+                .filter((row) => row.user_id === userId && row.session_id === sessionId)
+                .map((row) => ({ id: row.id }));
         }
 
         if (normalized.startsWith('select * from public.mcp_sessions where user_id = $1')) {
@@ -142,17 +198,42 @@ function createMockNeonSql() {
         if (normalized.startsWith('delete from public.mcp_sessions where user_id = $1 and session_id = $2')) {
             const [userId, sessionId] = params;
             sessions = sessions.filter((row) => !(row.user_id === userId && row.session_id === sessionId));
+            credentials = credentials.filter((row) => !(row.user_id === userId && row.session_id === sessionId));
             return [];
         }
 
-        if (normalized.startsWith('delete from public.mcp_sessions where expires_at <')) {
+        if (normalized.startsWith('delete from public.mcp_credentials where user_id = $1 and session_id = $2')) {
+            const [userId, sessionId] = params;
+            credentials = credentials.filter((row) => !(row.user_id === userId && row.session_id === sessionId));
+            return [];
+        }
+
+        if (normalized.startsWith('delete from public.mcp_sessions where expires_at is not null')) {
             const [expiresAt] = params;
-            sessions = sessions.filter((row) => new Date(row.expires_at).getTime() >= new Date(expiresAt as string).getTime());
+            sessions = sessions.filter((row) => (
+                row.status === 'active' ||
+                row.expires_at === null ||
+                new Date(row.expires_at).getTime() >= new Date(expiresAt as string).getTime()
+            ));
+            return [];
+        }
+
+        if (normalized.startsWith("delete from public.mcp_sessions where status = 'active'")) {
+            const [updatedAt] = params;
+            sessions = sessions.filter((row) => (
+                row.status !== 'active' ||
+                new Date(row.updated_at).getTime() >= new Date(updatedAt as string).getTime()
+            ));
             return [];
         }
 
         if (normalized.startsWith('delete from public.mcp_sessions')) {
             sessions = [];
+            return [];
+        }
+
+        if (normalized.startsWith('delete from public.mcp_credentials')) {
+            credentials = [];
             return [];
         }
 
@@ -162,6 +243,7 @@ function createMockNeonSql() {
     return {
         sql: { query },
         listSessions: () => sessions,
+        listCredentials: () => credentials,
         setMissingTable: (value: boolean) => {
             simulateMissingTable = value;
         },
@@ -189,18 +271,26 @@ test.describe('NeonStorageBackend', () => {
     });
 
     test('stores and retrieves a session', async () => {
-        const session = createMockSession({
-            tokens: createMockTokens(),
-            headers: { Authorization: 'Bearer test' },
-        });
+        const oauthState = {
+            nonce: 'nonce-1',
+            sessionId: 'test-session-123',
+            serverId: 'test-server',
+            createdAt: Date.now(),
+        };
+        const tokens = createMockTokens();
+        const session = createMockSession({ headers: { Authorization: 'Bearer test' } });
 
         await storage.create(session);
+        await storage.patchCredentials(session.userId, session.sessionId, { tokens, oauthState });
 
         const retrieved = await storage.get(session.userId, session.sessionId);
+        const credentials = await storage.getCredentials(session.userId, session.sessionId);
         expect(retrieved?.sessionId).toBe(session.sessionId);
         expect(retrieved?.userId).toBe(session.userId);
-        expect(retrieved?.tokens).toEqual(session.tokens);
+        expect((retrieved as any)?.tokens).toBeUndefined();
+        expect(credentials?.tokens).toEqual(tokens);
         expect(retrieved?.headers).toEqual(session.headers);
+        expect(credentials?.oauthState).toEqual(oauthState);
     });
 
     test('throws if a session already exists', async () => {
@@ -215,29 +305,33 @@ test.describe('NeonStorageBackend', () => {
         await storage.create(session);
 
         const tokens = createMockTokens({ access_token: 'refreshed-token' });
-        await storage.update(session.userId, session.sessionId, {
-            active: false,
-            tokens,
-            transportType: 'streamable-http',
-        });
+        await storage.update(session.userId, session.sessionId, { status: 'pending', transportType: 'streamable-http' });
+        await storage.patchCredentials(session.userId, session.sessionId, { tokens });
 
         const retrieved = await storage.get(session.userId, session.sessionId);
-        expect(retrieved?.active).toBe(false);
-        expect(retrieved?.tokens).toEqual(tokens);
+        const credentials = await storage.getCredentials(session.userId, session.sessionId);
+        expect(retrieved?.status).toBe('pending');
+        expect((retrieved as any)?.tokens).toBeUndefined();
+        expect(credentials?.tokens).toEqual(tokens);
         expect(retrieved?.transportType).toBe('streamable-http');
         expect(retrieved?.serverUrl).toBe(session.serverUrl);
     });
 
     test('throws when updating a missing session', async () => {
         await expect(
-            storage.update('missing-user', 'missing-session', { active: true })
+            storage.update('missing-user', 'missing-session', { status: 'active' })
         ).rejects.toThrow('not found');
     });
 
     test('lists, removes, clears, and cleans up sessions', async () => {
-        await storage.create(createMockSession({ sessionId: 'a', userId: 'user-a' }), 3600);
-        await storage.create(createMockSession({ sessionId: 'b', userId: 'user-a' }), -1);
-        await storage.create(createMockSession({ sessionId: 'c', userId: 'user-b' }), 3600);
+        await storage.create(createMockSession({ sessionId: 'a', userId: 'user-a' }));
+        await storage.create(createMockSession({
+            sessionId: 'b',
+            userId: 'user-a',
+            status: 'pending',
+            createdAt: Date.now() - STATE_EXPIRATION_MS - 1000,
+        }));
+        await storage.create(createMockSession({ sessionId: 'c', userId: 'user-b' }));
 
         expect((await storage.listIds('user-a')).sort()).toEqual(['a', 'b']);
         expect((await storage.listAllIds()).sort()).toEqual(['a', 'b', 'c']);

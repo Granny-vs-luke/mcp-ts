@@ -12,17 +12,38 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     callback_url TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL,
-    active BOOLEAN DEFAULT false,
+    expires_at TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'active')),
     headers JSONB,
+    auth_url TEXT,
+    CONSTRAINT mcp_sessions_user_session_unique
+        UNIQUE (user_id, session_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.mcp_credentials (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
     client_information JSONB,
     tokens JSONB,
     code_verifier TEXT,
-    client_id TEXT
+    client_id TEXT,
+    oauth_state JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT mcp_credentials_session_fk
+        FOREIGN KEY (user_id, session_id)
+        REFERENCES public.mcp_sessions(user_id, session_id)
+        ON DELETE CASCADE,
+    CONSTRAINT mcp_credentials_user_session_unique
+        UNIQUE (user_id, session_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user_id ON public.mcp_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_sessions_expires_at ON public.mcp_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_mcp_credentials_user_session
+ON public.mcp_credentials(user_id, session_id);
 
 CREATE OR REPLACE FUNCTION public.set_current_timestamp_updated_at()
 RETURNS TRIGGER AS $$
@@ -39,6 +60,13 @@ BEFORE UPDATE ON public.mcp_sessions
 FOR EACH ROW
 EXECUTE FUNCTION public.set_current_timestamp_updated_at();
 
+DROP TRIGGER IF EXISTS trg_mcp_credentials_updated_at ON public.mcp_credentials;
+
+CREATE TRIGGER trg_mcp_credentials_updated_at
+BEFORE UPDATE ON public.mcp_credentials
+FOR EACH ROW
+EXECUTE FUNCTION public.set_current_timestamp_updated_at();
+
 -- Optional production configuration:
 -- Create a dedicated app role and use its credentials in NEON_DATABASE_URL.
 -- Replace neondb and the password before running.
@@ -47,6 +75,7 @@ EXECUTE FUNCTION public.set_current_timestamp_updated_at();
 -- GRANT CONNECT ON DATABASE neondb TO mcp_service_role;
 -- GRANT USAGE ON SCHEMA public TO mcp_service_role;
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON public.mcp_sessions TO mcp_service_role;
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON public.mcp_credentials TO mcp_service_role;
 -- GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO mcp_service_role;
 
 -- Optional RLS configuration:
@@ -60,9 +89,17 @@ EXECUTE FUNCTION public.set_current_timestamp_updated_at();
 -- GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO mcp_service_role;
 --
 -- ALTER TABLE public.mcp_sessions ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE public.mcp_credentials ENABLE ROW LEVEL SECURITY;
 --
 -- CREATE POLICY mcp_service_role_full_access
 -- ON public.mcp_sessions
+-- FOR ALL
+-- TO mcp_service_role
+-- USING (true)
+-- WITH CHECK (true);
+--
+-- CREATE POLICY mcp_service_role_oauth_full_access
+-- ON public.mcp_credentials
 -- FOR ALL
 -- TO mcp_service_role
 -- USING (true)

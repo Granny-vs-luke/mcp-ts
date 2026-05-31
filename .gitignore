@@ -32,3 +32,5 @@ build/
 .agents/
 skills-lock.json
 .vercel
+.codegraph
+.cursor/

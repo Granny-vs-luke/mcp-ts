@@ -51,7 +51,7 @@ test.describe('MultiSessionClient', () => {
             serverId: `server-${i}`,
             serverUrl: `http://localhost/server-${i}`,
             callbackUrl: `http://localhost/callback-${i}`,
-            active: true   // mark as fully established sessions
+            status: 'active' as const,
         }));
         
         mockStorage.list = async () => mockSessions as any;

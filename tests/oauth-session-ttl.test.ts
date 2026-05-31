@@ -3,26 +3,73 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { MCPClient } from '../src/server/mcp/oauth-client';
 import { _setStorageInstanceForTesting, sessions } from '../src/server/storage';
 import { MemoryStorageBackend } from '../src/server/storage/memory-backend';
-import { SESSION_TTL_SECONDS, STATE_EXPIRATION_MS } from '../src/shared/constants';
+import { STATE_EXPIRATION_MS } from '../src/shared/constants';
 import type { Session } from '../src/server/storage/types';
 import { UnauthorizedError } from '../src/shared/errors';
 
-class TrackingMemoryStorage extends MemoryStorageBackend {
-  public createCalls: Array<{ session: Session; ttl?: number }> = [];
-  public updateCalls: Array<{ userId: string; sessionId: string; data: Partial<Session>; ttl?: number }> = [];
+type CreateCall = {
+  session: Session;
+  argumentCount: number;
+};
 
-  async create(session: Session, ttl?: number): Promise<void> {
-    this.createCalls.push({ session, ttl });
-    return super.create(session, ttl);
+type UpdateCall = {
+  userId: string;
+  sessionId: string;
+  data: Partial<Session>;
+  argumentCount: number;
+};
+
+class TrackingMemoryStorage extends MemoryStorageBackend {
+  public createCalls: CreateCall[] = [];
+  public updateCalls: UpdateCall[] = [];
+
+  async create(session: Session): Promise<void> {
+    this.createCalls.push({ session, argumentCount: arguments.length });
+    return super.create(session);
   }
 
-  async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
-    this.updateCalls.push({ userId, sessionId, data, ttl });
-    return super.update(userId, sessionId, data, ttl);
+  async update(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
+    this.updateCalls.push({ userId, sessionId, data, argumentCount: arguments.length });
+    return super.update(userId, sessionId, data);
   }
 }
 
-test.describe('MCPClient session TTL lifecycle', () => {
+function expectNoCallerTtl(storage: TrackingMemoryStorage) {
+  for (const call of storage.createCalls) {
+    expect(call.argumentCount).toBe(1);
+  }
+  for (const call of storage.updateCalls) {
+    expect(call.argumentCount).toBe(3);
+  }
+}
+
+function expectPendingExpiration(expiresAt: unknown) {
+  expect(typeof expiresAt).toBe('number');
+  expect(expiresAt as number).toBeGreaterThan(Date.now());
+  expect(expiresAt as number).toBeLessThanOrEqual(Date.now() + STATE_EXPIRATION_MS + 1000);
+}
+
+async function createPendingSession(client: MCPClient) {
+  const userId = (client as any).userId;
+  const sessionId = (client as any).sessionId;
+  const existing = await sessions.get(userId, sessionId);
+
+  if (!existing) {
+    await sessions.create({
+      sessionId,
+      userId,
+      serverId: (client as any).serverId,
+      serverName: (client as any).serverName,
+      serverUrl: (client as any).serverUrl,
+      callbackUrl: (client as any).callbackUrl,
+      transportType: (client as any).transportType || 'streamable-http',
+      createdAt: Date.now(),
+      status: 'pending',
+    });
+  }
+}
+
+test.describe('MCPClient session expiration lifecycle', () => {
   const originalInitialize = (MCPClient.prototype as any).initialize;
   const originalTryConnect = (MCPClient.prototype as any).tryConnect;
   const originalGetTransport = (MCPClient.prototype as any).getTransport;
@@ -36,31 +83,14 @@ test.describe('MCPClient session TTL lifecycle', () => {
     _setStorageInstanceForTesting(null);
   });
 
-  test('non-oauth server: each successful connect refreshes the active session TTL', async () => {
+  test('successful connect promotes the session without caller-supplied TTL', async () => {
     const mockStorage = new TrackingMemoryStorage();
     _setStorageInstanceForTesting(mockStorage);
 
     (MCPClient.prototype as any).initialize = async function () {
       (this as any).client = {} as any;
       (this as any).oauthProvider = { authUrl: '' };
-
-      const userId = (this as any).userId;
-      const sessionId = (this as any).sessionId;
-      const existing = await sessions.get(userId, sessionId);
-
-      if (!existing) {
-        await sessions.create({
-          sessionId,
-          userId,
-          serverId: (this as any).serverId,
-          serverName: (this as any).serverName,
-          serverUrl: (this as any).serverUrl,
-          callbackUrl: (this as any).callbackUrl,
-          transportType: (this as any).transportType || 'streamable-http',
-          createdAt: Date.now(),
-          active: false,
-        }, Math.floor(STATE_EXPIRATION_MS / 1000));
-      }
+      await createPendingSession(this as MCPClient);
     };
     (MCPClient.prototype as any).tryConnect = async () => ({ transportType: 'streamable-http' });
 
@@ -77,42 +107,22 @@ test.describe('MCPClient session TTL lifecycle', () => {
     await client.connect();
     await client.connect();
 
-    const shortTtlSeconds = Math.floor(STATE_EXPIRATION_MS / 1000);
-    const shortCreates = mockStorage.createCalls.filter(c => c.ttl === shortTtlSeconds);
-    const longUpdates = mockStorage.updateCalls.filter(c => c.ttl === SESSION_TTL_SECONDS);
-
-    expect(shortCreates).toHaveLength(1);
-    expect(longUpdates).toHaveLength(2);
+    expectNoCallerTtl(mockStorage);
+    expect(mockStorage.updateCalls.filter((call) => call.data.status === 'active')).toHaveLength(2);
 
     const session = await sessions.get('user-1', 's-1');
-    expect(session?.active).toBe(true);
+    expect(session?.status).toBe('active');
+    expect((session as any)?.expiresAt).toBeNull();
   });
 
-  test('oauth server authenticating state uses 10 minute TTL', async () => {
+  test('oauth pending state gets a short storage-owned expiration', async () => {
     const mockStorage = new TrackingMemoryStorage();
     _setStorageInstanceForTesting(mockStorage);
 
     (MCPClient.prototype as any).initialize = async function () {
       (this as any).client = {} as any;
       (this as any).oauthProvider = { authUrl: 'https://auth.example.com' };
-
-      const userId = (this as any).userId;
-      const sessionId = (this as any).sessionId;
-      const existing = await sessions.get(userId, sessionId);
-
-      if (!existing) {
-        await sessions.create({
-          sessionId,
-          userId,
-          serverId: (this as any).serverId,
-          serverName: (this as any).serverName,
-          serverUrl: (this as any).serverUrl,
-          callbackUrl: (this as any).callbackUrl,
-          transportType: (this as any).transportType || 'streamable-http',
-          createdAt: Date.now(),
-          active: false,
-        }, Math.floor(STATE_EXPIRATION_MS / 1000));
-      }
+      await createPendingSession(this as MCPClient);
     };
     (MCPClient.prototype as any).tryConnect = async () => {
       throw new Error('unauthorized');
@@ -130,38 +140,20 @@ test.describe('MCPClient session TTL lifecycle', () => {
 
     await expect(client.connect()).rejects.toBeInstanceOf(UnauthorizedError);
 
-    const shortTtlSeconds = Math.floor(STATE_EXPIRATION_MS / 1000);
-    const shortUpdates = mockStorage.updateCalls.filter(c => c.ttl === shortTtlSeconds);
-    expect(shortUpdates.length).toBeGreaterThan(0);
+    expectNoCallerTtl(mockStorage);
 
     const session = await sessions.get('user-2', 's-2');
-    expect(session?.active).toBe(false);
+    expect(session?.status).toBe('pending');
+    expectPendingExpiration((session as any)?.expiresAt);
   });
 
-  test('oauth finishAuth updates session TTL to 12 hours', async () => {
+  test('oauth finishAuth promotes the session and clears pending expiration', async () => {
     const mockStorage = new TrackingMemoryStorage();
     _setStorageInstanceForTesting(mockStorage);
 
     (MCPClient.prototype as any).initialize = async function () {
       (this as any).oauthProvider = { authUrl: 'https://auth.example.com' };
-
-      const userId = (this as any).userId;
-      const sessionId = (this as any).sessionId;
-      const existing = await sessions.get(userId, sessionId);
-
-      if (!existing) {
-        await sessions.create({
-          sessionId,
-          userId,
-          serverId: (this as any).serverId,
-          serverName: (this as any).serverName,
-          serverUrl: (this as any).serverUrl,
-          callbackUrl: (this as any).callbackUrl,
-          transportType: (this as any).transportType || 'streamable-http',
-          createdAt: Date.now(),
-          active: false,
-        }, Math.floor(STATE_EXPIRATION_MS / 1000));
-      }
+      await createPendingSession(this as MCPClient);
     };
 
     (MCPClient.prototype as any).getTransport = function () {
@@ -184,11 +176,12 @@ test.describe('MCPClient session TTL lifecycle', () => {
 
     await client.finishAuth('auth-code');
 
-    const longUpdates = mockStorage.updateCalls.filter(c => c.ttl === SESSION_TTL_SECONDS);
-    expect(longUpdates.length).toBeGreaterThan(0);
+    expectNoCallerTtl(mockStorage);
+    expect(mockStorage.updateCalls.some((call) => call.data.status === 'active')).toBe(true);
 
     const session = await sessions.get('user-3', 's-3');
-    expect(session?.active).toBe(true);
+    expect(session?.status).toBe('active');
+    expect((session as any)?.expiresAt).toBeNull();
   });
 
   test('oauth finishAuth emits AUTHENTICATED only once across transport fallback', async () => {
@@ -197,24 +190,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
 
     (MCPClient.prototype as any).initialize = async function () {
       (this as any).oauthProvider = { authUrl: 'https://auth.example.com' };
-
-      const userId = (this as any).userId;
-      const sessionId = (this as any).sessionId;
-      const existing = await sessions.get(userId, sessionId);
-
-      if (!existing) {
-        await sessions.create({
-          sessionId,
-          userId,
-          serverId: (this as any).serverId,
-          serverName: (this as any).serverName,
-          serverUrl: (this as any).serverUrl,
-          callbackUrl: (this as any).callbackUrl,
-          transportType: (this as any).transportType || 'streamable-http',
-          createdAt: Date.now(),
-          active: false,
-        }, Math.floor(STATE_EXPIRATION_MS / 1000));
-      }
+      await createPendingSession(this as MCPClient);
     };
 
     const connectAttempts: string[] = [];
@@ -257,6 +233,7 @@ test.describe('MCPClient session TTL lifecycle', () => {
 
     await client.finishAuth('auth-code');
 
+    expectNoCallerTtl(mockStorage);
     expect(finishAuthAttempts).toEqual(['streamable-http']);
     expect(connectAttempts).toEqual(['streamable-http', 'sse']);
     expect(states.filter((state) => state === 'AUTHENTICATED')).toHaveLength(1);

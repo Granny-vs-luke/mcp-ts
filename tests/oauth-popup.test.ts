@@ -28,8 +28,8 @@ async function loadHarness(page: Page): Promise<void> {
           window.__setConnections = setConnections;
         }, []);
 
-        useMcpOAuthPopup(connections, async (sessionId, code) => {
-          window.__finishAuthCalls.push({ sessionId, code });
+        useMcpOAuthPopup(connections, async (state, code) => {
+          window.__finishAuthCalls.push({ state, code });
           if (window.__finishAuthErrorMessage) {
             throw new Error(window.__finishAuthErrorMessage);
           }
@@ -138,7 +138,7 @@ async function sendAuthCodeFromPopupFrame(
       });
 
       const payload = { type, sessionId, code };
-      frame.contentWindow?.eval(
+      (frame.contentWindow as (Window & { eval: (script: string) => unknown }) | null)?.eval(
         `parent.postMessage(${JSON.stringify(payload)}, ${JSON.stringify(window.location.origin)})`
       );
     },
@@ -206,7 +206,7 @@ test.describe('useMcpOAuthPopup', () => {
 
     await expect.poll(() => page.evaluate(() => window.__finishAuthCalls.length)).toBe(1);
     await expect(page.evaluate(() => window.__finishAuthCalls)).resolves.toEqual([
-      { sessionId: 'session-1', code: 'code-1' },
+      { state: 'session-1', code: 'code-1' },
     ]);
   });
 
@@ -225,7 +225,7 @@ test.describe('useMcpOAuthPopup', () => {
 
     await expect.poll(() => page.evaluate(() => window.__finishAuthCalls.length)).toBe(1);
     await expect(page.evaluate(() => window.__finishAuthCalls)).resolves.toEqual([
-      { sessionId: 'session-2', code: 'code-2' },
+      { state: 'session-2', code: 'code-2' },
     ]);
   });
 
@@ -310,6 +310,31 @@ test.describe('useMcpOAuthPopup', () => {
       })
     );
   });
+
+  test('reports success back to a popup that identified itself with full OAuth state', async ({ page }) => {
+    await loadHarness(page);
+    await renderHarness(page, [{ sessionId: 'session-7', state: 'AUTHORIZING' }]);
+    await captureAuthResults(page);
+
+    await sendAuthCodeFromPopupFrame(page, {
+      sessionId: 'nonce-7.session-7',
+      code: 'code-7',
+    });
+    await expect.poll(() => page.evaluate(() => window.__finishAuthCalls.length)).toBe(1);
+
+    await page.evaluate(() => {
+      window.__setConnections([{ sessionId: 'session-7', state: 'READY' }]);
+    });
+
+    await expect.poll(() => page.evaluate(() => window.__authResults.length)).toBeGreaterThan(0);
+    await expect(page.evaluate(() => window.__authResults)).resolves.toContainEqual(
+      expect.objectContaining({
+        type: 'MCP_AUTH_RESULT',
+        sessionId: 'nonce-7.session-7',
+        success: true,
+      })
+    );
+  });
 });
 
 test.describe('McpOAuthCallbackContent', () => {
@@ -333,6 +358,7 @@ test.describe('McpOAuthCallbackContent', () => {
       {
         type: 'MCP_AUTH_CODE',
         code: 'code-without-opener',
+        state: 'session-without-opener',
         sessionId: 'session-without-opener',
       },
     ]);
@@ -342,11 +368,11 @@ test.describe('McpOAuthCallbackContent', () => {
 declare global {
   interface Window {
     __authCodeChannel?: BroadcastChannel;
-    __authCodeMessages: Array<{ type: string; sessionId?: string; code?: string }>;
+    __authCodeMessages: Array<{ type: string; sessionId?: string; state?: string; code?: string }>;
     __authResultChannel?: BroadcastChannel;
-    __authResults: Array<{ type: string; sessionId?: string; success: boolean; error?: string }>;
+    __authResults: Array<{ type: string; sessionId?: string; state?: string; success: boolean; error?: string }>;
     __finishAuthErrorMessage?: string;
-    __finishAuthCalls: Array<{ sessionId: string; code: string }>;
+    __finishAuthCalls: Array<{ state: string; code: string }>;
     __initialConnections?: Array<{ sessionId: string; state: string }>;
     __renderOAuthCallback: (props: { code?: string | null; sessionId?: string | null }) => void;
     __renderOAuthHarness: (connections?: Array<{ sessionId: string; state: string }>) => void;

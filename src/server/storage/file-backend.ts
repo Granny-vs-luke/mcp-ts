@@ -1,7 +1,13 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import type { SessionStore, Session, SetClientOptions } from './types.js';
+import type { SessionStore, Session, SessionCredentials } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
+import {
+    mergeSessionUpdate,
+    normalizeNewSession,
+    normalizeStoredSession,
+    isSessionExpired,
+} from './session-lifecycle.js';
 
 /**
  * File system implementation of SessionStore
@@ -10,6 +16,7 @@ import { generateSessionId } from '../../shared/utils.js';
 export class FileStorageBackend implements SessionStore {
     private filePath: string;
     private memoryCache: Map<string, Session> | null = null;
+    private credentialsCache: Map<string, SessionCredentials> | null = null;
     private initialized = false;
 
     /**
@@ -35,15 +42,23 @@ export class FileStorageBackend implements SessionStore {
             const json = JSON.parse(data);
 
             this.memoryCache = new Map();
-            if (Array.isArray(json)) {
-                json.forEach((s: Session) => {
-                    this.memoryCache!.set(this.getSessionKey(s.userId || 'unknown', s.sessionId), s);
+            this.credentialsCache = new Map();
+            if (Array.isArray(json.sessions)) {
+                json.sessions.forEach((s: Session) => {
+                    const session = normalizeStoredSession(s);
+                    this.memoryCache!.set(this.getSessionKey(session.userId || 'unknown', session.sessionId), session);
+                });
+            }
+            if (Array.isArray(json.credentials)) {
+                json.credentials.forEach((c: SessionCredentials) => {
+                    this.credentialsCache!.set(this.getSessionKey(c.userId, c.sessionId), c);
                 });
             }
         } catch (error: any) {
             if (error.code === 'ENOENT') {
                 // File does not exist, initialize empty
                 this.memoryCache = new Map();
+                this.credentialsCache = new Map();
                 await this.flush();
             } else {
                 console.error('[FileStorage] Failed to load sessions:', error);
@@ -60,9 +75,11 @@ export class FileStorageBackend implements SessionStore {
     }
 
     private async flush(): Promise<void> {
-        if (!this.memoryCache) return;
-        const sessions = Array.from(this.memoryCache.values());
-        await fs.writeFile(this.filePath, JSON.stringify(sessions, null, 2), 'utf-8');
+        if (!this.memoryCache || !this.credentialsCache) return;
+        await fs.writeFile(this.filePath, JSON.stringify({
+            sessions: Array.from(this.memoryCache.values()),
+            credentials: Array.from(this.credentialsCache.values()),
+        }, null, 2), 'utf-8');
     }
 
     private getSessionKey(userId: string, sessionId: string): string {
@@ -73,7 +90,7 @@ export class FileStorageBackend implements SessionStore {
         return generateSessionId();
     }
 
-    async create(session: Session, ttl?: number): Promise<void> {
+    async create(session: Session): Promise<void> {
         await this.ensureInitialized();
         const { sessionId, userId } = session;
         if (!sessionId || !userId) throw new Error('userId and sessionId required');
@@ -83,12 +100,11 @@ export class FileStorageBackend implements SessionStore {
             throw new Error(`Session ${sessionId} already exists`);
         }
 
-        this.memoryCache!.set(sessionKey, session);
+        this.memoryCache!.set(sessionKey, normalizeNewSession(session));
         await this.flush();
-        // Note: TTL is ignored in file backend - sessions don't auto-expire
     }
 
-    async update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void> {
+    async update(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
         await this.ensureInitialized();
         if (!userId || !sessionId) throw new Error('userId and sessionId required');
 
@@ -99,20 +115,45 @@ export class FileStorageBackend implements SessionStore {
             throw new Error(`Session ${sessionId} not found`);
         }
 
-        const updated = {
-            ...current,
-            ...data
-        };
+        const updated = mergeSessionUpdate(current, data);
 
         this.memoryCache!.set(sessionKey, updated);
         await this.flush();
-        // Note: TTL is ignored in file backend - sessions don't auto-expire
+    }
+
+    async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void> {
+        await this.ensureInitialized();
+        const sessionKey = this.getSessionKey(userId, sessionId);
+        if (!this.memoryCache!.has(sessionKey)) {
+            throw new Error(`Session ${sessionId} not found`);
+        }
+
+        const current = this.credentialsCache!.get(sessionKey) ?? { sessionId, userId };
+        this.credentialsCache!.set(sessionKey, { ...current, ...data, sessionId, userId });
+        await this.flush();
     }
 
     async get(userId: string, sessionId: string): Promise<Session | null> {
         await this.ensureInitialized();
         const sessionKey = this.getSessionKey(userId, sessionId);
         return this.memoryCache!.get(sessionKey) || null;
+    }
+
+    async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
+        await this.ensureInitialized();
+        const sessionKey = this.getSessionKey(userId, sessionId);
+        if (!this.memoryCache!.has(sessionKey)) return null;
+        return this.credentialsCache!.get(sessionKey) ?? { sessionId, userId };
+    }
+
+    async clearCredentials(userId: string, sessionId: string): Promise<void> {
+        await this.patchCredentials(userId, sessionId, {
+            clientInformation: null,
+            tokens: null,
+            codeVerifier: null,
+            clientId: null,
+            oauthState: null,
+        });
     }
 
     async list(userId: string): Promise<Session[]> {
@@ -130,7 +171,9 @@ export class FileStorageBackend implements SessionStore {
     async delete(userId: string, sessionId: string): Promise<void> {
         await this.ensureInitialized();
         const sessionKey = this.getSessionKey(userId, sessionId);
-        if (this.memoryCache!.delete(sessionKey)) {
+        const deleted = this.memoryCache!.delete(sessionKey);
+        this.credentialsCache!.delete(sessionKey);
+        if (deleted) {
             await this.flush();
         }
     }
@@ -143,12 +186,25 @@ export class FileStorageBackend implements SessionStore {
     async clearAll(): Promise<void> {
         await this.ensureInitialized();
         this.memoryCache!.clear();
+        this.credentialsCache!.clear();
         await this.flush();
     }
 
     async cleanupExpired(): Promise<void> {
-        // Could implement TTL check here using createdAt
         await this.ensureInitialized();
+        let changed = false;
+
+        for (const [key, session] of this.memoryCache!.entries()) {
+            if (!isSessionExpired(session)) continue;
+
+            this.memoryCache!.delete(key);
+            this.credentialsCache!.delete(key);
+            changed = true;
+        }
+
+        if (changed) {
+            await this.flush();
+        }
     }
 
     async disconnect(): Promise<void> {

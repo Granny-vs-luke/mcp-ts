@@ -25,7 +25,6 @@ test.describe('MCPClient refresh-token reauthorization', () => {
           refresh_token: 'refresh-token',
           token_type: 'Bearer',
         }),
-        isTokenExpired: () => true,
       };
     };
 

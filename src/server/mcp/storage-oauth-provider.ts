@@ -5,7 +5,8 @@ import type {
     OAuthClientMetadata,
     OAuthTokens
 } from "@modelcontextprotocol/sdk/shared/auth.js";
-import { sessions, type Session } from "../storage/index.js";
+import { nanoid } from "nanoid";
+import { sessions, type SessionCredentials } from "../storage/index.js";
 import {
     DEFAULT_CLIENT_NAME,
     DEFAULT_CLIENT_URI,
@@ -13,8 +14,9 @@ import {
     DEFAULT_POLICY_URI,
     SOFTWARE_ID,
     SOFTWARE_VERSION,
-    TOKEN_EXPIRY_BUFFER_MS,
+    STATE_EXPIRATION_MS,
 } from '../../shared/constants.js';
+import { formatOAuthState, parseOAuthState } from '../../shared/utils.js';
 
 /**
  * Extension of OAuthClientProvider interface with additional methods
@@ -29,8 +31,6 @@ export interface AgentsOAuthProvider extends OAuthClientProvider {
     ): Promise<{ valid: boolean; serverId?: string; error?: string }>;
     consumeState(state: string): Promise<void>;
     deleteCodeVerifier(): Promise<void>;
-    isTokenExpired(): boolean;
-    setTokenExpiresAt(expiresAt: number): void;
 }
 
 export interface StorageOAuthClientProviderOptions {
@@ -66,7 +66,6 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     private _authUrl: string | undefined;
     private _clientId: string | undefined;
     private onRedirectCallback?: (url: string) => void;
-    private tokenExpiresAt?: number;
 
     /**
      * Creates a new session-backed OAuth provider
@@ -110,32 +109,32 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     /**
-     * Loads OAuth data from the session store
+     * Loads OAuth credentials from the session store
      * @private
      */
-    private async getSessionData(): Promise<Session> {
-        const data = await sessions.get(this.userId, this.sessionId);
+    private async getCredentials(): Promise<SessionCredentials> {
+        const data = await sessions.getCredentials(this.userId, this.sessionId);
         if (!data) {
-            return {} as Session;
+            return { userId: this.userId, sessionId: this.sessionId };
         }
         return data;
     }
 
     /**
-     * Saves OAuth data to the session store
-     * @param data - Partial OAuth data to save
+     * Saves OAuth credentials to the session store
+     * @param data - Partial OAuth credentials to save
      * @private
      * @throws Error if session doesn't exist (session must be created by controller layer)
      */
-    private async saveSessionData(data: Partial<Session>): Promise<void> {
-        await sessions.update(this.userId, this.sessionId, data);
+    private async patchCredentials(data: Partial<SessionCredentials>): Promise<void> {
+        await sessions.patchCredentials(this.userId, this.sessionId, data);
     }
 
     /**
      * Retrieves stored OAuth client information
      */
     async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
-        const data = await this.getSessionData();
+        const data = await this.getCredentials();
 
         if (data.clientId && !this._clientId) {
             this._clientId = data.clientId;
@@ -159,7 +158,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * Stores OAuth client information
      */
     async saveClientInformation(clientInformation: OAuthClientInformationFull): Promise<void> {
-        await this.saveSessionData({
+        await this.patchCredentials({
             clientInformation,
             clientId: clientInformation.client_id
         });
@@ -170,13 +169,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      * Stores OAuth tokens
      */
     async saveTokens(tokens: OAuthTokens): Promise<void> {
-        const data: Partial<Session> = { tokens };
-
-        if (tokens.expires_in) {
-            this.tokenExpiresAt = Date.now() + (tokens.expires_in * 1000) - TOKEN_EXPIRY_BUFFER_MS;
-        }
-
-        await this.saveSessionData(data);
+        await this.patchCredentials({ tokens });
     }
 
     get authUrl() {
@@ -184,25 +177,67 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async state(): Promise<string> {
-        return this.sessionId;
+        const nonce = nanoid(32);
+        await this.patchCredentials({
+            oauthState: {
+                nonce,
+                sessionId: this.sessionId,
+                serverId: this.serverId,
+                createdAt: Date.now(),
+            },
+            codeVerifier: null,
+        });
+        return formatOAuthState(nonce, this.sessionId);
     }
 
-    async checkState(_state: string): Promise<{ valid: boolean; serverId?: string; error?: string }> {
-        const data = await sessions.get(this.userId, this.sessionId);
+    async checkState(state: string): Promise<{ valid: boolean; serverId?: string; error?: string }> {
+        const parsed = parseOAuthState(state);
+        if (!parsed) {
+            return { valid: false, error: "Invalid OAuth state" };
+        }
+
+        if (parsed.sessionId !== this.sessionId) {
+            return { valid: false, error: "OAuth state mismatch" };
+        }
+
+        const data = await sessions.getCredentials(this.userId, parsed.sessionId);
 
         if (!data) {
             return { valid: false, error: "Session not found" };
         }
 
-        return { valid: true, serverId: this.serverId };
+        const oauthState = data.oauthState;
+        if (!oauthState) {
+            return { valid: false, error: "OAuth state not found" };
+        }
+
+        if (
+            oauthState.nonce !== parsed.nonce ||
+            oauthState.sessionId !== parsed.sessionId ||
+            oauthState.serverId !== this.serverId
+        ) {
+            return { valid: false, error: "OAuth state mismatch" };
+        }
+
+        if (Date.now() - oauthState.createdAt > STATE_EXPIRATION_MS) {
+            return { valid: false, error: "OAuth state expired" };
+        }
+
+        return { valid: true, serverId: oauthState.serverId };
     }
 
-    async consumeState(_state: string): Promise<void> {
-        // No-op
+    async consumeState(state: string): Promise<void> {
+        const result = await this.checkState(state);
+        if (!result.valid) {
+            throw new Error(result.error || "Invalid OAuth state");
+        }
+
+        await this.patchCredentials({ oauthState: null });
     }
 
     async redirectToAuthorization(authUrl: URL): Promise<void> {
         this._authUrl = authUrl.toString();
+        await sessions.update(this.userId, this.sessionId, { authUrl: this._authUrl });
         if (this.onRedirectCallback) {
             this.onRedirectCallback(authUrl.toString());
         }
@@ -214,26 +249,31 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         if (scope === "all") {
             await sessions.delete(this.userId, this.sessionId);
         } else {
-            const updates: Partial<Session> = {};
+            const updates: Partial<SessionCredentials> = {};
 
             if (scope === "client") {
-                updates.clientInformation = undefined;
-                updates.clientId = undefined;
+                updates.clientInformation = null;
+                updates.clientId = null;
             } else if (scope === "tokens") {
-                updates.tokens = undefined;
+                updates.tokens = null;
             } else if (scope === "verifier") {
-                updates.codeVerifier = undefined;
+                updates.codeVerifier = null;
             }
-            await this.saveSessionData(updates);
+            await this.patchCredentials(updates);
         }
     }
 
     async saveCodeVerifier(verifier: string): Promise<void> {
-        await this.saveSessionData({ codeVerifier: verifier });
+        const data = await this.getCredentials();
+        if (data.codeVerifier) {
+            return;
+        }
+
+        await this.patchCredentials({ codeVerifier: verifier });
     }
 
     async codeVerifier(): Promise<string> {
-        const data = await this.getSessionData();
+        const data = await this.getCredentials();
 
         if (data.clientId && !this._clientId) {
             this._clientId = data.clientId;
@@ -246,27 +286,16 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async deleteCodeVerifier(): Promise<void> {
-        await this.saveSessionData({ codeVerifier: undefined });
+        await this.patchCredentials({ codeVerifier: null });
     }
 
     async tokens(): Promise<OAuthTokens | undefined> {
-        const data = await this.getSessionData();
+        const data = await this.getCredentials();
 
         if (data.clientId && !this._clientId) {
             this._clientId = data.clientId;
         }
 
-        return data.tokens;
-    }
-
-    isTokenExpired(): boolean {
-        if (!this.tokenExpiresAt) {
-            return false;
-        }
-        return Date.now() >= this.tokenExpiresAt;
-    }
-
-    setTokenExpiresAt(expiresAt: number): void {
-        this.tokenExpiresAt = expiresAt;
+        return data.tokens ?? undefined;
     }
 }

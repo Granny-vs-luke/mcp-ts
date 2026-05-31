@@ -5,6 +5,15 @@ import type {
     OAuthClientInformationMixed,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 
+export interface OAuthState {
+    nonce: string;
+    sessionId: string;
+    serverId: string;
+    createdAt: number;
+}
+
+export type SessionStatus = 'pending' | 'active';
+
 export interface Session {
     sessionId: string;
     serverId?: string; // Database server ID for mapping
@@ -13,20 +22,31 @@ export interface Session {
     transportType: 'sse' | 'streamable-http';
     callbackUrl: string;
     createdAt: number;
+    updatedAt?: number;
+    /**
+     * Storage-owned expiration timestamp for pending/inactive sessions.
+     * Active sessions use updatedAt-based dormancy cleanup instead.
+     */
+    expiresAt?: number | null;
     userId: string;
     headers?: Record<string, string>;
+    authUrl?: string | null;
     /**
-     * Session status marker used for TTL transitions:
-     * - false: short-lived intermediate/error/auth-pending session state
-     *          (keep this value when connection/auth is incomplete or failed)
-     * - true: active long-lived session state after successful connection/auth completion
+     * Session status marker used for lifecycle cleanup:
+     * - pending: short-lived intermediate/auth-pending session state
+     * - active: restorable session after successful connection/auth completion
      */
-    active?: boolean;
-    // OAuth data (consolidated)
-    clientInformation?: OAuthClientInformationMixed;
-    tokens?: OAuthTokens;
-    codeVerifier?: string;
-    clientId?: string;
+    status?: SessionStatus;
+}
+
+export interface SessionCredentials {
+    sessionId: string;
+    userId: string;
+    clientInformation?: OAuthClientInformationMixed | null;
+    tokens?: OAuthTokens | null;
+    codeVerifier?: string | null;
+    clientId?: string | null;
+    oauthState?: OAuthState | null;
 }
 
 export type SessionMutationType = 'create' | 'update' | 'delete';
@@ -38,7 +58,6 @@ export interface SessionMutationEvent {
     timestamp: number;
     session?: Session;
     patch?: Partial<Session>;
-    ttl?: number;
 }
 
 export type SessionMutationListener = (event: SessionMutationEvent) => void | Promise<void>;
@@ -72,23 +91,37 @@ export interface SessionStore {
     /**
      * Creates a new session. Throws if session already exists.
      * @param session - Session data to create
-     * @param ttl - Optional TTL in seconds (defaults to backend's default)
      */
-    create(session: Session, ttl?: number): Promise<void>;
+    create(session: Session): Promise<void>;
 
     /**
      * Updates an existing session with partial data. Throws if session does not exist.
      * @param userId - User identifier
      * @param sessionId - Session identifier
      * @param data - Partial session data to update
-     * @param ttl - Optional TTL in seconds (defaults to backend's default)
      */
-    update(userId: string, sessionId: string, data: Partial<Session>, ttl?: number): Promise<void>;
+    update(userId: string, sessionId: string, data: Partial<Session>): Promise<void>;
+
+    /**
+     * Patches runtime credentials for an existing session.
+     * These values are separated from connection metadata in durable SQL stores.
+     */
+    patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void>;
 
     /**
      * Retrieves a session
      */
     get(userId: string, sessionId: string): Promise<Session | null>;
+
+    /**
+     * Retrieves runtime credentials for a session.
+     */
+    getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null>;
+
+    /**
+     * Clears runtime credentials without removing connection metadata.
+     */
+    clearCredentials(userId: string, sessionId: string): Promise<void>;
 
     /**
      * Gets full session data for all sessions owned by a user

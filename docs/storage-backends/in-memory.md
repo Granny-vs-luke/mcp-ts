@@ -36,7 +36,7 @@ await sessions.create({
   serverUrl: 'https://test.example.com',
   callbackUrl: 'https://test.com/callback',
   transportType: 'sse',
-  active: true,
+  status: 'active',
   createdAt: Date.now(),
 });
 ```
@@ -54,7 +54,7 @@ await memoryBackend.create({
   serverUrl: 'https://test.example.com',
   callbackUrl: 'https://test.com/callback',
   transportType: 'sse',
-  active: true,
+  status: 'active',
   createdAt: Date.now(),
 });
 ```

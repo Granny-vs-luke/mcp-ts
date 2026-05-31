@@ -3,6 +3,7 @@
  */
 import RedisMock from 'ioredis-mock';
 import { Redis } from 'ioredis';
+import type { SessionStatus } from '../src/server/storage/types';
 
 /**
  * Create a mock Redis instance for testing
@@ -23,6 +24,7 @@ export async function clearMockRedis(redis: Redis): Promise<void> {
  * Create a mock session for testing
  */
 export function createMockSession(overrides: Partial<MockSession> = {}): MockSession {
+    const now = Date.now();
     return {
         sessionId: 'test-session-123',
         userId: 'test-user-456',
@@ -31,8 +33,9 @@ export function createMockSession(overrides: Partial<MockSession> = {}): MockSes
         serverUrl: 'https://mcp.example.com',
         callbackUrl: 'https://app.example.com/callback',
         transportType: 'sse',
-        active: true,
-        createdAt: Date.now(),
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
         ...overrides,
     };
 }
@@ -45,8 +48,9 @@ export interface MockSession {
     serverUrl: string;
     callbackUrl: string;
     transportType: 'sse' | 'streamable-http';
-    active: boolean;
+    status?: SessionStatus;
     createdAt: number;
+    updatedAt?: number;
     clientInformation?: {
         client_id: string;
         client_name: string;
@@ -58,6 +62,12 @@ export interface MockSession {
         refresh_token?: string;
     };
     headers?: Record<string, string>;
+    oauthState?: {
+        nonce: string;
+        sessionId: string;
+        serverId: string;
+        createdAt: number;
+    } | null;
 }
 
 /**

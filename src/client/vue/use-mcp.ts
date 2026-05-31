@@ -6,6 +6,11 @@
 
 import { ref, onMounted, onUnmounted, watch, computed, shallowRef } from 'vue';
 import { SSEClient, type SSEClientOptions } from '../core/sse-client';
+import {
+    getInitialConnectionState,
+    getVisibleConnectionState,
+    isTransientReconnectState,
+} from '../utils/session-state';
 import type { McpConnectionEvent, McpConnectionState } from '../../shared/events';
 import type {
     ToolInfo,
@@ -83,6 +88,7 @@ export interface McpConnection {
     authUrl?: string;
     error?: string;
     createdAt?: Date;
+    updatedAt?: Date;
 }
 
 export interface McpClient {
@@ -166,7 +172,7 @@ export interface McpClient {
     /**
      * Complete OAuth authorization
      */
-    finishAuth: (sessionId: string, code: string) => Promise<FinishAuthResult>;
+    finishAuth: (state: string, code: string) => Promise<FinishAuthResult>;
 
     /**
      * Explicitly resume OAuth flow for an existing session
@@ -243,51 +249,13 @@ export function useMcp(options: UseMcpOptions): McpClient {
     const updateConnectionsFromEvent = (event: McpConnectionEvent) => {
         if (!isMountedRef.value) return;
 
-        const isTransientReconnectState = (state: McpConnectionState): boolean =>
-            state === 'INITIALIZING' ||
-            state === 'VALIDATING' ||
-            state === 'RECONNECTING' ||
-            state === 'CONNECTING' ||
-            state === 'CONNECTED' ||
-            state === 'DISCOVERING';
-
-        const getVisibleState = (
-            incomingState: McpConnectionState,
-            existingState?: McpConnectionState,
-            previousState?: McpConnectionState
-        ): McpConnectionState => {
-            // `INITIALIZING` has two meanings in practice:
-            // 1. genuine cold start / reconnect work
-            // 2. an internal setup step that happens mid-OAuth completion
-            //
-            // For case (2), showing raw `INITIALIZING` creates a confusing user-facing
-            // sequence like AUTHENTICATING -> INITIALIZING -> AUTHENTICATED.
-            // We keep the raw event stream intact for observability, but collapse the
-            // visible state back into the current auth phase in the UI.
-            if (
-                incomingState === 'INITIALIZING' &&
-                (
-                    existingState === 'AUTHENTICATING' ||
-                    existingState === 'AUTHENTICATED' ||
-                    previousState === 'AUTHENTICATING' ||
-                    previousState === 'AUTHENTICATED'
-                )
-            ) {
-                return existingState === 'AUTHENTICATED' || previousState === 'AUTHENTICATED'
-                    ? 'AUTHENTICATED'
-                    : 'AUTHENTICATING';
-            }
-
-            return incomingState;
-        };
-
         switch (event.type) {
             case 'state_changed': {
                 const existing = connections.value.find((c) => c.sessionId === event.sessionId);
                 if (existing) {
                     // Normalize the incoming backend state into the smoother user-facing
                     // state we want to render for this existing connection.
-                    const normalizedState = getVisibleState(event.state, existing.state, event.previousState);
+                    const normalizedState = getVisibleConnectionState(event.state, existing.state, event.previousState);
                     // In stateless per-request transport, tool calls can emit transient reconnect states.
                     // Keep READY sticky to avoid UI flicker from READY -> CONNECTING -> CONNECTED.
                     const nextState =
@@ -300,7 +268,8 @@ export function useMcp(options: UseMcpOptions): McpClient {
                         ...existing,
                         state: nextState,
                         // update createdAt if present in event, otherwise keep existing
-                        createdAt: event.createdAt ? new Date(event.createdAt) : existing.createdAt
+                        createdAt: event.createdAt ? new Date(event.createdAt) : existing.createdAt,
+                        updatedAt: new Date(),
                     };
                 } else {
                     // Fix: Don't add back disconnected sessions that were just removed
@@ -314,8 +283,9 @@ export function useMcp(options: UseMcpOptions): McpClient {
                         serverName: event.serverName,
                         // New connections do not have prior local state, so we normalize
                         // only against the server-reported previous state.
-                        state: getVisibleState(event.state, undefined, event.previousState),
+                        state: getVisibleConnectionState(event.state, undefined, event.previousState),
                         createdAt: event.createdAt ? new Date(event.createdAt) : undefined,
+                        updatedAt: new Date(),
                         tools: [],
                     }];
                 }
@@ -325,7 +295,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
             case 'tools_discovered': {
                 const index = connections.value.findIndex((c) => c.sessionId === event.sessionId);
                 if (index !== -1) {
-                    connections.value[index] = { ...connections.value[index], tools: event.tools, state: 'READY' };
+                    connections.value[index] = { ...connections.value[index], tools: event.tools, state: 'READY', updatedAt: new Date() };
                 }
                 break;
             }
@@ -397,8 +367,9 @@ export function useMcp(options: UseMcpOptions): McpClient {
                     serverName: s.serverName ?? 'Unknown Server',
                     serverUrl: s.serverUrl,
                     transport: s.transport,
-                    state: (s.active === false ? 'AUTHENTICATING' : 'VALIDATING') as McpConnectionState,
+                    state: getInitialConnectionState(s.status),
                     createdAt: new Date(s.createdAt),
+                    updatedAt: new Date(s.updatedAt ?? s.createdAt),
                     tools: [],
                 }));
             }
@@ -409,7 +380,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
                     if (clientRef.value) {
                         try {
                             // Pending auth sessions should not auto-trigger popup/redirect on reload.
-                            if (session.active === false) {
+                            if (session.status !== 'active') {
                                 return;
                             }
                             suppressAuthRedirectSessions.value.add(session.sessionId);
@@ -573,12 +544,12 @@ export function useMcp(options: UseMcpOptions): McpClient {
     /**
      * Complete OAuth authorization
      */
-    const finishAuth = async (sessionId: string, code: string): Promise<FinishAuthResult> => {
+    const finishAuth = async (state: string, code: string): Promise<FinishAuthResult> => {
         if (!clientRef.value) {
             throw new Error('SSE client not initialized');
         }
 
-        return await clientRef.value.finishAuth(sessionId, code);
+        return await clientRef.value.finishAuth(state, code);
     };
 
     /**

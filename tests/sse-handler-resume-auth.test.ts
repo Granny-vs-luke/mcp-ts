@@ -22,7 +22,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
       callbackUrl: 'https://app.local/oauth/callback',
       transportType: 'streamable-http',
       createdAt: Date.now(),
-      active: false,
+      status: 'pending',
     });
 
     const manager = new SSEConnectionManager(
@@ -70,7 +70,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
       callbackUrl: 'https://app.local/oauth/callback',
       transportType: 'streamable-http',
       createdAt: Date.now(),
-      active: true,
+      status: 'active',
     });
 
     const manager = new SSEConnectionManager(
@@ -95,6 +95,45 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     manager.dispose();
   });
 
+  test('listSessions includes created and updated timestamps', async () => {
+    const storage = new MemoryStorageBackend();
+    _setStorageInstanceForTesting(storage);
+
+    await storage.create({
+      sessionId: 'timestamped-session',
+      userId: 'user-timestamps',
+      serverId: 'srv-timestamps',
+      serverName: 'Timestamped Server',
+      serverUrl: 'https://example.com/mcp-timestamps',
+      callbackUrl: 'https://app.local/oauth/callback',
+      transportType: 'streamable-http',
+      createdAt: 1780076200000,
+      updatedAt: 1780076300000,
+      status: 'active',
+    });
+
+    const manager = new SSEConnectionManager(
+      { userId: 'user-timestamps' },
+      () => { }
+    );
+
+    const response = await manager.handleRequest({
+      id: 'timestamps',
+      method: 'listSessions',
+    } as any);
+
+    expect((response as any).error).toBeUndefined();
+    expect((response as any).result.sessions).toEqual([
+      expect.objectContaining({
+        sessionId: 'timestamped-session',
+        createdAt: 1780076200000,
+        updatedAt: 1780076300000,
+      }),
+    ]);
+
+    manager.dispose();
+  });
+
   test('rehydrated RPC client reuses stored transport metadata', async () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
@@ -108,7 +147,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
       callbackUrl: 'https://app.local/oauth/callback',
       transportType: 'streamable-http',
       createdAt: Date.now(),
-      active: true,
+      status: 'active',
     });
 
     const manager = new SSEConnectionManager(
@@ -213,6 +252,70 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
       });
     } finally {
       (MCPClient.prototype as any).connect = originalConnect;
+      (MCPClient.prototype as any).listTools = originalListTools;
+      manager.dispose();
+    }
+  });
+
+  test('finishAuth accepts raw OAuth state and passes it to the MCP client', async () => {
+    const storage = new MemoryStorageBackend();
+    _setStorageInstanceForTesting(storage);
+
+    await storage.create({
+      sessionId: 'auth-session',
+      userId: 'user-5',
+      serverId: 'srv-5',
+      serverName: 'Server Five',
+      serverUrl: 'https://example.com/mcp-auth',
+      callbackUrl: 'https://app.local/oauth/callback',
+      transportType: 'streamable-http',
+      createdAt: Date.now(),
+      status: 'pending',
+    });
+    await storage.patchCredentials('user-5', 'auth-session', {
+      oauthState: {
+        nonce: 'nonce123',
+        sessionId: 'auth-session',
+        serverId: 'srv-5',
+        createdAt: Date.now(),
+      },
+    });
+
+    const manager = new SSEConnectionManager(
+      { userId: 'user-5' },
+      () => { }
+    );
+
+    const originalFinishAuth = (MCPClient.prototype as any).finishAuth;
+    const originalListTools = (MCPClient.prototype as any).listTools;
+    let seenCode: string | undefined;
+    let seenState: string | undefined;
+
+    (MCPClient.prototype as any).finishAuth = async function (code: string, state?: string) {
+      seenCode = code;
+      seenState = state;
+    };
+
+    (MCPClient.prototype as any).listTools = async function () {
+      return { tools: [] };
+    };
+
+    try {
+      const response = await manager.handleRequest({
+        id: '5',
+        method: 'finishAuth',
+        params: {
+          state: 'nonce123.auth-session',
+          code: 'auth-code',
+        },
+      } as any);
+
+      expect((response as any).error).toBeUndefined();
+      expect((response as any).result).toEqual({ success: true, toolCount: 0 });
+      expect(seenCode).toBe('auth-code');
+      expect(seenState).toBe('nonce123.auth-session');
+    } finally {
+      (MCPClient.prototype as any).finishAuth = originalFinishAuth;
       (MCPClient.prototype as any).listTools = originalListTools;
       manager.dispose();
     }

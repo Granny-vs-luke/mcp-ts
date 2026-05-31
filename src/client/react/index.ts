@@ -8,7 +8,7 @@ export { useMcp, type UseMcpOptions, type McpClient, type McpConnection } from '
 
 // Optional OAuth popup conveniences. These are not required for auth:
 // consumers can still provide their own onRedirect handler, callback page UI,
-// or complete `finishAuth(sessionId, code)` from a normal redirect flow.
+// or complete `finishAuth(state, code)` from a normal redirect flow.
 export {
   useMcpOAuthPopup,
   openCenteredPopup,

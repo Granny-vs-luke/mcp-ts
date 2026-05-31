@@ -3,7 +3,6 @@ import { MCPClient } from '../src/server/mcp/oauth-client';
 import { _setStorageInstanceForTesting } from '../src/server/storage';
 import { MemoryStorageBackend } from '../src/server/storage/memory-backend';
 import { UnauthorizedError as SDKUnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
-import { STATE_EXPIRATION_MS, SESSION_TTL_SECONDS } from '../src/shared/constants';
 
 test.describe('Session Lifecycle Management', () => {
     const userId = 'test-user';
@@ -23,7 +22,7 @@ test.describe('Session Lifecycle Management', () => {
         _setStorageInstanceForTesting(null);
     });
 
-    test('Scenario 1: Successful Connection Promotion (active: true, long TTL)', async () => {
+    test('Scenario 1: Successful Connection Promotion (status: active)', async () => {
         const client = new MCPClient({
             userId,
             sessionId,
@@ -35,36 +34,33 @@ test.describe('Session Lifecycle Management', () => {
         // Mock internal methods to simulate success
         (client as any).initialize = async () => { 
             (client as any).oauthProvider = { 
-                tokens: async () => ({ access_token: 'valid' }),
-                isTokenExpired: () => false
+                tokens: async () => ({ access_token: 'valid' })
             };
             (client as any).client = { connect: async () => {} };
         };
         (client as any).tryConnect = async () => ({ transportType: 'sse' });
 
-        // First creation with active: false occurs in initialize (mocked above, so let's verify saveSession call)
+        // First creation with status: pending occurs in initialize (mocked above, so let's verify saveSession call)
         // Actually, let's let the real connect run but mock the terminal operations
         
-        let savedWithTtl = 0;
-        let savedWithActive = false;
+        let savedWithStatus = 'pending';
         
         const originalSaveSession = (client as any).saveSession.bind(client);
-        (client as any).saveSession = async (ttl: number, active: boolean) => {
-            savedWithTtl = ttl;
-            savedWithActive = active;
-            return originalSaveSession(ttl, active);
+        (client as any).saveSession = async (status: 'pending' | 'active') => {
+            savedWithStatus = status;
+            return originalSaveSession(status);
         };
 
         await client.connect();
 
-        expect(savedWithActive).toBe(true);
-        expect(savedWithTtl).toBe(SESSION_TTL_SECONDS);
+        expect(savedWithStatus).toBe('active');
         
         const session = await mockStorage.get(userId, sessionId);
-        expect(session?.active).toBe(true);
+        expect(session?.status).toBe('active');
+        expect(session?.expiresAt).toBeNull();
     });
 
-    test('Scenario 2: Proactive Cleanup on Generic Error for transient session', async () => {
+    test('Scenario 2: Generic error removes transient session', async () => {
         const client = new MCPClient({
             userId,
             sessionId,
@@ -81,14 +77,13 @@ test.describe('Session Lifecycle Management', () => {
             callbackUrl,
             transportType: 'streamable-http',
             createdAt: Date.now(),
-            active: false,
+            status: 'pending',
         });
 
         // Mock to throw generic error
         (client as any).initialize = async function() {
             this.oauthProvider = { 
-                tokens: async () => ({ access_token: 'valid' }),
-                isTokenExpired: () => false
+                tokens: async () => ({ access_token: 'valid' })
             };
             this.client = { connect: async () => {} }; // Needs to exist to pass check
         };
@@ -96,13 +91,9 @@ test.describe('Session Lifecycle Management', () => {
             throw new Error('ECONNREFUSED');
         };
 
-        let deleteSessionCalled = false;
-        mockStorage.delete = async (id, sId) => {
-            if (id === userId && sId === sessionId) deleteSessionCalled = true;
-        };
-
         await expect(client.connect()).rejects.toThrow('ECONNREFUSED');
-        expect(deleteSessionCalled).toBe(true);
+
+        await expect(mockStorage.get(userId, sessionId)).resolves.toBeNull();
     });
 
     test('Scenario 2b: Generic reconnect error preserves active session credentials', async () => {
@@ -122,13 +113,12 @@ test.describe('Session Lifecycle Management', () => {
             callbackUrl,
             transportType: 'streamable-http',
             createdAt: Date.now(),
-            active: true,
+            status: 'active',
         });
 
         (client as any).initialize = async function() {
             this.oauthProvider = {
-                tokens: async () => ({ access_token: 'valid' }),
-                isTokenExpired: () => false
+                tokens: async () => ({ access_token: 'valid' })
             };
             this.client = { connect: async () => {} };
         };
@@ -145,7 +135,7 @@ test.describe('Session Lifecycle Management', () => {
         expect(deleteSessionCalled).toBe(false);
     });
 
-    test('Scenario 3: Proactive Cleanup on Terminal Auth Failure (no URL)', async () => {
+    test('Scenario 3: Terminal Auth Failure (no URL) removes session', async () => {
         const client = new MCPClient({
             userId,
             sessionId,
@@ -166,16 +156,12 @@ test.describe('Session Lifecycle Management', () => {
             throw new SDKUnauthorizedError('Unauthorized');
         };
 
-        let deleteSessionCalled = false;
-        mockStorage.delete = async (id, sId) => {
-            if (id === userId && sId === sessionId) deleteSessionCalled = true;
-        };
-
         await expect(client.connect()).rejects.toThrow('OAuth authorization URL not available');
-        expect(deleteSessionCalled).toBe(true);
+
+        await expect(mockStorage.get(userId, sessionId)).resolves.toBeNull();
     });
 
-    test('Scenario 4: Short-lived Pending State (active: false, short TTL)', async () => {
+    test('Scenario 4: Short-lived Pending State (status: pending)', async () => {
         const client = new MCPClient({
             userId,
             sessionId,
@@ -196,17 +182,14 @@ test.describe('Session Lifecycle Management', () => {
             throw new SDKUnauthorizedError('Unauthorized');
         };
 
-        let savedWithTtl = 0;
-        let savedWithActive = true;
+        let savedWithStatus = 'active';
         
-        (client as any).saveSession = async (ttl: number, active: boolean) => {
-            savedWithTtl = ttl;
-            savedWithActive = active;
+        (client as any).saveSession = async (status: 'pending' | 'active') => {
+            savedWithStatus = status;
         };
 
         await expect(client.connect()).rejects.toThrow('OAuth authorization required');
         
-        expect(savedWithActive).toBe(false);
-        expect(savedWithTtl).toBe(Math.floor(STATE_EXPIRATION_MS / 1000));
+        expect(savedWithStatus).toBe('pending');
     });
 });
