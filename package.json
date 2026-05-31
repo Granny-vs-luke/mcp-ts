@@ -1,10 +1,10 @@
 {
   "name": "@mcp-ts/sdk",
-  "version": "2.3.4",
+  "version": "2.4.0",
   "publishConfig": {
     "access": "public"
   },
-  "description": "A lightweight MCP (Model Context Protocol) client library for JavaScript and cross-runtime environments, supporting MCP Apps in host applications and multiple storage backends (Memory, File, Redis, Supabase, Neon).",
+  "description": "A lightweight MCP client library for TypeScript with durable sessions across Redis, Supabase, Neon, and SQLite, cross-runtime agent support, and dynamic tool discovery to reduce LLM context usage.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -102,7 +102,17 @@
     "react",
     "hook",
     "anthropic",
-    "claude"
+    "claude",
+    "typescript",
+    "agent",
+    "agents",
+    "durable-sessions",
+    "tool-discovery",
+    "tool-router",
+    "context-window",
+    "sqlite",
+    "supabase",
+    "neon"
   ],
   "author": "MCP Assistant Contributors",
   "license": "MIT",
