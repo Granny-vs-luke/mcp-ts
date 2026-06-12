@@ -49,9 +49,9 @@ It gives you a practical foundation for building MCP-native apps:
 
 In short: the official MCP SDK gives you the protocol building blocks. `mcp-ts` gives you the application layer for building MCP applications around them.
 
-### When you may not need it ?
+## When you may not need it ?
 
-If you already use a managed service/platform such as Smithery, Strata, Composio, or a similar SDK, you may not need `mcp-ts`.
+If you already use a managed service/platform such as Smithery, Klavis Strata, Composio, nango or a similar SDK, you may not need `mcp-ts`.
 
 ---
 
