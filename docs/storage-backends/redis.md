@@ -48,14 +48,14 @@ When `REDIS_URL` is present in your environment, the global `sessions` proxy aut
 import { sessions } from '@mcp-ts/sdk/server';
 
 // This will use Redis automatically if env vars are set
-const sessionId = sessions.generateSessionId();
+const sessionId = await sessions.generateSessionId();
 
 await sessions.create({
   sessionId,
   userId: 'user-123',
   serverUrl: 'https://mcp.example.com',
   callbackUrl: 'https://app.com/callback',
-  transportType: 'sse',
+  transportType: 'streamable-http',
   status: 'active',
   createdAt: Date.now(),
 });
@@ -77,7 +77,7 @@ await redisBackend.create({
   userId: 'user-123',
   serverUrl: 'https://mcp.example.com',
   callbackUrl: 'https://app.com/callback',
-  transportType: 'sse',
+  transportType: 'streamable-http',
   status: 'active',
   createdAt: Date.now(),
 });

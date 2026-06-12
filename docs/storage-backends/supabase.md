@@ -62,6 +62,106 @@ If you prefer manual setup, copy the SQL from the [migration file](https://githu
 
 The migration also defines RLS policies for Supabase's authenticated client path. If the `mcp_sessions` table is queried through that path, the policies use `auth.uid()` to ensure users can only access rows where `user_id` matches their Supabase user ID.
 
+## Schema
+
+The canonical Supabase migration is available at `migrations/supabase/20260330195700_install_mcp_sessions.sql`.
+
+Unlike the simpler single-table examples in some backends, the Supabase install migration separates durable connection metadata from runtime OAuth credentials:
+
+- `public.mcp_sessions` stores connection/session metadata
+- `public.mcp_credentials` stores runtime OAuth credentials and is linked by `(user_id, session_id)`
+
+Run the migration with your trusted database role before connecting your application with `SUPABASE_SERVICE_ROLE_KEY`.
+
+### `public.mcp_sessions`
+
+```sql
+CREATE TABLE IF NOT EXISTS public.mcp_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id TEXT NOT NULL UNIQUE,
+    user_id TEXT NOT NULL,
+    server_id TEXT,
+    server_name TEXT,
+    server_url TEXT NOT NULL,
+    transport_type TEXT NOT NULL,
+    callback_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'active')),
+    headers JSONB,
+    auth_url TEXT,
+    CONSTRAINT mcp_sessions_user_session_unique
+        UNIQUE (user_id, session_id)
+);
+```
+
+### `public.mcp_credentials`
+
+```sql
+CREATE TABLE IF NOT EXISTS public.mcp_credentials (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    client_information JSONB,
+    tokens JSONB,
+    code_verifier TEXT,
+    client_id TEXT,
+    oauth_state JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT mcp_credentials_session_fk
+        FOREIGN KEY (user_id, session_id)
+        REFERENCES public.mcp_sessions(user_id, session_id)
+        ON DELETE CASCADE,
+    CONSTRAINT mcp_credentials_user_session_unique
+        UNIQUE (user_id, session_id)
+);
+```
+
+### Indexes and update triggers
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user_id ON public.mcp_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_mcp_sessions_expires_at ON public.mcp_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_mcp_credentials_user_session
+ON public.mcp_credentials(user_id, session_id);
+
+CREATE OR REPLACE FUNCTION public.set_current_timestamp_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_mcp_sessions_updated_at ON public.mcp_sessions;
+CREATE TRIGGER trg_mcp_sessions_updated_at
+BEFORE UPDATE ON public.mcp_sessions
+FOR EACH ROW
+EXECUTE FUNCTION public.set_current_timestamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_mcp_credentials_updated_at ON public.mcp_credentials;
+CREATE TRIGGER trg_mcp_credentials_updated_at
+BEFORE UPDATE ON public.mcp_credentials
+FOR EACH ROW
+EXECUTE FUNCTION public.set_current_timestamp_updated_at();
+```
+
+### RLS policies
+
+The install migration enables RLS on both tables and creates authenticated-user policies for `SELECT`, `INSERT`, `UPDATE`, and `DELETE`, each scoped to:
+
+```sql
+auth.uid()::text = user_id
+```
+
+That means:
+
+- authenticated users can only access rows tied to their own Supabase user ID
+- server-side code using `SUPABASE_SERVICE_ROLE_KEY` bypasses those policies, which is why `mcp-ts` recommends that key for backend storage operations
+
 ## Features
 
 - **PostgreSQL persistence** with JSONB support
@@ -152,7 +252,7 @@ await sessions.create({
   userId: 'user-789',
   serverUrl: 'https://mcp.example.com',
   callbackUrl: 'https://app.com/callback',
-  transportType: 'sse',
+  transportType: 'streamable-http',
   status: 'active',
   createdAt: Date.now(),
 });
@@ -180,7 +280,7 @@ await supabaseBackend.create({
   userId: 'user-789',
   serverUrl: 'https://mcp.example.com',
   callbackUrl: 'https://app.com/callback',
-  transportType: 'sse',
+  transportType: 'streamable-http',
   status: 'active',
   createdAt: Date.now(),
 });

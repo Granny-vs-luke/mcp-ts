@@ -27,11 +27,11 @@ export const { GET, POST } = createNextMcpHandler({
 
 ## 3. Client-Side Setup
 
-Use the `useMcp` hook in your React component to connect and call tools.
+Use the React `useMcp` hook in your component to connect and call tools.
 
 ```tsx
 'use client';
-import { useMcp } from '@mcp-ts/sdk/client';
+import { useMcp } from '@mcp-ts/sdk/client/react';
 
 export function McpApp() {
   const { connections, connect, callTool, status } = useMcp({

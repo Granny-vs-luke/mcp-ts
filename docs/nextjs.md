@@ -43,7 +43,7 @@ Create a component at `components/McpConnections.tsx`:
 ```typescript
 'use client';
 
-import { useMcp } from '@mcp-ts/sdk/client';
+import { useMcp } from '@mcp-ts/sdk/client/react';
 
 export function McpConnections({ userId }: { userId: string }) {
   const {
@@ -170,7 +170,7 @@ For more details, see the [AI SDK Adapter documentation](/ai-adapters/ai-sdk).
 
 ### Step 1: Create API Route
 
-Create `pages/api/mcp/sse.ts`:
+Create `pages/api/mcp.ts`:
 
 ```typescript
 import { createSSEHandler } from '@mcp-ts/sdk/server';
@@ -225,7 +225,7 @@ Handle OAuth callbacks at `app/oauth/callback-popup/page.tsx` (for popups) or `a
 
 import { useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useMcp } from '@mcp-ts/sdk/client';
+import { useMcp } from '@mcp-ts/sdk/client/react';
 
 export default function OAuthCallback() {
   const searchParams = useSearchParams();
@@ -308,7 +308,7 @@ export function OAuthPopupPage() {
 
 These helpers are optional. If you prefer a branded popup page, pass custom
 styles/props to `McpOAuthCallbackContent`, or skip popups entirely and use a
-normal redirect callback page with `finishAuth(sessionId, code)`.
+normal redirect callback page with `finishAuth(state, code)`.
 
 ## Environment Variables
 
@@ -363,7 +363,7 @@ export const { GET, POST } = createNextMcpHandler({
 ```typescript title="components/McpClient.tsx"
 'use client';
 
-import { useMcp } from '@mcp-ts/sdk/client';
+import { useMcp } from '@mcp-ts/sdk/client/react';
 import { useState } from 'react';
 
 export function McpClient({ userId }: { userId: string }) {

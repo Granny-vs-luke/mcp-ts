@@ -118,4 +118,4 @@ interface Session {
 }
 ```
 
-OAuth runtime credentials are stored separately from connection metadata in durable SQL backends.
+OAuth runtime credentials are stored separately from connection metadata in durable SQL backends such as Supabase and Neon.

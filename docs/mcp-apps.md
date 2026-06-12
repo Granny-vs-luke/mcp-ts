@@ -1,7 +1,7 @@
 ---
 title: "MCP Apps"
 sidebarTitle: "MCP Apps"
-description: "Render interactive tool UIs inside sandboxed iframes with useMcpApps and McpAppRenderer, using the AppBridge protocol to sync input, results, and context."
+description: "Render interactive tool UIs inside sandboxed iframes with McpAppRenderer and AppBridge, using the React client to sync input, results, and host context."
 icon: "window"
 ---
 
@@ -9,7 +9,7 @@ Loading that UI in a **sandboxed iframe**, then syncs tool **input**, **results*
 
 ## Overview
 
-When a tool advertises a UI resource URI, `@mcp-ts/sdk` can render it via `useMcpApps` and `McpAppRenderer`. For `ui://` and `mcp-app://` resources (and any path where HTML is injected), you must provide a **`sandbox`** configuration pointing at a **sandbox proxy page** you serve from your app (see [Sandbox proxy](#sandbox-proxy)). Tool calls from the guest can be forwarded to your `SSEClient` automatically, or intercepted with **`onCallTool`** / **`onReadResource`** and related callbacks.
+When a tool advertises a UI resource URI, `@mcp-ts/sdk` can render it with `McpAppRenderer`. The older `useMcpApps` helper still exists, but `McpAppRenderer` and `getMcpAppMetadata()` are the preferred primitives for new code. For `ui://` and `mcp-app://` resources (and any path where HTML is injected), you must provide a **`sandbox`** configuration pointing at a **sandbox proxy page** you serve from your app (see [Sandbox proxy](#sandbox-proxy)). Tool calls from the guest can be forwarded to your `SSEClient` automatically, or intercepted with **`onCallTool`** / **`onReadResource`** and related callbacks.
 
 ```mermaid
 graph TB

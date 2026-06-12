@@ -1,7 +1,7 @@
 ---
 title: "Installation"
 sidebarTitle: "Installation"
-description: "Install the @mcp-ts/sdk package with npm, yarn, or pnpm and configure a storage backend (Redis, file system, Supabase, or SQLite) for MCP sessions."
+description: "Install the @mcp-ts/sdk package with npm, yarn, or pnpm and configure a storage backend (Redis, file system, SQLite, Supabase, Neon, or memory) for MCP sessions."
 icon: "download"
 ---
 
@@ -12,10 +12,11 @@ Before installing, ensure you have:
 - **Node.js 18+** - [Download Node.js](https://nodejs.org/)
 - **Package manager** - npm, yarn, or pnpm
 - **Storage Backend** (optional, defaults to in-memory):
-  - **Redis** — Production distributed storage
-  - **File System** — Local JSON persistence
-  - **Supabase** — Cloud-native PostgreSQL
-  - **SQLite** — Native persistent database
+  - **Redis** - Production distributed storage
+  - **File System** - Local JSON persistence
+  - **SQLite** - Native persistent database
+  - **Supabase** - Cloud-native PostgreSQL
+  - **Neon** - Serverless Postgres
 
 ## Install the Package
 
@@ -93,10 +94,11 @@ The library uses the following priority:
 
 1. **Explicit**: If `MCP_TS_STORAGE_TYPE` is set, use that backend
 2. **Auto-detect Redis**: If `REDIS_URL` is present, use Redis
-3. **Auto-detect Supabase**: If `SUPABASE_URL` is present, use Supabase
-4. **Auto-detect File**: If `MCP_TS_STORAGE_FILE` is present, use File
-5. **Auto-detect SQLite**: If `MCP_TS_STORAGE_SQLITE_PATH` is present, use SQLite
-6. **Default**: Fall back to In-Memory storage
+3. **Auto-detect File**: If `MCP_TS_STORAGE_FILE` is present, use File
+4. **Auto-detect SQLite**: If `MCP_TS_STORAGE_SQLITE_PATH` is present, use SQLite
+5. **Auto-detect Supabase**: If `SUPABASE_URL` is present, use Supabase
+6. **Auto-detect Neon**: If `NEON_DATABASE_URL` is present, use Neon
+7. **Default**: Fall back to In-Memory storage
 
 See [Storage Overview](/storage-backends/overview) for more details.
 
@@ -109,10 +111,9 @@ Test your setup with a simple script:
 import { sessions } from '@mcp-ts/sdk/server';
 
 async function test() {
-  const sessionId = sessions.generateSessionId();
+  const sessionId = await sessions.generateSessionId();
   console.log('Generated session ID:', sessionId);
 
-  // Test the session store
   await sessions.create({
     sessionId,
     userId: 'test-user',
@@ -120,13 +121,13 @@ async function test() {
     serverName: 'Test Server',
     serverUrl: 'https://example.com',
     callbackUrl: 'https://example.com/callback',
-    transportType: 'sse',
+    transportType: 'streamable-http',
     status: 'active',
     createdAt: Date.now(),
   });
 
   const session = await sessions.get('test-user', sessionId);
-  console.log('✓ Storage backend working!', session?.serverName);
+  console.log('Storage backend working:', session?.serverName);
 }
 
 test();
@@ -148,7 +149,7 @@ If using TypeScript, ensure your `tsconfig.json` includes:
 
 ## Next Steps
 
-- [Storage Overvew](/storage-backends/overview) - Detailed backend comparison
+- [Storage Overview](/storage-backends/overview) - Detailed backend comparison
 - [Next.js Integration](/nextjs) - Set up with Next.js
 - [React Hook](/react) - Use the React hook
 - [API Reference](/reference/server) - Explore the API

@@ -37,7 +37,7 @@ MCP makes it possible for AI applications to talk to tools, prompts, and resourc
 
 You need to manage user sessions, OAuth flows, reconnects, storage, browser updates, framework adapters, and on-demand tool discovery so agents can load and call only what they need instead of flooding the model context, similar to Claude Code's [advanced tool use](https://www.anthropic.com/engineering/advanced-tool-use).
 
-`mcp-ts/toolkit` exists to handle that application layer while keeping your MCP data in infrastructure you own or choose. See [storage backends](https://docs.mcp-assistant.in/storage-backends/overview) and [framework adapters](https://docs.mcp-assistant.in/ai-adapters/overview).
+`mcp-ts` exists to handle that application layer while keeping your MCP data in infrastructure you own or choose. See [storage backends](https://docs.mcp-assistant.in/storage-backends/overview) and [framework adapters](https://docs.mcp-assistant.in/ai-adapters/overview).
 
 It gives you a practical foundation for building MCP-native apps:
 
@@ -47,11 +47,11 @@ It gives you a practical foundation for building MCP-native apps:
 - Render interactive MCP Apps in your application.
 - Run programmatic tool calling inside a secure sandbox with `CodeMode`
 
-In short: the official MCP SDK gives you the protocol building blocks. `mcp-ts/toolkit` gives you the application layer for building MCP applications around them.
+In short: the official MCP SDK gives you the protocol building blocks. `mcp-ts` gives you the application layer for building MCP applications around them.
 
-### When you may not need it
+### When you may not need it ?
 
-If you already use a managed service/platform such as Smithery, Strata, Composio, or a similar SDK, you may not need `mcp-ts/toolkit`.
+If you already use a managed service/platform such as Smithery, Strata, Composio, or a similar SDK, you may not need `mcp-ts`.
 
 ---
 
@@ -356,24 +356,24 @@ The middleware intercepts tool calls from remote agents, executes MCP tools serv
 
 ### 🛠️ MCP Apps (SEP-1865)
 
-Render interactive UIs for your tools using the `useMcpApps` hook.
+Render interactive UIs for your tools using `McpAppRenderer`.
 
 <details>
 <summary>View MCP Apps</summary>
 
 ```typescript
 import { useRenderToolCall } from "@copilotkit/react-core";
-import { useMcpApps } from "@mcp-ts/sdk/client/react";
+import { McpAppRenderer } from "@mcp-ts/sdk/client/react";
 import { useMcpContext } from "./mcp";
 
 export function ToolRenderer() {
   const { mcpClient } = useMcpContext();
-  const { McpAppRenderer } = useMcpApps(mcpClient);
 
   useRenderToolCall({
     name: "*",
     render: ({ name, args, result, status }) => (
       <McpAppRenderer
+        client={mcpClient}
         name={name}
         input={args}
         result={result}
@@ -398,10 +398,10 @@ Full documentation is available at: **[Docs](https://docs.mcp-assistant.in/)**
 
 - **[Getting Started](https://docs.mcp-assistant.in/get-started)** - Quick setup and overview
 - **[Installation](https://docs.mcp-assistant.in/install)** - Detailed installation guide
-- **[Storage Backends](https://docs.mcp-assistant.in/storage/overview)** - Redis, File, Memory options
+- **[Storage Backends](https://docs.mcp-assistant.in/storage-backends/overview)** - Redis, File, SQLite, Supabase, Neon, and Memory options
 - **[Next.js Integration](https://docs.mcp-assistant.in/nextjs)** - Complete Next.js examples
 - **[React Hook Guide](https://docs.mcp-assistant.in/react)** - Using the useMcp hook
-- **[API Reference](https://docs.mcp-assistant.in/api-reference/server)** - Complete API documentation
+- **[API Reference](https://docs.mcp-assistant.in/reference/server)** - Complete API documentation
 
 <a id="environment-setup"></a>
 
@@ -520,10 +520,10 @@ graph LR
 
 For more details, refer to the documentation and follow the **installation guide for each adapter or storage backend**.
 
-- [AI SDK Installation Guide](https://docs.mcp-assistant.in/adapters/ai-sdk)
-- [Mastra Installation Guide](https://docs.mcp-assistant.in/adapters/mastra)
-- [LangChain Installation Guide](https://docs.mcp-assistant.in/adapters/langchain)
-- [Redis Storage Installation Guide](https://docs.mcp-assistant.in/storage/redis)
+- [AI SDK Installation Guide](https://docs.mcp-assistant.in/ai-adapters/ai-sdk)
+- [Mastra Installation Guide](https://docs.mcp-assistant.in/ai-adapters/mastra)
+- [LangChain Installation Guide](https://docs.mcp-assistant.in/ai-adapters/langchain)
+- [Redis Storage Installation Guide](https://docs.mcp-assistant.in/storage-backends/redis)
 
 
 <a id="contributing"></a>

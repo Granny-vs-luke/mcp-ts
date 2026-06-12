@@ -15,7 +15,7 @@ The `@mcp-ts/sdk/server` package provides handlers for standard Node.js and Expr
 npm install express @mcp-ts/sdk
 ```
 
-### Step 2: Create SSE Handler
+### Step 2: Create MCP Handler
 
 Create a file named `mcp-handler.ts`:
 
@@ -25,7 +25,7 @@ import { createSSEHandler } from '@mcp-ts/sdk/server';
 
 const router = express.Router();
 
-router.get('/sse', (req, res) => {
+const handler = (req: express.Request, res: express.Response) => {
   const userId = req.query.userId as string;
 
   if (!userId) {
@@ -38,7 +38,10 @@ router.get('/sse', (req, res) => {
   });
 
   return sseHandler(req, res);
-});
+};
+
+router.get('/', handler);
+router.post('/', handler);
 
 export default router;
 ```
@@ -62,16 +65,16 @@ app.listen(3000, () => {
 
 ## Client-Side Setup
 
-You can use the `@mcp-ts/sdk/client` in any frontend application.
+You can use the React client in any frontend application that renders React.
 
 ### Using with React
 
 ```typescript
-import { useMcp } from '@mcp-ts/sdk/client';
+import { useMcp } from '@mcp-ts/sdk/client/react';
 
 export function McpApp() {
   const { connections, connect, status } = useMcp({
-    url: 'http://localhost:3000/api/mcp/sse?userId=user-123',
+    url: 'http://localhost:3000/api/mcp?userId=user-123',
     userId: 'user-123',
   });
 
@@ -80,6 +83,7 @@ export function McpApp() {
       serverId: 'my-server',
       serverName: 'Local Server',
       serverUrl: 'http://localhost:8080',
+      callbackUrl: window.location.origin + '/oauth/callback',
     });
   };
 

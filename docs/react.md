@@ -10,7 +10,7 @@ The `useMcp` hook provides a simple way to manage MCP connections in React appli
 ## Basic Usage
 
 ```typescript
-import { useMcp } from '@mcp-ts/sdk/client';
+import { useMcp } from '@mcp-ts/sdk/client/react';
 
 function MyComponent() {
   const { connections, connect, disconnect, status } = useMcp({
@@ -36,7 +36,7 @@ function MyComponent() {
 
 ```typescript
 useMcp({
-  // Required: SSE endpoint URL
+  // Required: MCP endpoint URL
   url: '/api/mcp',
 
   // Required: User identifier
@@ -100,7 +100,7 @@ connectSSE();
 disconnectSSE();
 
 // Complete OAuth flow
-await finishAuth(code, state);
+await finishAuth(state, code);
 ```
 
 ### Tool Operations
@@ -324,7 +324,7 @@ function McpWithAuth() {
 OAuth handling in the React client is built around two core primitives:
 
 - `useMcp({ onRedirect })` decides how auth navigation happens
-- `finishAuth(sessionId, code)` completes the authorization code exchange
+- `finishAuth(state, code)` completes the authorization code exchange
 
 The popup helpers are optional convenience utilities on top of that. You can:
 
