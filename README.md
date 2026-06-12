@@ -16,7 +16,6 @@
     <a href="https://docs.mcp-assistant.in/">📚 Documentation</a>
   </p>
 
-  <p><sub><strong>Documentation MCP:</strong> <code>https://docs.mcp-assistant.in/mcp</code> provides MCP access to the <code>mcp-ts</code> / toolkit documentation. <strong>MCP Assistant Server:</strong> <code>https://api.mcp-assistant.in/mcp</code> provides tool discovery and programmatic access to connected MCP servers.</sub></p>
 
   <p>
     <a href="https://www.npmjs.com/package/@mcp-ts/sdk">
@@ -61,17 +60,25 @@ If you already use a managed service/platform such as Smithery, Klavis Strata, C
 
 - [Features](#features)
 - [Packages](#packages)
+- [Why does `mcp-ts or toolkit` even exist?](#why-does-mcp-ts-or-toolkit-even-exist)
+- [When you may not need it ?](#when-you-may-not-need-it-)
+- [Examples](#examples)
+- [Inspiration](#inspiration)
 - [SDK Setup (@mcp-ts/sdk)](#sdk-setup-mcp-tssdk)
   - [Installation](#installation)
   - [Quick Start](#quick-start)
+  - [MCP Endpoint (Hosted)](#-mcp-endpoint-hosted)
+  - [Adapters](#-adapters)
+  - [AG-UI Middleware](#-ag-ui-middleware)
+  - [MCP Apps (SEP-1865)](#️-mcp-apps-sep-1865)
+- [Documentation](#documentation)
+  - [Topics Covered](#️-topics-covered)
+- [Environment Setup](#environment-setup)
+  - [Configuration Examples](#-configuration-examples)
 - [Gateway Setup (mcpassistant-gateway)](#gateway-setup-mcpassistant-gateway)
   - [Installation](#installation-1)
   - [Usage](#usage)
-- [Documentation](#documentation)
-- [Environment Setup](#environment-setup)
 - [Architecture](#architecture)
-- [Examples](#examples)
-- [Inspiration](#inspiration)
 - [Contributing](#contributing)
 
 ---
@@ -150,6 +157,8 @@ That’s how `@mcp-ts` started.
 
 ### 📦 Installation
 
+<a id="installation"></a>
+
 ```bash
 npm install @mcp-ts/sdk
 ```
@@ -161,6 +170,8 @@ The SDK supports multiple storage backends out of the box:
 - **Redis** (production-ready, requires `npm install ioredis`)
 
 ### 🚀 Quick Start
+
+<a id="quick-start"></a>
 
 Working reference: [examples/next](examples/next)
 
@@ -227,6 +238,8 @@ function App() {
 
 ### 🌐 MCP Endpoint (Hosted)
 
+<a id="-mcp-endpoint-hosted"></a>
+
 #### Documentation MCP
 
 - **Endpoint**: `https://docs.mcp-assistant.in/mcp`
@@ -264,6 +277,8 @@ function App() {
 ```
 
 ### 🔌 Adapters
+
+<a id="-adapters"></a>
 
 Integrating with agent frameworks is simple using built-in adapters.
 
@@ -335,6 +350,8 @@ const tools = await MastraAdapter.getTools(client);
 
 ### 🧩 AG-UI Middleware
 
+<a id="-ag-ui-middleware"></a>
+
 Execute MCP tools server-side when using remote agents (LangGraph, AutoGen, etc.):
 
 <details>
@@ -367,6 +384,9 @@ agent.use(createMcpMiddleware({
 The middleware intercepts tool calls from remote agents, executes MCP tools server-side, and returns results back to the agent.
 
 ### 🛠️ MCP Apps (SEP-1865)
+
+<a id="mcp-apps-sep-1865"></a>
+<a id="-mcp-apps-sep-1865"></a>
 
 Render interactive UIs for your tools using `McpAppRenderer`.
 
@@ -406,6 +426,9 @@ export function ToolRenderer() {
 
 Full documentation is available at: **[Docs](https://docs.mcp-assistant.in/)**
 
+<a id="topics-covered"></a>
+<a id="️-topics-covered"></a>
+
 ### 🗂️ Topics Covered
 
 - **[Getting Started](https://docs.mcp-assistant.in/get-started)** - Quick setup and overview
@@ -422,6 +445,8 @@ Full documentation is available at: **[Docs](https://docs.mcp-assistant.in/)**
 The library supports multiple storage backends. You can explicitly select one using `MCP_TS_STORAGE_TYPE` or rely on automatic detection.
 
 **Supported Types:** `redis`, `supabase`, `neon`, `sqlite`, `file`, `memory`.
+
+<a id="-configuration-examples"></a>
 
 ### 🧷 Configuration Examples
 
@@ -463,6 +488,8 @@ The library supports multiple storage backends. You can explicitly select one us
 
 The **MCP Gateway** is a Python-based bridge that allows local MCP servers to be accessed by remote applications via an outbound connection. This is useful for providing local context (like your filesystem) to a hosted AI agent.
 
+<a id="installation-1"></a>
+
 ### 📦 Installation
 
 ```bash
@@ -470,6 +497,8 @@ pip install mcpassistant-gateway
 ```
 
 ### 🚀 Usage
+
+<a id="usage"></a>
 
 You can run the gateway using `uvx` or `pip`:
 
