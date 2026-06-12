@@ -16,6 +16,8 @@
     <a href="https://docs.mcp-assistant.in/">📚 Documentation</a>
   </p>
 
+  <p><sub><strong>Documentation MCP:</strong> <code>https://docs.mcp-assistant.in/mcp</code> provides MCP access to the <code>mcp-ts</code> / toolkit documentation. <strong>MCP Assistant Server:</strong> <code>https://api.mcp-assistant.in/mcp</code> provides tool discovery and programmatic access to connected MCP servers.</sub></p>
+
   <p>
     <a href="https://www.npmjs.com/package/@mcp-ts/sdk">
       <img src="https://img.shields.io/npm/v/@mcp-ts/sdk?color=dc2626&label=npm&logo=npm&style=flat-square" alt="npm version" />
@@ -225,7 +227,16 @@ function App() {
 
 ### 🌐 MCP Endpoint (Hosted)
 
+#### Documentation MCP
+
+- **Endpoint**: `https://docs.mcp-assistant.in/mcp`
+- Use this endpoint to access `mcp-ts` / toolkit documentation over MCP.
+
+#### MCP Assistant
+
 - **Endpoint**: `https://api.mcp-assistant.in/mcp`
+- `api.mcp-assistant.in/mcp` is the MCP Assistant server endpoint. It provides access to 100+ MCP servers such as GitHub, Notion, Zapier, and Supabase.
+- The MCP Assistant server also exposes meta-tools for dynamic MCP discovery and a `CodeMode` tool that executes programs inside a secure sandbox for programmatic tool calling, workflow execution, and result processing, avoiding expensive LLM tool-calling loops.
 
 #### Antigravity
 
@@ -233,7 +244,7 @@ function App() {
 {
   "mcpServers": {
     "mcp-assistant": {
-      "url": "https://api.mcp-assistant.in/mcp"
+      "serverUrl": "https://api.mcp-assistant.in/mcp"
     }
   }
 }
@@ -243,8 +254,9 @@ function App() {
 
 ```json
 {
-  "mcpServers": {
+  "servers": {
     "mcp-assistant": {
+      "type": "http",
       "url": "https://api.mcp-assistant.in/mcp"
     }
   }
