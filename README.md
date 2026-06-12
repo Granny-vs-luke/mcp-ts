@@ -60,8 +60,6 @@ If you already use a managed service/platform such as Smithery, Klavis Strata, C
 
 - [Features](#features)
 - [Packages](#packages)
-- [Why does `mcp-ts or toolkit` even exist?](#why-does-mcp-ts-or-toolkit-even-exist)
-- [When you may not need it ?](#when-you-may-not-need-it-)
 - [Examples](#examples)
 - [Inspiration](#inspiration)
 - [SDK Setup (@mcp-ts/sdk)](#sdk-setup-mcp-tssdk)
