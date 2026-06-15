@@ -118,19 +118,23 @@
             ]
           },
           {
-            "group": "Gateway",
-            "pages": [
-              "gateway/overview",
-              "gateway/installation",
-              "gateway/configuration"
-            ]
-          },
-          {
             "group": "Resources",
             "pages": [
               "modelcontextprotocol",
               "faq",
               "migration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "MCP Server",
+        "icon": "server",
+        "groups": [
+          {
+            "group": "Remote MCP",
+            "pages": [
+              "remote-mcp"
             ]
           }
         ]
@@ -168,6 +172,7 @@
           {
             "group": "Changelog",
             "pages": [
+              "changelog/2026-06-15",
               "changelog/2026-05-18",
               "changelog/2026-05-12",
               "changelog/2026-05-05",
