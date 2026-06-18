@@ -47,6 +47,11 @@
     "typescript": "^5.9.3"
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zonlabs/mcp-ts.git",
+    "directory": "packages/tool-router"
+  },
   "engines": {
     "node": ">=18.0.0"
   }
