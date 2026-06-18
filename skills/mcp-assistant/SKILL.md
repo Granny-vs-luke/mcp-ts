@@ -23,7 +23,7 @@ https://mcp-assistant.in/mcp
 
 MCP Assistant provides access to 100+ MCP servers such as GitHub, Notion, Zapier, Supabase, Exa, DeepWiki, Apify, Context7 and other connected services.
 
-It exposes meta-tools for dynamic MCP discovery and a CodeMode tool that executes programs inside a secure sandbox for programmatic tool calling, workflow execution, and result processing. Use this to avoid expensive LLM tool-calling loops when a task can be handled by discovering the right tools, inspecting only the needed schemas, executing a small program, and returning the final result.
+It exposes meta-tools for dynamic MCP discovery and a CodeMode tool that executes programs inside a secure sandbox for programmatic tool calling and result processing. Use this to avoid expensive LLM tool-calling loops when a task can be handled by discovering the right tools, inspecting only the needed schemas, executing a small program, and returning the final result.
 
 ## Core Principle
 
@@ -33,7 +33,7 @@ Do not assume the agent needs every connected tool schema in context. Use MCP As
 
 ## Available MCP Assistant Tools
 
-### `codemode_search_mcp_tools`
+### `search_mcp_tools`
 
 Search connected MCP servers for relevant tools.
 
@@ -55,11 +55,11 @@ If no relevant tools are found, tell the user they likely need to connect the re
 https://mcp-assistant.in/mcp
 ```
 
-### `codemode_get_mcp_tool_schema`
+### `get_mcp_tool_schema`
 
 Inspect the exact schema for a selected MCP tool before calling it through `codemode_run`.
 
-Use this after `codemode_search_mcp_tools` returns a likely tool and before execution. Read the required parameters, optional parameters, expected result shape, and any server-specific constraints.
+Use this after `search_mcp_tools` returns a likely tool and before execution. Read the required parameters, optional parameters, expected result shape, and any server-specific constraints.
 
 Do not guess parameter names for downstream MCP tools. Inspect the schema first.
 
@@ -79,25 +79,14 @@ Good uses:
 
 Avoid using `codemode_run` for a long chain when the agent needs to inspect and decide after each step. In that case, run one stage, examine the result, then continue.
 
-## Workflow Automation Tools Are Different
-
-Do not confuse saved workflow tools with ad-hoc MCP tool execution.
-
-Use `codemode_run` when the user wants to execute connected MCP tools now without creating a saved workflow.
-
-Use `workflow_run` only to run an existing saved workflow by `workflow_id`. It enqueues the saved workflow for execution. It is not the general-purpose way to call arbitrary MCP tools.
-
-Use `schedule_upsert` only to create or update a UTC cron schedule for an existing saved workflow. It should be used when the user explicitly wants an action to run on a schedule or at a scheduled time. It is not needed for normal one-off MCP tool calls.
-
-If the user asks to automate something for later, first create or update the saved script workflow, then use `schedule_upsert` to schedule it. If the user asks to test a saved workflow immediately, use `workflow_run`.
 
 ## Default Workflow
 
 1. Decide whether the task needs an external MCP capability.
-2. Call `codemode_search_mcp_tools` with a goal-oriented query.
+2. Call `search_mcp_tools` with a goal-oriented query.
 3. Choose the smallest set of relevant tools from the search result.
-4. For each selected tool, call `codemode_get_mcp_tool_schema`.
-5. Call `codemode_run` to execute the selected tool call or workflow.
+4. For each selected tool, call `get_mcp_tool_schema`.
+5. Call `codemode_run` to execute the selected tool call.
 6. Return the final result to the user, not every intermediate object unless it is useful.
 
 ## When To Batch Tool Calls
@@ -107,7 +96,7 @@ Batch multiple calls inside `codemode_run` when:
 - The task has three or more dependent tool calls.
 - Intermediate results only exist to feed later steps.
 - The result needs filtering, sorting, grouping, or transformation.
-- The workflow crosses multiple MCP servers.
+- The execution crosses multiple MCP servers.
 - Returning every intermediate result would bloat the agent context.
 
 Do not batch when:
@@ -116,7 +105,6 @@ Do not batch when:
 - The agent must inspect an intermediate result to choose the next step.
 - A tool call is destructive or sends messages externally without clear user intent.
 - Required parameters are missing or ambiguous.
-- The user is asking to schedule a saved automation. Use the workflow scheduling tools for that instead.
 
 ## Safety And Approval
 
@@ -127,13 +115,13 @@ Examples that usually need confirmation:
 - Sending Slack, Gmail, Discord, or other outbound messages.
 - Creating, deleting, or modifying production data.
 - Closing issues, merging PRs, changing permissions, or deploying services.
-- Running expensive workflows or broad data exports.
+- Running expensive tool chains or broad data exports.
 
 Read-only discovery, search, listing, and summarization can usually proceed without extra confirmation.
 
 ## Failure Handling
 
-If `codemode_search_mcp_tools` finds no relevant tools:
+If `search_mcp_tools` finds no relevant tools:
 
 ```text
 I could not find a connected MCP tool for this. Please connect the relevant MCP server at https://mcp-assistant.in/mcp, then I can search again.
@@ -149,19 +137,19 @@ If `codemode_run` fails, summarize the error, identify whether it was caused by 
 
 1. Search tools for `GitHub search issues and pull requests`.
 2. Inspect schemas for the issue search and PR lookup tools.
-3. Run a workflow that searches issues, extracts linked PRs, fetches PR details, and returns a short summary.
+3. Run a script that searches issues, extracts linked PRs, fetches PR details, and returns a short summary.
 
 ### Search Web And Return Ranked Sources
 
 1. Search tools for `Exa web search`.
 2. Inspect the Exa search tool schema.
-3. Run a workflow that searches, filters low-quality results, ranks sources, and returns the best links with summaries.
+3. Run a script that searches, filters low-quality results, ranks sources, and returns the best links with summaries.
 
 ### Create A Notion Page From Processed Data
 
 1. Search tools for the source system and `Notion create page`.
 2. Inspect schemas for both tools.
-3. Run a workflow that fetches source data, transforms it, then creates the Notion page.
+3. Run a script that fetches source data, transforms it, then creates the Notion page.
 4. Return the created page URL and a concise summary.
 
 ## Agent Guidance

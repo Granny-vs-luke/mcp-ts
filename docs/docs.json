@@ -134,7 +134,8 @@
           {
             "group": "Remote MCP",
             "pages": [
-              "remote-mcp"
+              "mcp-server",
+              "mcp-skills"
             ]
           }
         ]
