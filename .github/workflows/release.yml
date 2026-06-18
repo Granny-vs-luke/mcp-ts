@@ -1,9 +1,8 @@
 name: Release and Publish
 
 # Publishes package version bumps merged to main.
-# - Root package.json publishes @mcp-ts/sdk and keeps git tag + GitHub Release behavior.
-# - packages/tool-router/package.json publishes @mcp-ts/tool-router without creating git tags/releases.
-# - packages/code-mode/package.json publishes @mcp-ts/codemode without creating git tags/releases.
+# Each package publishes to npm, creates a git tag, and creates a GitHub Release.
+# Tags are package-specific for subpackages to avoid collisions in this single repository.
 
 on:
   push:
@@ -76,9 +75,11 @@ jobs:
 
           echo "tool_router_name=$(node -p \"require('./packages/tool-router/package.json').name\")" >> "$GITHUB_OUTPUT"
           echo "tool_router_version=$(node -p \"require('./packages/tool-router/package.json').version\")" >> "$GITHUB_OUTPUT"
+          echo "tool_router_tag=tool-router-v$(node -p \"require('./packages/tool-router/package.json').version\")" >> "$GITHUB_OUTPUT"
 
           echo "code_mode_name=$(node -p \"require('./packages/code-mode/package.json').name\")" >> "$GITHUB_OUTPUT"
           echo "code_mode_version=$(node -p \"require('./packages/code-mode/package.json').version\")" >> "$GITHUB_OUTPUT"
+          echo "code_mode_tag=code-mode-v$(node -p \"require('./packages/code-mode/package.json').version\")" >> "$GITHUB_OUTPUT"
 
       - name: Decide publish targets
         id: publish
@@ -98,8 +99,9 @@ jobs:
 
           tool_router_should_publish=false
           if [ '${{ steps.changed.outputs.tool_router_changed }}' = 'true' ]; then
-            published_version=$(npm view '${{ steps.meta.outputs.tool_router_name }}' version 2>/dev/null || true)
-            if [ "$published_version" != '${{ steps.meta.outputs.tool_router_version }}' ]; then
+            if git rev-parse -q --verify "refs/tags/${{ steps.meta.outputs.tool_router_tag }}" >/dev/null; then
+              tool_router_should_publish=false
+            else
               tool_router_should_publish=true
             fi
           fi
@@ -107,8 +109,9 @@ jobs:
 
           code_mode_should_publish=false
           if [ '${{ steps.changed.outputs.code_mode_changed }}' = 'true' ]; then
-            published_version=$(npm view '${{ steps.meta.outputs.code_mode_name }}' version 2>/dev/null || true)
-            if [ "$published_version" != '${{ steps.meta.outputs.code_mode_version }}' ]; then
+            if git rev-parse -q --verify "refs/tags/${{ steps.meta.outputs.code_mode_tag }}" >/dev/null; then
+              code_mode_should_publish=false
+            else
               code_mode_should_publish=true
             fi
           fi
@@ -134,7 +137,7 @@ jobs:
         run: |
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git tag -a "${{ steps.meta.outputs.sdk_tag }}" -m "Release ${{ steps.meta.outputs.sdk_version }}"
+          git tag -a "${{ steps.meta.outputs.sdk_tag }}" -m "Release ${{ steps.meta.outputs.sdk_tag }}"
           git push origin "refs/tags/${{ steps.meta.outputs.sdk_tag }}"
 
       - name: Create sdk GitHub Release
@@ -142,9 +145,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.sdk_tag }}
-          name: "${{ steps.meta.outputs.sdk_tag }}"
+          name: ${{ steps.meta.outputs.sdk_tag }}
           generate_release_notes: true
-          body: "Release ${{ steps.meta.outputs.sdk_name }} v${{ steps.meta.outputs.sdk_version }}"
+          body: "Release ${{ steps.meta.outputs.sdk_name }} ${{ steps.meta.outputs.sdk_tag }}"
 
       - name: Build tool-router package
         if: steps.publish.outputs.tool_router_should_publish == 'true'
@@ -156,6 +159,23 @@ jobs:
         working-directory: packages/tool-router
         run: npm publish --ignore-scripts --provenance --access public
 
+      - name: Create and push tool-router git tag
+        if: steps.publish.outputs.tool_router_should_publish == 'true'
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git tag -a "${{ steps.meta.outputs.tool_router_tag }}" -m "Release ${{ steps.meta.outputs.tool_router_tag }}"
+          git push origin "refs/tags/${{ steps.meta.outputs.tool_router_tag }}"
+
+      - name: Create tool-router GitHub Release
+        if: steps.publish.outputs.tool_router_should_publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tool_router_tag }}
+          name: ${{ steps.meta.outputs.tool_router_tag }}
+          generate_release_notes: true
+          body: "Release ${{ steps.meta.outputs.tool_router_name }} ${{ steps.meta.outputs.tool_router_tag }}"
+
       - name: Build code-mode package
         if: steps.publish.outputs.code_mode_should_publish == 'true'
         working-directory: packages/code-mode
@@ -166,4 +186,19 @@ jobs:
         working-directory: packages/code-mode
         run: npm publish --ignore-scripts --provenance --access public
 
+      - name: Create and push code-mode git tag
+        if: steps.publish.outputs.code_mode_should_publish == 'true'
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git tag -a "${{ steps.meta.outputs.code_mode_tag }}" -m "Release ${{ steps.meta.outputs.code_mode_tag }}"
+          git push origin "refs/tags/${{ steps.meta.outputs.code_mode_tag }}"
 
+      - name: Create code-mode GitHub Release
+        if: steps.publish.outputs.code_mode_should_publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.code_mode_tag }}
+          name: ${{ steps.meta.outputs.code_mode_tag }}
+          generate_release_notes: true
+          body: "Release ${{ steps.meta.outputs.code_mode_name }} ${{ steps.meta.outputs.code_mode_tag }}"
