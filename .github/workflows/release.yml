@@ -142,7 +142,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.sdk_tag }}
-          name: "Release ${{ steps.meta.outputs.sdk_version }}"
+          name: "${{ steps.meta.outputs.sdk_tag }}"
           generate_release_notes: true
           body: "Release ${{ steps.meta.outputs.sdk_name }} v${{ steps.meta.outputs.sdk_version }}"
 
@@ -165,4 +165,5 @@ jobs:
         if: steps.publish.outputs.code_mode_should_publish == 'true'
         working-directory: packages/code-mode
         run: npm publish --ignore-scripts --provenance --access public
+
 
