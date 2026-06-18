@@ -46,7 +46,7 @@ test("searches tools without exposing full schemas", async () => {
   const router = await createToolRouter({ servers: [github.server, slack.server] });
   const results = await router.searchTools({ query: "github pull requests" });
 
-  assert.equal(results[0].toolId, "github.list_pull_requests");
+  assert.equal(results[0].toolId, "github::list_pull_requests");
   assert.equal(results[0].serverId, "github");
   assert.equal(results[0].toolName, "list_pull_requests");
   assert.equal(results[0].inputSchema, undefined);
@@ -75,13 +75,13 @@ test("returns schemas and proxies calls to the selected server", async () => {
   ]);
 
   const router = await createToolRouter({ servers: [github.server] });
-  const [schema] = router.getToolSchemas({ toolIds: ["github.get_issue"] });
+  const [schema] = router.getToolSchemas({ toolIds: ["github::get_issue"] });
   const result = await router.callTool({
-    toolId: "github.get_issue",
+    toolId: "github::get_issue",
     args: { issue_number: 7 }
   });
 
-  assert.equal(schema.toolId, "github.get_issue");
+  assert.equal(schema.toolId, "github::get_issue");
   assert.deepEqual(schema.inputSchema, { type: "object", required: ["issue_number"] });
   assert.deepEqual(schema.outputSchema, {
     type: "object",
@@ -131,22 +131,22 @@ test("exposes meta tools for search, schema lookup, and proxy execution", async 
   assert.match(search.content[0].text, /Server ID: github/);
   assert.match(search.content[0].text, /Server Name: github/);
   assert.deepEqual(search.structuredContent.results.map((tool) => tool.toolId), [
-    "github.list_pull_requests"
+    "github::list_pull_requests"
   ]);
 
   const schema = await router.executeMetaTool("get_tool_schemas", {
-    toolIds: ["github.list_pull_requests"]
+    toolIds: ["github::list_pull_requests"]
   });
   assert.equal(schema.isError, false);
   assert.match(schema.content[0].text, /Parameters/);
   assert.match(schema.content[0].text, /Server ID: github/);
   assert.match(schema.content[0].text, /Server Name: github/);
   assert.deepEqual(schema.structuredContent.results.map((tool) => tool.toolId), [
-    "github.list_pull_requests"
+    "github::list_pull_requests"
   ]);
 
   const call = await router.executeMetaTool("call_tool", {
-    toolId: "github.list_pull_requests",
+    toolId: "github::list_pull_requests",
     args: { state: "open" }
   });
   assert.equal(call.isError, false);
@@ -171,7 +171,7 @@ test("meta-tool execution is available as an isolated executor", async () => {
       metaToolNames: DEFAULT_TOOLROUTER_META_TOOL_NAMES,
       searchTools: async (request) => [
         {
-          toolId: "github.get_issue",
+          toolId: "github::get_issue",
           serverId: "github",
           serverName: "github",
           toolName: "get_issue",
@@ -188,11 +188,11 @@ test("meta-tool execution is available as an isolated executor", async () => {
   );
 
   assert.equal(result.isError, false);
-  assert.match(result.content[0].text, /github\.get_issue/);
+  assert.match(result.content[0].text, /github::get_issue/);
   assert.match(result.content[0].text, /Server ID: github/);
   assert.match(result.content[0].text, /Server Name: github/);
   assert.deepEqual(result.structuredContent.results.map((tool) => tool.toolId), [
-    "github.get_issue"
+    "github::get_issue"
   ]);
 });
 
@@ -211,7 +211,7 @@ test("enforces destructive tool approval policy", async () => {
   });
 
   await assert.rejects(
-    router.callTool({ toolId: "github.delete_issue", args: {} }),
+    router.callTool({ toolId: "github::delete_issue", args: {} }),
     /Policy denied/
   );
   assert.equal(github.calls.length, 0);
@@ -247,7 +247,7 @@ test("initializes schema lookup when using the async meta-tool path", async () =
   const { ToolRouter } = await import("../dist/index.js");
   const router = new ToolRouter({ servers: [github.server] });
   const schema = await router.executeMetaTool("get_tool_schemas", {
-    toolIds: ["github.get_issue"]
+    toolIds: ["github::get_issue"]
   });
 
   assert.equal(schema.isError, false);
@@ -278,7 +278,7 @@ test("shares one initialization across concurrent first-use calls", async () => 
   const router = new ToolRouter({ servers: [server] });
 
   const searchPromise = router.searchTools({ query: "issue" });
-  const callPromise = router.callTool({ toolId: "github.get_issue", args: {} });
+  const callPromise = router.callTool({ toolId: "github::get_issue", args: {} });
 
   releaseList();
 
@@ -323,14 +323,14 @@ test("refresh invalidates ai-sdk adapter tool cache", async () => {
   });
 
   await router.searchTools({ query: "issue" });
-  await router.callTool({ toolId: "github.get_issue", args: { issue_number: 1 } });
+  await router.callTool({ toolId: "github::get_issue", args: { issue_number: 1 } });
 
   phase = 2;
   await router.refresh();
 
   const results = await router.searchTools({ query: "pull requests" });
   const call = await router.callTool({
-    toolId: "github.list_pull_requests",
+    toolId: "github::list_pull_requests",
     args: { state: "open" }
   });
 
@@ -374,9 +374,9 @@ test("concurrent refresh failures keep the last good catalog usable", async () =
   assert.equal(refreshResults[1].status, "rejected");
 
   const searchResults = await router.searchTools({ query: "issue" });
-  const callResult = await router.callTool({ toolId: "github.get_issue", args: { issue_number: 1 } });
+  const callResult = await router.callTool({ toolId: "github::get_issue", args: { issue_number: 1 } });
 
-  assert.equal(searchResults[0].toolId, "github.get_issue");
+  assert.equal(searchResults[0].toolId, "github::get_issue");
   assert.deepEqual(callResult, {
     name: "get_issue",
     args: { issue_number: 1 }
@@ -484,7 +484,7 @@ test("excludeTools removes bare-name matches from the catalog", async () => {
   assert.equal(searchResults.find((tool) => tool.toolName === "web_search_exa"), undefined);
   assert.deepEqual(router.getVisibleTools().pinned, []);
   await assert.rejects(
-    router.callTool({ toolId: "exa.web_search_exa", args: {} }),
+    router.callTool({ toolId: "exa::web_search_exa", args: {} }),
     /was not found/
   );
 });
@@ -499,15 +499,15 @@ test("excludeTools supports canonical ids without excluding same-name tools on o
 
   const router = await createToolRouter({
     servers: [exa.server, grep.server],
-    excludeTools: ["exa.web_search_exa"]
+    excludeTools: ["exa::web_search_exa"]
   });
 
   const searchResults = await router.searchTools({ query: "search" });
 
-  assert.equal(searchResults.find((tool) => tool.toolId === "exa.web_search_exa"), undefined);
+  assert.equal(searchResults.find((tool) => tool.toolId === "exa::web_search_exa"), undefined);
   assert.equal(
-    searchResults.find((tool) => tool.toolId === "grep.web_search_exa")?.toolId,
-    "grep.web_search_exa"
+    searchResults.find((tool) => tool.toolId === "grep::web_search_exa")?.toolId,
+    "grep::web_search_exa"
   );
 });
 
@@ -557,11 +557,11 @@ test("deferredTools stay searchable and callable but are omitted from visible to
 
   const { pinned, metaTools } = router.getVisibleTools();
   const results = await router.searchTools({ query: "workflow_list" });
-  const call = await router.callTool({ toolId: "github.workflow_list", args: {} });
+  const call = await router.callTool({ toolId: "github::workflow_list", args: {} });
 
   assert.deepEqual(pinned.map((tool) => tool.toolName), ["codemode_search_mcp_tools"]);
   assert.equal(metaTools.length, 4);
-  assert.equal(results.find((tool) => tool.toolId === "github.workflow_list")?.toolId, "github.workflow_list");
+  assert.equal(results.find((tool) => tool.toolId === "github::workflow_list")?.toolId, "github::workflow_list");
   assert.deepEqual(call, { server: "github", name: "workflow_list", args: {} });
 });
 
@@ -584,7 +584,7 @@ test("tool metadata can defer tools from visible tools without removing them fro
   const results = await router.searchTools({ query: "workflow_run" });
 
   assert.deepEqual(pinned.map((tool) => tool.toolName), ["codemode_run"]);
-  assert.equal(results.find((tool) => tool.toolId === "github.workflow_run")?.toolId, "github.workflow_run");
+  assert.equal(results.find((tool) => tool.toolId === "github::workflow_run")?.toolId, "github::workflow_run");
 });
 
 test("canonical pinned tool ids disambiguate duplicate tool names", async () => {
@@ -597,15 +597,15 @@ test("canonical pinned tool ids disambiguate duplicate tool names", async () => 
 
   const router = await createToolRouter({
     servers: [github.server, slack.server],
-    pinnedTools: ["slack.status"]
+    pinnedTools: ["slack::status"]
   });
 
   const { pinned } = router.getVisibleTools();
   const results = await router.searchTools({ query: "status" });
 
-  assert.deepEqual(pinned.map((tool) => tool.toolId), ["slack.status"]);
-  assert.equal(results.find((tool) => tool.toolId === "slack.status"), undefined);
-  assert.equal(results.find((tool) => tool.toolId === "github.status")?.toolId, "github.status");
+  assert.deepEqual(pinned.map((tool) => tool.toolId), ["slack::status"]);
+  assert.equal(results.find((tool) => tool.toolId === "slack::status"), undefined);
+  assert.equal(results.find((tool) => tool.toolId === "github::status")?.toolId, "github::status");
 });
 
 test("canonical pinned tool ids normalize the server id", async () => {
@@ -615,14 +615,14 @@ test("canonical pinned tool ids normalize the server id", async () => {
 
   const router = await createToolRouter({
     servers: [stable.server],
-    pinnedTools: ["u2tsgODpOrlF.toolname"]
+    pinnedTools: ["u2tsgODpOrlF::toolname"]
   });
 
   const { pinned } = router.getVisibleTools();
   const results = await router.searchTools({ query: "generated server id" });
 
-  assert.deepEqual(pinned.map((tool) => tool.toolId), ["u2tsgodporlf.toolname"]);
-  assert.equal(results.find((tool) => tool.toolId === "u2tsgodporlf.toolname"), undefined);
+  assert.deepEqual(pinned.map((tool) => tool.toolId), ["u2tsgodporlf::toolname"]);
+  assert.equal(results.find((tool) => tool.toolId === "u2tsgodporlf::toolname"), undefined);
 });
 
 test("sync catalog methods require initialization when router is constructed directly", async () => {
@@ -642,7 +642,7 @@ test("sync catalog methods require initialization when router is constructed dir
     /ToolRouter is not initialized/
   );
   assert.throws(
-    () => router.getToolSchemas({ toolIds: ["github.get_issue"] }),
+    () => router.getToolSchemas({ toolIds: ["github::get_issue"] }),
     /ToolRouter is not initialized/
   );
 });
@@ -657,7 +657,7 @@ test("pinned tools remain callable via callTool", async () => {
     pinnedTools: ["help"]
   });
 
-  const result = await router.callTool({ toolId: "github.help", args: {} });
+  const result = await router.callTool({ toolId: "github::help", args: {} });
   assert.deepEqual(result, { server: "github", name: "help", args: {} });
 });
 
@@ -683,7 +683,7 @@ test("policy-denied tools are excluded from search results", async () => {
 
   const router = await createToolRouter({
     servers: [github.server],
-    policy: { denyTools: ["github.delete_repo"] }
+    policy: { denyTools: ["github::delete_repo"] }
   });
 
   const results = await router.searchTools({ query: "issue" });
@@ -700,7 +700,7 @@ test("policy-denied pinned tools are excluded from visible tools", async () => {
   const router = await createToolRouter({
     servers: [github.server],
     pinnedTools: ["delete_repo", "get_issue"],
-    policy: { denyTools: ["github.delete_repo"] }
+    policy: { denyTools: ["github::delete_repo"] }
   });
 
   const { pinned } = router.getVisibleTools();
@@ -758,7 +758,7 @@ test("search meta tool does not expose annotations", async () => {
 
   assert.equal(search.isError, false);
   assert.doesNotMatch(search.content[0].text, /destructiveHint|Delete Repository/);
-  assert.deepEqual(search.structuredContent.results.map((tool) => tool.toolId), ["github.delete_repo"]);
+  assert.deepEqual(search.structuredContent.results.map((tool) => tool.toolId), ["github::delete_repo"]);
 });
 
 test("schema meta tool does not expose annotations", async () => {
@@ -780,7 +780,7 @@ test("schema meta tool does not expose annotations", async () => {
 
   const router = await createToolRouter({ servers: [github.server] });
   const schema = await router.executeMetaTool("get_tool_schemas", {
-    toolIds: ["github.delete_repo"]
+    toolIds: ["github::delete_repo"]
   });
 
   assert.equal(schema.isError, false);
@@ -790,7 +790,7 @@ test("schema meta tool does not expose annotations", async () => {
   assert.match(schema.content[0].text, /Returns/);
   assert.match(schema.content[0].text, /deleted/);
   assert.doesNotMatch(schema.content[0].text, /destructiveHint|Delete Repository/);
-  assert.deepEqual(schema.structuredContent.results.map((tool) => tool.toolId), ["github.delete_repo"]);
+  assert.deepEqual(schema.structuredContent.results.map((tool) => tool.toolId), ["github::delete_repo"]);
   assert.deepEqual(schema.structuredContent.results[0].outputSchema, {
     type: "object",
     properties: {
@@ -819,7 +819,7 @@ test("search and schema meta tools include server id and server name in text res
   const router = await createToolRouter({ servers: [server] });
   const search = await router.executeMetaTool("search_tools", { query: "issue" });
   const schema = await router.executeMetaTool("get_tool_schemas", {
-    toolIds: ["github_server.get_issue"]
+    toolIds: ["github_server::get_issue"]
   });
 
   assert.match(search.content[0].text, /Server ID: github_server/);
@@ -840,7 +840,7 @@ test("search results expose canonical tool ids", async () => {
   const router = await createToolRouter({ servers: [github.server] });
   const [result] = await router.searchTools({ query: "issue" });
 
-  assert.equal(result.toolId, "github.get_issue");
+  assert.equal(result.toolId, "github::get_issue");
 });
 
 test("getToolSchemas supports batch tool ids", async () => {
@@ -851,11 +851,45 @@ test("getToolSchemas supports batch tool ids", async () => {
 
   const router = await createToolRouter({ servers: [github.server] });
   const schemas = router.getToolSchemas({
-    toolIds: ["github.get_issue", "github.list_pull_requests"]
+    toolIds: ["github::get_issue", "github::list_pull_requests"]
   });
 
   assert.deepEqual(schemas.map((schema) => schema.toolId), [
-    "github.get_issue",
-    "github.list_pull_requests"
+    "github::get_issue",
+    "github::list_pull_requests"
   ]);
 });
+
+test("supports parsing tool ids with double colon (::) separator", async () => {
+  const github = fakeServer("github", [
+    { name: "get_issue", description: "Get issue", inputSchema: { type: "object" } }
+  ]);
+
+  const router = await createToolRouter({
+    servers: [github.server],
+    pinnedTools: ["github::get_issue"],
+    excludeTools: ["github::nonexistent_tool"]
+  });
+
+  // Test getToolSchemas with double colon
+  const [schema] = router.getToolSchemas({
+    toolIds: ["github::get_issue"]
+  });
+  assert.equal(schema.toolId, "github::get_issue");
+
+  // Test callTool with double colon
+  const callResult = await router.callTool({
+    toolId: "github::get_issue",
+    args: { issue_number: 42 }
+  });
+  assert.deepEqual(callResult, {
+    server: "github",
+    name: "get_issue",
+    args: { issue_number: 42 }
+  });
+
+  // Test resolving pinned tool configured with double colon
+  const { pinned } = router.getVisibleTools();
+  assert.deepEqual(pinned.map((t) => t.toolName), ["get_issue"]);
+});
+

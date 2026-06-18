@@ -92,7 +92,7 @@ export class BM25SearchStrategy implements SearchStrategy {
       .sort((a, b) => b.score - a.score || a.tool.toolName.localeCompare(b.tool.toolName))
       .slice(0, limit)
       .map(({ tool, score }) => ({
-        toolId: `${tool.serverId}.${tool.toolName}`,
+        toolId: `${tool.serverId}::${tool.toolName}`,
         serverId: tool.serverId,
         serverName: tool.serverName,
         toolName: tool.toolName,
