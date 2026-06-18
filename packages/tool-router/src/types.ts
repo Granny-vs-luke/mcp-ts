@@ -80,11 +80,11 @@ export interface ToolRouterOptions {
   servers: ToolServer[];
   policy?: ToolRouterPolicy;
   searchStrategy?: SearchStrategy;
-  /** Canonical tool ids (serverId.toolName) or legacy tool names always visible alongside meta-tools. */
+  /** Canonical tool ids (serverId::toolName) or legacy tool names always visible alongside meta-tools. */
   pinnedTools?: string[];
   /** Tools omitted from direct exposure but kept indexed for meta-tool search/schema/call flows. */
   deferredTools?: string[];
-  /** Canonical tool ids/patterns or legacy tool names/patterns to omit from the router catalog. */
+  /** Canonical tool ids/patterns using serverId::toolName or legacy tool names/patterns to omit from the router catalog. */
   excludeTools?: string[];
   maxSearchResults?: number;
   excludeMetaTools?: string[];
@@ -132,3 +132,4 @@ export interface ToolRouterCallResult {
   structuredContent?: unknown;
   isError?: boolean;
 }
+
