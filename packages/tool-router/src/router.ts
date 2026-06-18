@@ -282,7 +282,7 @@ export class ToolRouter {
   }
 
   private resolvePinnedTool(reference: string): IndexedTool | undefined {
-    const tool = reference.includes(".")
+    const tool = reference.includes("::")
       ? this.resolveToolById(reference)
       : this.indexedTools.find((t) => t.toolName === reference);
 
@@ -299,7 +299,7 @@ export class ToolRouter {
   private isExcludedTool(serverId: string, toolName: string): boolean {
     const address = makeToolId(serverId, toolName);
     return this.excludedToolPatterns.some((pattern) => {
-      if (!pattern.includes(".")) {
+      if (!pattern.includes("::")) {
         return wildcardMatch(pattern, toolName);
       }
       return wildcardMatch(pattern, address);
@@ -333,23 +333,23 @@ export class ToolRouter {
 }
 
 function makeToolId(serverId: string, toolName: string): string {
-  return `${serverId}.${toolName}`;
+  return `${serverId}::${toolName}`;
 }
 
 function parseToolId(toolId: string): { serverId: string; toolName: string } {
-  const separatorIndex = toolId.indexOf(".");
-  if (separatorIndex <= 0 || separatorIndex === toolId.length - 1) {
-    throw new Error(`Invalid toolId "${toolId}". Expected "serverId.toolName".`);
+  const separatorIndex = toolId.indexOf("::");
+  if (separatorIndex <= 0 || separatorIndex === toolId.length - 2) {
+    throw new Error(`Invalid toolId "${toolId}". Expected "serverId::toolName".`);
   }
 
   return {
     serverId: toolId.slice(0, separatorIndex),
-    toolName: toolId.slice(separatorIndex + 1)
+    toolName: toolId.slice(separatorIndex + 2)
   };
 }
 
 function normalizeToolReference(reference: string): string {
-  if (!reference.includes(".")) {
+  if (!reference.includes("::")) {
     return reference;
   }
 

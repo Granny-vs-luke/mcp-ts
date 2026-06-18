@@ -6,7 +6,7 @@ export function wildcardMatch(pattern: string, value: string): boolean {
 }
 
 export function toolAddress(serverId: string, toolName: string): string {
-  return `${serverId}.${toolName}`;
+  return `${serverId}::${toolName}`;
 }
 
 export class PolicyEnforcer {
