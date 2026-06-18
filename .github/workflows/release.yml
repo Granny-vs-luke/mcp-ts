@@ -1,7 +1,9 @@
 name: Release and Publish
 
-# Publishes @mcp-ts/sdk when you bump the "version" field in package.json on main.
-# Skips if git tag v<version> already exists (idempotent / no duplicate publishes).
+# Publishes package version bumps merged to main.
+# - Root package.json publishes @mcp-ts/sdk and keeps git tag + GitHub Release behavior.
+# - packages/tool-router/package.json publishes @mcp-ts/tool-router without creating git tags/releases.
+# - packages/code-mode/package.json publishes @mcp-ts/codemode without creating git tags/releases.
 
 on:
   push:
@@ -9,6 +11,8 @@ on:
       - main
     paths:
       - 'package.json'
+      - 'packages/tool-router/package.json'
+      - 'packages/code-mode/package.json'
 
 concurrency:
   group: release-npm-${{ github.ref }}
@@ -31,46 +35,134 @@ jobs:
           node-version: 24
           registry-url: 'https://registry.npmjs.org/'
 
-      - name: Resolve version from package.json
-        id: meta
+      - name: Detect changed package manifests
+        id: changed
+        shell: bash
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Skip if this version is already tagged
-        id: check
-        run: |
-          git fetch --tags --force
-          if git rev-parse -q --verify "refs/tags/${{ steps.meta.outputs.tag }}" >/dev/null; then
-            echo "should_publish=false" >> $GITHUB_OUTPUT
+          BEFORE='${{ github.event.before }}'
+          if [ "$BEFORE" = '0000000000000000000000000000000000000000' ]; then
+            CHANGED_FILES=$(git ls-tree -r --name-only HEAD)
           else
-            echo "should_publish=true" >> $GITHUB_OUTPUT
+            CHANGED_FILES=$(git diff --name-only "$BEFORE" "${{ github.sha }}")
           fi
 
-      - name: Install & Build
-        if: steps.check.outputs.should_publish == 'true'
+          printf '%s\n' "$CHANGED_FILES"
+
+          if printf '%s\n' "$CHANGED_FILES" | grep -Fxq 'package.json'; then
+            echo 'sdk_changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'sdk_changed=false' >> "$GITHUB_OUTPUT"
+          fi
+
+          if printf '%s\n' "$CHANGED_FILES" | grep -Fxq 'packages/tool-router/package.json'; then
+            echo 'tool_router_changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'tool_router_changed=false' >> "$GITHUB_OUTPUT"
+          fi
+
+          if printf '%s\n' "$CHANGED_FILES" | grep -Fxq 'packages/code-mode/package.json'; then
+            echo 'code_mode_changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'code_mode_changed=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve package metadata
+        id: meta
+        shell: bash
         run: |
-          npm ci
-          npm run build
+          echo "sdk_name=$(node -p \"require('./package.json').name\")" >> "$GITHUB_OUTPUT"
+          echo "sdk_version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+          echo "sdk_tag=v$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to npm
-        if: steps.check.outputs.should_publish == 'true'
-        run: npm publish --provenance --access public
+          echo "tool_router_name=$(node -p \"require('./packages/tool-router/package.json').name\")" >> "$GITHUB_OUTPUT"
+          echo "tool_router_version=$(node -p \"require('./packages/tool-router/package.json').version\")" >> "$GITHUB_OUTPUT"
 
-      - name: Create and push git tag
-        if: steps.check.outputs.should_publish == 'true'
+          echo "code_mode_name=$(node -p \"require('./packages/code-mode/package.json').name\")" >> "$GITHUB_OUTPUT"
+          echo "code_mode_version=$(node -p \"require('./packages/code-mode/package.json').version\")" >> "$GITHUB_OUTPUT"
+
+      - name: Decide publish targets
+        id: publish
+        shell: bash
+        run: |
+          git fetch --tags --force
+
+          sdk_should_publish=false
+          if [ '${{ steps.changed.outputs.sdk_changed }}' = 'true' ]; then
+            if git rev-parse -q --verify "refs/tags/${{ steps.meta.outputs.sdk_tag }}" >/dev/null; then
+              sdk_should_publish=false
+            else
+              sdk_should_publish=true
+            fi
+          fi
+          echo "sdk_should_publish=$sdk_should_publish" >> "$GITHUB_OUTPUT"
+
+          tool_router_should_publish=false
+          if [ '${{ steps.changed.outputs.tool_router_changed }}' = 'true' ]; then
+            published_version=$(npm view '${{ steps.meta.outputs.tool_router_name }}' version 2>/dev/null || true)
+            if [ "$published_version" != '${{ steps.meta.outputs.tool_router_version }}' ]; then
+              tool_router_should_publish=true
+            fi
+          fi
+          echo "tool_router_should_publish=$tool_router_should_publish" >> "$GITHUB_OUTPUT"
+
+          code_mode_should_publish=false
+          if [ '${{ steps.changed.outputs.code_mode_changed }}' = 'true' ]; then
+            published_version=$(npm view '${{ steps.meta.outputs.code_mode_name }}' version 2>/dev/null || true)
+            if [ "$published_version" != '${{ steps.meta.outputs.code_mode_version }}' ]; then
+              code_mode_should_publish=true
+            fi
+          fi
+          echo "code_mode_should_publish=$code_mode_should_publish" >> "$GITHUB_OUTPUT"
+
+      - name: Install root dependencies
+        if: |
+          steps.publish.outputs.sdk_should_publish == 'true' ||
+          steps.publish.outputs.tool_router_should_publish == 'true' ||
+          steps.publish.outputs.code_mode_should_publish == 'true'
+        run: npm ci
+
+      - name: Build root sdk package
+        if: steps.publish.outputs.sdk_should_publish == 'true'
+        run: npm run build
+
+      - name: Publish root sdk package to npm
+        if: steps.publish.outputs.sdk_should_publish == 'true'
+        run: npm publish --ignore-scripts --provenance --access public
+
+      - name: Create and push sdk git tag
+        if: steps.publish.outputs.sdk_should_publish == 'true'
         run: |
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git tag -a "${{ steps.meta.outputs.tag }}" -m "Release ${{ steps.meta.outputs.version }}"
-          git push origin "refs/tags/${{ steps.meta.outputs.tag }}"
+          git tag -a "${{ steps.meta.outputs.sdk_tag }}" -m "Release ${{ steps.meta.outputs.sdk_version }}"
+          git push origin "refs/tags/${{ steps.meta.outputs.sdk_tag }}"
 
-      - name: Create GitHub Release
-        if: steps.check.outputs.should_publish == 'true'
+      - name: Create sdk GitHub Release
+        if: steps.publish.outputs.sdk_should_publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name: "Release ${{ steps.meta.outputs.version }}"
+          tag_name: ${{ steps.meta.outputs.sdk_tag }}
+          name: "Release ${{ steps.meta.outputs.sdk_version }}"
           generate_release_notes: true
-          body: "🚀 Release @mcp-ts/sdk v${{ steps.meta.outputs.version }}"
+          body: "Release ${{ steps.meta.outputs.sdk_name }} v${{ steps.meta.outputs.sdk_version }}"
+
+      - name: Build tool-router package
+        if: steps.publish.outputs.tool_router_should_publish == 'true'
+        working-directory: packages/tool-router
+        run: npm run build
+
+      - name: Publish tool-router package to npm
+        if: steps.publish.outputs.tool_router_should_publish == 'true'
+        working-directory: packages/tool-router
+        run: npm publish --ignore-scripts --provenance --access public
+
+      - name: Build code-mode package
+        if: steps.publish.outputs.code_mode_should_publish == 'true'
+        working-directory: packages/code-mode
+        run: npm run build
+
+      - name: Publish code-mode package to npm
+        if: steps.publish.outputs.code_mode_should_publish == 'true'
+        working-directory: packages/code-mode
+        run: npm publish --ignore-scripts --provenance --access public
+
