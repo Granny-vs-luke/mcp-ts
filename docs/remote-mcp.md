@@ -44,7 +44,7 @@ It also exposes meta-tools for dynamic MCP discovery and a `CodeMode` tool that 
 - Meta-tools for dynamic MCP discovery across 100+ supported MCP servers.
 - Server-side tool execution through MCP Assistant.
 - `CodeMode` support for running small programs that call MCP tools inside a secure sandbox.
-- A simple core flow: search tools, inspect schema, then run with CodeMode.
+- A simple core flow: list servers, search tools, inspect schema, then run with CodeMode.
 - Separate workflow tools for saving scripts and inspecting workflow state.
 
 ## Popular connected servers
@@ -80,15 +80,19 @@ It also exposes meta-tools for dynamic MCP discovery and a `CodeMode` tool that 
 
 ## Main tools
 
-The primary hosted MCP flow uses three tools: search, inspect, and run. Start here for most MCP clients.
+The primary hosted MCP flow uses four tools: list, search, inspect, and run. Start here for most MCP clients.
 
 | Tool | Category | Description |
 | --- | --- | --- |
-| `codemode_search_mcp_tools` | Search | Search connected MCP tools for the authenticated user and return normalized discovery results. Use this first before inspecting schemas or executing tools. |
-| `codemode_get_mcp_tool_schema` | Read | Inspect the exact input schema, output schema when available, and CodeMode extraction hint for one connected MCP tool. |
+| `list_mcp_servers` | Search | List all connected MCP servers and the number of tools each provides. Use this when `search_mcp_tools` returns no response or irrelevant results. |
+| `search_mcp_tools` | Search | Search connected MCP tools for the authenticated user and return normalized discovery results. Use this first before inspecting schemas or executing tools. |
+| `get_mcp_tool_schema` | Read | Inspect the exact input schema, output schema when available, and CodeMode extraction hint for one connected MCP tool. |
 | `codemode_run` | General | Execute a JavaScript/TypeScript-like script immediately in the CodeMode sandbox with connected MCP tool servers. Use it to validate tool calls, chain multiple calls, batch process results, or transform large outputs without creating a saved workflow. |
 
 ## Workflow tools (Experimental)
+
+> [!WARNING]
+> **Deprecation Notice:** Workflow and scheduling tools are experimental and may be removed at any time without notice.
 
 Workflow and scheduling tools are separate from the main hosted MCP flow. Use them when you want to save scripts or inspect workflow metadata. Queued workflow execution is disabled on the hosted endpoint unless a dedicated worker service is running.
 
@@ -107,8 +111,8 @@ Workflow and scheduling tools are separate from the main hosted MCP flow. Use th
 
 When using connected MCP tools through the MCP Server:
 
-1. Search for candidate tools with `codemode_search_mcp_tools`.
-2. Inspect the selected tool with `codemode_get_mcp_tool_schema`.
+1. Search for candidate tools with `search_mcp_tools`.
+2. Inspect the selected tool with `get_mcp_tool_schema`.
 3. Execute the call with `codemode_run`.
 
 Inside CodeMode, scripts run as the body of an async function. Use `return` for the final value, and use `console.log` for debugging. Connected MCP tools are available through namespaced helpers and through `callTool(serverId, toolName, args)`. These helpers return normalized tool results by default; use raw helpers only when you need the original MCP envelope.
