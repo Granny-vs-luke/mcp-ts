@@ -2,7 +2,7 @@ name: Release and Publish
 
 # Publishes package version bumps merged to main.
 # Each package publishes to npm, creates a git tag, and creates a GitHub Release.
-# Tags are package-specific for subpackages to avoid collisions in this single repository.
+# Tags are package-specific and follow the pattern <package>-v<version>.
 
 on:
   push:
@@ -71,7 +71,7 @@ jobs:
         run: |
           echo "sdk_name=$(node -p \"require('./package.json').name\")" >> "$GITHUB_OUTPUT"
           echo "sdk_version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
-          echo "sdk_tag=v$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+          echo "sdk_tag=sdk-v$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
 
           echo "tool_router_name=$(node -p \"require('./packages/tool-router/package.json').name\")" >> "$GITHUB_OUTPUT"
           echo "tool_router_version=$(node -p \"require('./packages/tool-router/package.json').version\")" >> "$GITHUB_OUTPUT"
