@@ -26,6 +26,29 @@ import {
   toolToTypeScriptInterface,
 } from "./sandbox-bridge.js";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function extractToolErrorText(result: Record<string, unknown>): string | undefined {
+  const content = result.content;
+  if (typeof content === "string") {
+    return content.replace(/^Error:\s*/i, "");
+  }
+  if (Array.isArray(content) && content.length > 0) {
+    const first = content[0];
+    if (isRecord(first) && typeof first.text === "string") return first.text.replace(/^Error:\s*/i, "");
+    if (typeof first === "string") return first.replace(/^Error:\s*/i, "");
+    return JSON.stringify(first);
+  }
+  if (isRecord(content)) {
+    const maybeError = (content as Record<string, unknown>).error ?? (content as Record<string, unknown>).message;
+    if (typeof maybeError === "string") return maybeError;
+    return JSON.stringify(content);
+  }
+  return undefined;
+}
+
 export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
   private servers: Map<string, ToolServer>;
   private indexedTools: IndexedTool[] = [];
@@ -154,7 +177,12 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
         }
 
         const result = await server.callTool(toolName, JSON.parse(argsJson));
-        call.ok = true;
+        if (isRecord(result) && result.isError === true) {
+          call.ok = false;
+          call.error = extractToolErrorText(result) || "MCP tool returned an error";
+        } else {
+          call.ok = true;
+        }
         return JSON.stringify({ success: true, result });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);

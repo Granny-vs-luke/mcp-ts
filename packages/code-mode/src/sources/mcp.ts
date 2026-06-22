@@ -48,7 +48,11 @@ export function normalizeMcpToolResult(result: unknown): unknown {
   if (content?.length === 1) {
     const item = content[0] as McpTextContent;
     if (item?.type === "text" && typeof item.text === "string") {
-      return tryParseJson(item.text);
+      const parsed = tryParseJson(item.text);
+      if (envelope.isError) {
+        return { content: parsed, isError: true };
+      }
+      return parsed;
     }
   }
 
