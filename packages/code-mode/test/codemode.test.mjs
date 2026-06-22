@@ -109,6 +109,16 @@ function fakeMcpEnvelopeSource(id = "docs") {
             name: "multipart_search",
             description: "Returns multipart content",
             inputSchema: { type: "object", properties: { query: { type: "string" } } }
+          },
+          {
+            name: "error_single_text",
+            description: "Returns isError with single text content",
+            inputSchema: { type: "object", properties: { query: { type: "string" } } }
+          },
+          {
+            name: "error_json_text",
+            description: "Returns isError with JSON text content",
+            inputSchema: { type: "object", properties: { query: { type: "string" } } }
           }
         ]
       }),
@@ -141,6 +151,18 @@ function fakeMcpEnvelopeSource(id = "docs") {
               { type: "text", text: "first" },
               { type: "text", text: "second" }
             ],
+            isError: true
+          };
+        }
+        if (name === "error_single_text") {
+          return {
+            content: [{ type: "text", text: "resource not found" }],
+            isError: true
+          };
+        }
+        if (name === "error_json_text") {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ error: "invalid input", code: 400 }) }],
             isError: true
           };
         }
@@ -397,4 +419,86 @@ test("MCP envelopes are normalized to script-friendly values", { skip: !hasIsola
     ],
     isError: true
   });
+});
+
+// -----------------------------------------------------------------------
+// Test 13: Single text error envelope preserves isError flag
+// -----------------------------------------------------------------------
+test("error envelope: single text content preserves isError", { skip: !hasIsolatedVm }, async () => {
+  const { createCodeModeRuntime } = await import("../dist/index.js");
+  const { source } = fakeMcpEnvelopeSource();
+  const runtime = await createCodeModeRuntime({ servers: [source] });
+
+  const result = await runtime.run(`
+    return callTool("docs", "error_single_text", { query: "x" });
+  `);
+
+  assert.equal(result.error, undefined);
+  assert.ok(result.value !== null && typeof result.value === "object");
+  assert.equal(result.value.isError, true);
+  assert.equal(result.value.content, "resource not found");
+});
+
+// -----------------------------------------------------------------------
+// Test 14: JSON text error envelope preserves isError with parsed content
+// -----------------------------------------------------------------------
+test("error envelope: JSON text content is parsed and isError preserved", { skip: !hasIsolatedVm }, async () => {
+  const { createCodeModeRuntime } = await import("../dist/index.js");
+  const { source } = fakeMcpEnvelopeSource();
+  const runtime = await createCodeModeRuntime({ servers: [source] });
+
+  const result = await runtime.run(`
+    return callTool("docs", "error_json_text", { query: "x" });
+  `);
+
+  assert.equal(result.error, undefined);
+  assert.ok(result.value !== null && typeof result.value === "object");
+  assert.equal(result.value.isError, true);
+  assert.ok(result.value.content !== null && typeof result.value.content === "object");
+  assert.equal(result.value.content.code, 400);
+  assert.equal(result.value.content.error, "invalid input");
+});
+
+// -----------------------------------------------------------------------
+// Test 15: Error envelopes set toolCalls[].ok to false
+// -----------------------------------------------------------------------
+test("error envelope: toolCalls[].ok is false with error message", { skip: !hasIsolatedVm }, async () => {
+  const { createCodeModeRuntime } = await import("../dist/index.js");
+  const { source } = fakeMcpEnvelopeSource();
+  const runtime = await createCodeModeRuntime({ servers: [source] });
+
+  const result = await runtime.run(`
+    callTool("docs", "error_single_text", { query: "x" });
+    return "done";
+  `);
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.value, "done");
+  assert.equal(result.toolCalls.length, 1);
+  assert.equal(result.toolCalls[0].ok, false);
+  assert.equal(result.toolCalls[0].error, "resource not found");
+  assert.equal(result.toolCalls[0].serverId, "docs");
+  assert.equal(result.toolCalls[0].toolName, "error_single_text");
+});
+
+// -----------------------------------------------------------------------
+// Test 16: Successful tool calls still show ok: true alongside error ones
+// -----------------------------------------------------------------------
+test("error envelope: successful and failed calls are both tracked", { skip: !hasIsolatedVm }, async () => {
+  const { createCodeModeRuntime } = await import("../dist/index.js");
+  const { source } = fakeMcpEnvelopeSource();
+  const runtime = await createCodeModeRuntime({ servers: [source] });
+
+  const result = await runtime.run(`
+    docs.plain_text_search({ query: "ok" });
+    callTool("docs", "error_single_text", { query: "fail" });
+    return "done";
+  `);
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.value, "done");
+  assert.equal(result.toolCalls.length, 2);
+  assert.equal(result.toolCalls[0].ok, true);
+  assert.equal(result.toolCalls[1].ok, false);
+  assert.equal(result.toolCalls[1].error, "resource not found");
 });
