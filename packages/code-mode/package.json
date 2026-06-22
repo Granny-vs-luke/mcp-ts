@@ -1,6 +1,6 @@
 {
   "name": "@mcp-ts/codemode",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publishConfig": {
     "access": "public"
   },
@@ -53,6 +53,11 @@
     "@types/node": "^25.0.10",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zonlabs/mcp-ts.git",
+    "directory": "packages/code-mode"
   },
   "license": "MIT",
   "engines": {
