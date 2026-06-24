@@ -20,6 +20,7 @@ export interface ToolDefinition {
 export interface ToolServer {
   serverId: string;
   serverName?: string;
+  serverUrl?: string;
   listTools(): Promise<{ tools: ToolDefinition[] }>;
   callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
   callToolRaw?(name: string, args: Record<string, unknown>): Promise<unknown>;

@@ -11,15 +11,16 @@ type McpCallToolEnvelope = {
   isError?: unknown;
 };
 
-export interface McpLikeClient {
+export interface ToolClient {
   listTools(): Promise<{ tools: ToolDefinition[] }>;
   callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
   getServerId?(): string | undefined;
   getServerName?(): string | undefined;
+  getServerUrl?(): string;
 }
 
-export interface McpLikeProvider {
-  getClients(): McpLikeClient[];
+export interface ToolClientProvider {
+  getClients(): ToolClient[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -69,10 +70,11 @@ export function normalizeMcpToolResult(result: unknown): unknown {
 /**
  * Wraps a single MCP-like client as a ToolServer.
  */
-export function mcpServer(serverId: string, client: McpLikeClient, serverName?: string): ToolServer {
+export function mcpServer(serverId: string, client: ToolClient, serverName?: string): ToolServer {
   return {
     serverId,
     serverName: serverName ?? client.getServerName?.() ?? client.getServerId?.() ?? serverId,
+    serverUrl: client.getServerUrl?.(),
     listTools: () => client.listTools(),
     callTool: async (toolName, args) => normalizeMcpToolResult(await client.callTool(toolName, args)),
     callToolRaw: (toolName, args) => client.callTool(toolName, args),
@@ -83,12 +85,11 @@ export function mcpServer(serverId: string, client: McpLikeClient, serverName?: 
  * Creates ToolServer[] from a provider that manages multiple MCP clients
  * (e.g. MultiSessionClient).
  */
-export function mcpServers(provider: McpLikeProvider): ToolServer[] {
+export function mcpServers(provider: ToolClientProvider): ToolServer[] {
   return provider.getClients().map((client, index) =>
     mcpServer(
       client.getServerId?.() ?? `mcp_${index + 1}`,
-      client,
-      client.getServerName?.()
+      client
     )
   );
 }

@@ -3,8 +3,6 @@ export { createCodeModeRuntime, IsolatedVmCodeModeRuntime } from "./runtime/runt
 
 // Servers
 export { mcpServer, mcpServers, normalizeMcpToolResult } from "./sources/index.js";
-export type { McpLikeClient, McpLikeProvider } from "./sources/index.js";
-
 // AI SDK adapter
 export { createCodemodeAITools } from "./adapters/ai-sdk.js";
 
@@ -24,3 +22,4 @@ export type {
   ToolSearchResult,
   ToolServer,
 } from "./types.js";
+export type { ToolClient, ToolClientProvider } from "./sources/index.js";
