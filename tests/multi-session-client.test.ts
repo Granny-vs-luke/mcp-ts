@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { MultiSessionClient } from '../src/server/mcp/multi-session-client';
+import { MultiSessionClient, type MultiSessionOptions } from '../src/server/mcp/multi-session-client';
 import { MCPClient } from '../src/server/mcp/oauth-client';
 import { sessions, _setStorageInstanceForTesting } from '../src/server/storage';
 import { MemoryStorageBackend } from '../src/server/storage/memory-backend';
+import type { Session } from '../src/server/storage/types';
 
 test.describe('MultiSessionClient', () => {
     const userId = 'test-userId';
@@ -190,5 +191,150 @@ test.describe('MultiSessionClient', () => {
 
         expect(multiClient.getClients().length).toBe(0);
         expect(client.isConnected()).toBe(false); // Because mock disconnect sets it to false
+    });
+
+    test('should use sessionProvider instead of storage when provided', async () => {
+        (MCPClient.prototype as any).connect = async function() {
+            (this as any)._mockConnected = true;
+        };
+
+        const providerSessions: Session[] = [
+            {
+                sessionId: 'provider-session',
+                userId,
+                serverId: 'srv',
+                serverUrl: 'http://provider',
+                callbackUrl: 'http://provider/cb',
+                transportType: 'streamable-http',
+                status: 'active',
+                createdAt: Date.now(),
+            } as Session,
+        ];
+
+        let providerCalled = false;
+        const multiClient = new MultiSessionClient(userId, {
+            sessionProvider: async () => {
+                providerCalled = true;
+                return providerSessions;
+            },
+        });
+
+        await multiClient.connect();
+
+        expect(providerCalled).toBe(true);
+        expect(multiClient.getClients().length).toBe(1);
+        expect(multiClient.getClients()[0].isConnected()).toBe(true);
+    });
+
+    test('should invoke onSessionConnected after successful connection', async () => {
+        (MCPClient.prototype as any).connect = async function() {
+            (this as any)._mockConnected = true;
+        };
+
+        const connectedSessions: string[] = [];
+        const multiClient = new MultiSessionClient(userId, {
+            sessionProvider: async () => [{
+                sessionId: 'cb-session',
+                userId,
+                serverId: 'srv',
+                serverUrl: 'http://cb',
+                callbackUrl: 'http://cb/cb',
+                transportType: 'streamable-http',
+                status: 'active',
+                createdAt: Date.now(),
+            } as Session],
+            onSessionConnected: (sessionId) => {
+                connectedSessions.push(sessionId);
+            },
+        });
+
+        await multiClient.connect();
+
+        expect(connectedSessions).toEqual(['cb-session']);
+    });
+
+    test('should invoke onSessionEvicted when stale clients are pruned', async () => {
+        (MCPClient.prototype as any).connect = async function() {
+            (this as any)._mockConnected = true;
+        };
+
+        const evictedSessions: string[] = [];
+
+        // Connect with one session
+        const multiClient = new MultiSessionClient(userId, {
+            sessionProvider: async () => [{
+                sessionId: 'stale-session',
+                userId,
+                serverId: 'srv',
+                serverUrl: 'http://stale',
+                callbackUrl: 'http://stale/cb',
+                transportType: 'streamable-http',
+                status: 'active',
+                createdAt: Date.now(),
+            } as Session],
+            onSessionEvicted: (sessionId) => {
+                evictedSessions.push(sessionId);
+            },
+        });
+
+        await multiClient.connect();
+        expect(multiClient.getClients().length).toBe(1);
+
+        // Now reconnect with a different session — the old client should be evicted
+        const multiClient2 = new MultiSessionClient(userId, {
+            sessionProvider: async () => [], // No active sessions
+            onSessionEvicted: (sessionId) => {
+                evictedSessions.push(sessionId);
+            },
+        });
+
+        // Push the stale client manually to simulate the scenario
+        (multiClient2 as any).clients = multiClient.getClients();
+        await multiClient2.connect();
+
+        expect(evictedSessions).toContain('stale-session');
+        expect(multiClient2.getClients().length).toBe(0);
+    });
+
+    test('should invoke onSessionFailed when all retries are exhausted', async () => {
+        let attemptCount = 0;
+        (MCPClient.prototype as any).connect = async function() {
+            attemptCount++;
+            throw new Error('Persistent failure');
+        };
+
+        const consoleSpy = "error" in console ? console.error : undefined;
+        console.error = () => {};
+
+        const failedSessions: Array<{ sessionId: string; error: unknown }> = [];
+
+        try {
+            const multiClient = new MultiSessionClient(userId, {
+                maxRetries: 1,
+                retryDelay: 10,
+                sessionProvider: async () => [{
+                    sessionId: 'fail-cb-session',
+                    userId,
+                    serverId: 'srv',
+                    serverUrl: 'http://fail',
+                    callbackUrl: 'http://fail/cb',
+                    transportType: 'streamable-http',
+                    status: 'active',
+                    createdAt: Date.now(),
+                } as Session],
+                onSessionFailed: (sessionId, error) => {
+                    failedSessions.push({ sessionId, error });
+                },
+            });
+
+            await multiClient.connect();
+
+            expect(attemptCount).toBe(2); // Initial + 1 retry
+            expect(failedSessions.length).toBe(1);
+            expect(failedSessions[0].sessionId).toBe('fail-cb-session');
+            expect(failedSessions[0].error).toBeInstanceOf(Error);
+        } finally {
+            if (consoleSpy) console.error = consoleSpy;
+        }
     });
 });
