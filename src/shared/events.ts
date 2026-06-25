@@ -121,7 +121,6 @@ export type McpConnectionEvent =
     type: 'disconnected';
     sessionId: string;
     serverId: string;
-    reason?: string;
     timestamp: number;
   }
   | {

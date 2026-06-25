@@ -356,8 +356,8 @@ export class SSEConnectionManager {
     const client = this.clients.get(sessionId);
 
     if (client) {
+      // clearSession() handles DELETE + local cleanup internally.
       await client.clearSession();
-      client.disconnect();
       this.clients.delete(sessionId);
     } else {
       // Handle orphaned sessions (e.g., OAuth flow failed before client was stored)
@@ -606,16 +606,18 @@ export class SSEConnectionManager {
   /**
    * Cleanup and close all connections
    */
-  dispose(): void {
+  async dispose(): Promise<void> {
     this.isActive = false;
 
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
     }
 
-    for (const client of this.clients.values()) {
-      client.disconnect();
-    }
+    // Send HTTP DELETE to each Streamable HTTP server before closing, per spec.
+    // Run in parallel so shutdown is not serialised across many sessions.
+    await Promise.all(
+      Array.from(this.clients.values()).map((client) => client.disconnect())
+    );
 
     this.clients.clear();
   }
