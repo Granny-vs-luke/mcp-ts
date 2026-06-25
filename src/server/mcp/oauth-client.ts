@@ -521,13 +521,10 @@ export class MCPClient {
     // The oauthProvider is intentionally preserved — OAuth tokens remain valid
     // across reconnects; only the transport session needs to be renegotiated.
     if (this.client?.transport) {
-      this.transport = null;
-      try {
-        await this.client.close();
-      } catch {
-        // Closing a transport that may have already failed is best-effort.
-      }
-      this.client = null;
+      // Pass terminate=false: we are about to start a fresh session, so we
+      // must not send DELETE for the old one — it may still be live on the
+      // server and used by another concurrent caller.
+      await this.disconnect(false);
     }
 
     await this.initialize();
@@ -1030,7 +1027,7 @@ export class MCPClient {
     }
 
     await sessions.delete(this.userId, this.sessionId);
-    this.disconnect();
+    await this.disconnect();
   }
 
   /**
@@ -1042,10 +1039,30 @@ export class MCPClient {
   }
 
   /**
-   * Disconnects from the MCP server and cleans up resources
-   * Does not remove session from Redis - use clearSession() for that
+   * Disconnects from the MCP server and cleans up resources.
+   * Does not remove session from Redis — use clearSession() for that.
+   *
+   * @param terminate When true (the default), sends an HTTP DELETE to the MCP
+   *   endpoint before closing, as recommended by the MCP Streamable HTTP spec
+   *   (section "Session Management", rule 5). Pass false when calling from the
+   *   re-entry guard inside connect() — we are about to start a fresh session
+   *   so we must NOT terminate the old one on the server.
    */
-  disconnect(reason?: string): void {
+  async disconnect(terminate = true): Promise<void> {
+    // Per the MCP Streamable HTTP spec (2025-11-25), clients SHOULD send an
+    // HTTP DELETE with the mcp-session-id header when they no longer need a
+    // session. The server MAY respond with 405 if it doesn't support explicit
+    // termination — terminateSession() handles that gracefully.
+    // SSEClientTransport has no session concept, so we guard with instanceof.
+    if (terminate && this.transport instanceof StreamableHTTPClientTransport) {
+      try {
+        await this.transport.terminateSession();
+      } catch {
+        // Best-effort: server may be unreachable or may have already expired
+        // the session. Either way, we proceed with local cleanup.
+      }
+    }
+
     if (this.client) {
       this.client.close();
     }
@@ -1059,7 +1076,6 @@ export class MCPClient {
         type: 'disconnected',
         sessionId: this.sessionId,
         serverId: this.serverId,
-        reason,
         timestamp: Date.now(),
       });
 
@@ -1069,9 +1085,7 @@ export class MCPClient {
         message: `Disconnected from ${this.serverId}`,
         sessionId: this.sessionId,
         serverId: this.serverId,
-        payload: {
-          reason: reason || 'unknown',
-        },
+        payload: {},
         timestamp: Date.now(),
         id: nanoid(),
       });

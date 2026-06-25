@@ -224,7 +224,10 @@ export class MultiSessionClient {
      * is required. Only the in-memory transport sessions are cleared.
      */
     async reconnect(): Promise<void> {
-        this.disconnect();   // clears this.clients = [] and closes old transports
+        // Skip DELETE for the old transports — they have already expired on the
+        // server (that's why we're reconnecting). Sending DELETE would only
+        // produce 404s and slow down the restart path.
+        await this.disconnect(false);
         await this.connect(); // fetches sessions from storage, reconnects with fresh transports
     }
 
@@ -241,11 +244,16 @@ export class MultiSessionClient {
     /**
      * Gracefully disconnects all active MCP clients and clears the internal client list.
      *
+     * When `terminate` is true (the default), each Streamable HTTP client sends
+     * an HTTP DELETE to its MCP endpoint per the spec before closing locally.
+     * Pass `terminate=false` when the server sessions are already gone (e.g.
+     * during a stale-session reconnect) to skip the DELETE round-trips.
+     *
      * Call this during server shutdown or when a user logs out to free up
      * underlying transport resources (SSE streams, HTTP connections, etc.).
      */
-    disconnect(): void {
-        this.clients.forEach((client) => client.disconnect());
+    async disconnect(terminate = true): Promise<void> {
+        await Promise.all(this.clients.map((client) => client.disconnect(terminate)));
         this.clients = [];
     }
 }
