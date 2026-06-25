@@ -210,6 +210,15 @@ export class MultiSessionClient {
      */
     async connect(): Promise<void> {
         const sessions = await this.getActiveSessions();
+        const activeSessionIds = new Set(sessions.map(s => s.sessionId));
+
+        // Prune stale clients whose sessions no longer exist in storage.
+        // Otherwise a lingering MCPClient with a still-alive SDK Client
+        // transport triggers OAuth refreshes on listTools(), and the
+        // StorageOAuthClientProvider.state() -> patchCredentials() call
+        // fails with a FK violation because the session was deleted.
+        this.clients = this.clients.filter(c => activeSessionIds.has(c.getSessionId()));
+
         await this.connectInBatches(sessions);
     }
 
