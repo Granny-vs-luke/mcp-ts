@@ -242,7 +242,7 @@ export class MCPClient {
        * Observation: SDK 1.24.0+ connections may hang indefinitely in some environments.
        * This wrapper enforces a timeout and properly uses AbortController to unblock the request.
        */
-      fetch: (url: RequestInfo | URL, init?: RequestInit) => {
+      fetch: async (url: RequestInfo | URL, init?: RequestInit) => {
         const timeout = 30000;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -251,7 +251,19 @@ export class MCPClient {
           (AbortSignal.any ? AbortSignal.any([init.signal, controller.signal]) : controller.signal) :
           controller.signal;
 
-        return fetch(url, { ...init, signal }).finally(() => clearTimeout(timeoutId));
+        try {
+          const response = await fetch(url, { ...init, signal });
+          
+          const hasSessionHeader = init?.headers && new Headers(init.headers as HeadersInit).has('mcp-session-id');
+
+          if (response.status === 404 && hasSessionHeader) {
+            throw new Error("MCP_SESSION_EXPIRED: Downstream session was not found on the server.");
+          }
+
+          return response;
+        } finally {
+          clearTimeout(timeoutId);
+        }
       }
     };
 
@@ -497,6 +509,27 @@ export class MCPClient {
    * @throws {Error} When connection fails for other reasons
    */
   async connect(): Promise<void> {
+    // Re-entry guard: if a previous SDK Client is still attached to a transport
+    // (e.g. a stale session from a prior connect() call on the same MCPClient
+    // instance), close and detach it before proceeding. The MCP SDK client will
+    // throw if asked to connect while a transport is already attached, and the
+    // stale transport would send an expired mcp-session-id to the remote server
+    // causing "Session not found. Reconnect without session header." errors.
+    //
+    // We also null out this.client so that initialize() creates a fresh Client
+    // instance with a clean transport slot, rather than reusing the old one.
+    // The oauthProvider is intentionally preserved — OAuth tokens remain valid
+    // across reconnects; only the transport session needs to be renegotiated.
+    if (this.client?.transport) {
+      this.transport = null;
+      try {
+        await this.client.close();
+      } catch {
+        // Closing a transport that may have already failed is best-effort.
+      }
+      this.client = null;
+    }
+
     await this.initialize();
 
     if (!this.client || !this.oauthProvider) {

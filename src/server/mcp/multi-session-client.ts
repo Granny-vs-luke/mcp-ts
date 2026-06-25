@@ -100,6 +100,9 @@ export class MultiSessionClient {
      * Connects a single session, with built-in deduplication to prevent race conditions.
      *
      * - If a client for this session already exists and is connected, returns immediately.
+     * - If the existing client entry is no longer connected (e.g. it was explicitly
+     *   disconnected), it is evicted so that `establishConnectionWithRetries` creates a
+     *   fresh transport — preventing "Client already connected" errors from the SDK.
      * - If a connection attempt for this session is already in-flight (e.g. from a
      *   concurrent call), it joins the existing promise instead of starting a new one.
      *   This is the key concurrency lock — the `connectionPromises` map acts as a
@@ -107,9 +110,19 @@ export class MultiSessionClient {
      * - On completion (success or failure), the promise is cleaned up from the map.
      */
     private async connectSession(session: Session): Promise<void> {
-        const existingClient = this.clients.find(c => c.getSessionId() === session.sessionId);
-        if (existingClient?.isConnected()) {
-            return;
+        const existing = this.clients.find(c => c.getSessionId() === session.sessionId);
+
+        if (existing) {
+            if (existing.isConnected()) {
+                // Genuinely connected — nothing to do.
+                return;
+            }
+
+            // Client entry exists but is no longer connected (explicit disconnect or
+            // a prior failed reconnect attempt). Remove it so the fresh connect below
+            // starts with a clean slate and the underlying SDK Client doesn't complain
+            // about an already-attached transport.
+            this.clients = this.clients.filter(c => c !== existing);
         }
 
         // Avoid concurrent connection attempts for the same session
@@ -198,6 +211,21 @@ export class MultiSessionClient {
     async connect(): Promise<void> {
         const sessions = await this.getActiveSessions();
         await this.connectInBatches(sessions);
+    }
+
+    /**
+     * Drops all cached `MCPClient` instances and reconnects fresh from storage.
+     *
+     * Call this when downstream MCP servers have expired their transport sessions
+     * (e.g. after a remote server restart) and subsequent tool calls return
+     * "Session not found. Reconnect without session header." errors.
+     *
+     * OAuth tokens are preserved in the storage backend — no re-authentication
+     * is required. Only the in-memory transport sessions are cleared.
+     */
+    async reconnect(): Promise<void> {
+        this.disconnect();   // clears this.clients = [] and closes old transports
+        await this.connect(); // fetches sessions from storage, reconnects with fresh transports
     }
 
     /**
