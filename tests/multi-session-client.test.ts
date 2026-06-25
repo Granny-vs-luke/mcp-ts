@@ -186,7 +186,7 @@ test.describe('MultiSessionClient', () => {
         const client = multiClient.getClients()[0];
         expect(client.isConnected()).toBe(true);
 
-        multiClient.disconnect();
+        await multiClient.disconnect();
 
         expect(multiClient.getClients().length).toBe(0);
         expect(client.isConnected()).toBe(false); // Because mock disconnect sets it to false
