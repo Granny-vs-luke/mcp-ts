@@ -257,6 +257,7 @@ export class MCPClient {
           const hasSessionHeader = init?.headers && new Headers(init.headers as HeadersInit).has('mcp-session-id');
 
           if (response.status === 404 && hasSessionHeader) {
+            this.client = null;
             throw new Error("MCP_SESSION_EXPIRED: Downstream session was not found on the server.");
           }
 
