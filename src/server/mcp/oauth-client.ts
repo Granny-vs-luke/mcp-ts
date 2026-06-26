@@ -360,7 +360,15 @@ export class MCPClient {
     if (!existingSession && this.serverId && this.serverUrl && this.callbackUrl) {
       this.createdAt = Date.now();
       const updatedAt = this.createdAt;
-      console.log(`[MCPClient] Creating pending session ${this.sessionId} for connection setup`);
+      this._onObservabilityEvent.fire({
+        type: 'mcp:client:session_created',
+        level: 'info',
+        message: `Creating pending session ${this.sessionId} for connection setup`,
+        sessionId: this.sessionId,
+        serverId: this.serverId,
+        timestamp: Date.now(),
+        id: nanoid(),
+      });
       await sessions.create({
         sessionId: this.sessionId,
         userId: this.userId,
@@ -542,7 +550,15 @@ export class MCPClient {
 
       // Refresh session metadata on every successful connect so active sessions
       // record ongoing usage and don't look dormant to session cleanup jobs.
-      console.log(`[MCPClient] Saving active session ${this.sessionId} (connect success)`);
+      this._onObservabilityEvent.fire({
+        type: 'mcp:client:session_saved',
+        level: 'info',
+        message: `Saving active session ${this.sessionId} (connect success)`,
+        sessionId: this.sessionId,
+        serverId: this.serverId,
+        timestamp: Date.now(),
+        id: nanoid(),
+      });
       await this.saveSession('active');
     } catch (error) {
       /** Handle Authentication Errors */
@@ -580,7 +596,15 @@ export class MCPClient {
         }
 
         this.emitStateChange('AUTHENTICATING');
-        console.log(`[MCPClient] Saving pending OAuth session ${this.sessionId}`);
+        this._onObservabilityEvent.fire({
+          type: 'mcp:client:session_saved',
+          level: 'info',
+          message: `Saving pending OAuth session ${this.sessionId}`,
+          sessionId: this.sessionId,
+          serverId: this.serverId,
+          timestamp: Date.now(),
+          id: nanoid(),
+        });
         await this.saveSession('pending');
 
         if (this.serverId) {
@@ -701,7 +725,15 @@ export class MCPClient {
         this.transportType = currentType;
 
         this.emitStateChange('CONNECTED');
-        console.log(`[MCPClient] Saving active session ${this.sessionId} (OAuth complete)`);
+        this._onObservabilityEvent.fire({
+          type: 'mcp:client:session_saved',
+          level: 'info',
+          message: `Saving active session ${this.sessionId} (OAuth complete)`,
+          sessionId: this.sessionId,
+          serverId: this.serverId,
+          timestamp: Date.now(),
+          id: nanoid(),
+        });
         await this.saveSession('active');
 
         return; // Success, exit function
@@ -998,7 +1030,16 @@ export class MCPClient {
     try {
       await this.ensureSession();
     } catch (error) {
-      console.warn('[MCPClient] Initialization failed during clearSession:', error);
+      this._onObservabilityEvent.fire({
+        type: 'mcp:client:error',
+        level: 'warn',
+        message: 'Initialization failed during clearSession',
+        sessionId: this.sessionId,
+        serverId: this.serverId,
+        payload: { error: String(error) },
+        timestamp: Date.now(),
+        id: nanoid(),
+      });
     }
 
     if (this.oauthProvider) {
