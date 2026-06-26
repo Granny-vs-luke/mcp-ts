@@ -79,7 +79,7 @@ export interface MCPOAuthClientOptions {
  * Emits connection lifecycle events for observability
  */
 export class MCPClient {
-  private client: Client | null = null;
+  private client: Client;
   public oauthProvider: AgentsOAuthProvider | null = null;
   private transport: StreamableHTTPClientTransport | SSEClientTransport | null = null;
   private userId: string;
@@ -131,6 +131,22 @@ export class MCPClient {
     this.clientUri = options.clientUri;
     this.logoUri = options.logoUri;
     this.policyUri = options.policyUri;
+
+    this.client = new Client(
+      {
+        name: MCP_CLIENT_NAME,
+        version: MCP_CLIENT_VERSION,
+      },
+      {
+        capabilities: {
+          extensions: {
+            'io.modelcontextprotocol/ui': {
+              mimeTypes: ['text/html+mcp'],
+            },
+          },
+        } as McpAppClientCapabilities,
+      }
+    );
   }
 
   /**
@@ -275,13 +291,12 @@ export class MCPClient {
   }
 
   /**
-   * Initializes client components (client, transport, OAuth provider)
-   * Loads missing configuration from Redis session store if needed
-   * This method is idempotent and safe to call multiple times
+   * Ensures session metadata and OAuth provider are loaded.
+   * Does NOT create the SDK Client — callers that need one create it themselves.
    * @private
    */
-  private async initialize(): Promise<void> {
-    if (this.client && this.oauthProvider) {
+  private async ensureSession(): Promise<void> {
+    if (this.oauthProvider) {
       return;
     }
 
@@ -336,24 +351,6 @@ export class MCPClient {
       });
     }
 
-    if (!this.client) {
-      this.client = new Client(
-        {
-          name: MCP_CLIENT_NAME,
-          version: MCP_CLIENT_VERSION,
-        },
-        {
-          capabilities: {
-            extensions: {
-              'io.modelcontextprotocol/ui': {
-                mimeTypes: ['text/html+mcp'],
-              },
-            },
-          } as McpAppClientCapabilities
-        }
-      );
-    }
-
     // Create session in the session store if it doesn't exist yet
     // This is needed BEFORE OAuth flow starts because the OAuth provider
     // will call saveCodeVerifier() which requires the session to exist
@@ -379,6 +376,8 @@ export class MCPClient {
       });
     }
   }
+
+
 
   /**
    * Saves current session state to the session store
@@ -509,31 +508,21 @@ export class MCPClient {
    * @throws {Error} When connection fails for other reasons
    */
   async connect(): Promise<void> {
-    // Re-entry guard: if a previous SDK Client is still attached to a transport
-    // (e.g. a stale session from a prior connect() call on the same MCPClient
-    // instance), close and detach it before proceeding. The MCP SDK client will
-    // throw if asked to connect while a transport is already attached, and the
-    // stale transport would send an expired mcp-session-id to the remote server
-    // causing "Session not found. Reconnect without session header." errors.
-    //
-    // We also null out this.client so that initialize() creates a fresh Client
-    // instance with a clean transport slot, rather than reusing the old one.
-    // The oauthProvider is intentionally preserved — OAuth tokens remain valid
-    // across reconnects; only the transport session needs to be renegotiated.
-    if (this.client?.transport) {
+    // Close any existing transport so we can negotiate a fresh session.
+    // The SDK Client throws if asked to connect() while a transport is
+    // already attached; close() detaches it cleanly so the same Client
+    // instance can be reused.
+    if (this.client.transport) {
       this.transport = null;
-      try {
-        await this.client.close();
-      } catch {
+      try { await this.client.close(); } catch {
         // Closing a transport that may have already failed is best-effort.
       }
-      this.client = null;
     }
 
-    await this.initialize();
+    await this.ensureSession();
 
-    if (!this.client || !this.oauthProvider) {
-      const error = 'Client or OAuth provider not initialized';
+    if (!this.oauthProvider) {
+      const error = 'OAuth provider not initialized';
       this.emitError(error, 'connection');
       this.emitStateChange('FAILED');
       throw new Error(error);
@@ -643,7 +632,7 @@ export class MCPClient {
     this.emitStateChange('AUTHENTICATING');
     this.emitProgress('Exchanging authorization code for tokens...');
 
-    await this.initialize();
+    await this.ensureSession();
 
     if (!this.oauthProvider) {
       const error = 'OAuth provider not initialized';
@@ -1013,10 +1002,9 @@ export class MCPClient {
       return await fn();
     } catch (error) {
       if (!(error instanceof Error && error.message.includes('MCP_SESSION_EXPIRED'))) throw error;
-      if (this.client) {
+      if (this.client.transport) {
         try { await this.client.close(); } catch {}
         this.transport = null;
-        this.client = null;
       }
       await this.reconnect();
       return await fn();
@@ -1030,31 +1018,9 @@ export class MCPClient {
    * @throws {Error} When OAuth provider is not initialized
    */
   async reconnect(): Promise<void> {
-    await this.initialize();
-
-    if (!this.oauthProvider) {
-      throw new Error('OAuth provider not initialized');
-    }
-
-    // Close the client initialize() may have created — we need a fresh
-    // client that will negotiate a new transport session.
-    if (this.client) {
-      try { await this.client.close(); } catch {}
-    }
-
-    this.client = new Client(
-      {
-        name: MCP_CLIENT_NAME,
-        version: MCP_CLIENT_VERSION,
-      },
-      { capabilities: {} }
-    );
-
-    // Use default logic to get transport, defaulting to what's stored or auto
-    const tt = this.transportType || 'streamable-http';
-    this.transport = this.getTransport(tt);
-
-    await this.client.connect(this.transport);
+    await this.ensureSession();
+    if (!this.oauthProvider) throw new Error('OAuth provider not initialized');
+    await this.connect();
   }
 
   /**
@@ -1063,7 +1029,7 @@ export class MCPClient {
    */
   async clearSession(): Promise<void> {
     try {
-      await this.initialize();
+      await this.ensureSession();
     } catch (error) {
       console.warn('[MCPClient] Initialization failed during clearSession:', error);
     }
@@ -1081,7 +1047,7 @@ export class MCPClient {
    * @returns True if connected, false otherwise
    */
   isConnected(): boolean {
-    return this.client !== null;
+    return this.client.transport !== undefined;
   }
 
   /**
@@ -1108,10 +1074,9 @@ export class MCPClient {
       }
     }
 
-    if (this.client) {
-      this.client.close();
+    if (this.client.transport) {
+      try { await this.client.close(); } catch {}
     }
-    this.client = null;
     this.oauthProvider = null;
     this.transport = null;
 

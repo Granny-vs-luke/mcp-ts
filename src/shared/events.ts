@@ -1,6 +1,5 @@
 /**
  * Simple event emitter pattern for MCP connection events
- * Inspired by Cloudflare's agents pattern but adapted for serverless
  */
 
 export type Disposable = {
@@ -11,7 +10,6 @@ export type Event<T> = (listener: (event: T) => void) => Disposable;
 
 /**
  * Event emitter class for type-safe event handling
- * Similar to Cloudflare's Emitter but simplified for our use case
  */
 export class Emitter<T> {
   private listeners: Set<(event: T) => void> = new Set();

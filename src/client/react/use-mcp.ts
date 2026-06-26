@@ -1,7 +1,6 @@
 /**
  * useMcp React Hook
  * Manages MCP connections with SSE-based real-time updates
- * Based on Cloudflare's agents pattern
  */
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
