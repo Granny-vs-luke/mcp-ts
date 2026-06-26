@@ -47,8 +47,7 @@ test.describe('MCPClient refresh-token reauthorization', () => {
 
     const events: any[] = [];
 
-    (MCPClient.prototype as any).initialize = async function () {
-      (this as any).client = {} as any;
+    (MCPClient.prototype as any).ensureSession = async function () {
       (this as any).oauthProvider = {
         authUrl: 'https://auth.example.com/authorize?state=session-2',
       };

@@ -32,11 +32,10 @@ test.describe('Session Lifecycle Management', () => {
         });
 
         // Mock internal methods to simulate success
-        (client as any).initialize = async () => { 
+        (client as any).ensureSession = async () => { 
             (client as any).oauthProvider = { 
                 tokens: async () => ({ access_token: 'valid' })
             };
-            (client as any).client = { connect: async () => {} };
         };
         (client as any).tryConnect = async () => ({ transportType: 'sse' });
 
@@ -81,7 +80,7 @@ test.describe('Session Lifecycle Management', () => {
         });
 
         // Mock to throw generic error
-        (client as any).initialize = async function() {
+        (client as any).ensureSession = async function() {
             this.oauthProvider = { 
                 tokens: async () => ({ access_token: 'valid' })
             };
@@ -116,11 +115,10 @@ test.describe('Session Lifecycle Management', () => {
             status: 'active',
         });
 
-        (client as any).initialize = async function() {
+        (client as any).ensureSession = async function() {
             this.oauthProvider = {
                 tokens: async () => ({ access_token: 'valid' })
             };
-            this.client = { connect: async () => {} };
         };
         (client as any).tryConnect = async () => {
             throw new Error('ECONNREFUSED');
@@ -145,12 +143,11 @@ test.describe('Session Lifecycle Management', () => {
         });
 
         // Mock to throw Unauthorized without an auth URL
-        (client as any).initialize = async function() {
+        (client as any).ensureSession = async function() {
             this.oauthProvider = { 
                 tokens: async () => null, 
                 authUrl: '' 
             };
-            this.client = { connect: async () => {} };
         };
         (client as any).tryConnect = async () => {
             throw new SDKUnauthorizedError('Unauthorized');
@@ -171,12 +168,11 @@ test.describe('Session Lifecycle Management', () => {
         });
 
         // Mock to throw Unauthorized WITH an auth URL
-        (client as any).initialize = async function() {
+        (client as any).ensureSession = async function() {
             this.oauthProvider = { 
                 tokens: async () => null,
                 authUrl: 'http://auth.url'
             };
-            this.client = { connect: async () => {} };
         };
         (client as any).tryConnect = async () => {
             throw new SDKUnauthorizedError('Unauthorized');

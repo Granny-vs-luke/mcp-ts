@@ -177,8 +177,8 @@ test.describe('SupabaseStorageBackend', () => {
             const id1 = storage.generateSessionId();
             const id2 = storage.generateSessionId();
             expect(id1).not.toBe(id2);
-            // 12-char pattern where first is letter
-            expect(id1).toMatch(/^[a-zA-Z][a-zA-Z0-9]{11}$/);
+            // 26-char pattern: sess_ + 21-char nanoid
+            expect(id1).toMatch(/^sess_[a-zA-Z0-9]{21}$/);
         });
     });
 
