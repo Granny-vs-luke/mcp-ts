@@ -70,13 +70,13 @@ async function createPendingSession(client: MCPClient) {
 }
 
 test.describe('MCPClient session expiration lifecycle', () => {
-  const originalInitialize = (MCPClient.prototype as any).initialize;
+  const originalEnsureSession = (MCPClient.prototype as any).ensureSession;
   const originalTryConnect = (MCPClient.prototype as any).tryConnect;
   const originalGetTransport = (MCPClient.prototype as any).getTransport;
   const originalClientConnect = (Client.prototype as any).connect;
 
   test.afterEach(() => {
-    (MCPClient.prototype as any).initialize = originalInitialize;
+    (MCPClient.prototype as any).ensureSession = originalEnsureSession;
     (MCPClient.prototype as any).tryConnect = originalTryConnect;
     (MCPClient.prototype as any).getTransport = originalGetTransport;
     (Client.prototype as any).connect = originalClientConnect;
@@ -87,8 +87,7 @@ test.describe('MCPClient session expiration lifecycle', () => {
     const mockStorage = new TrackingMemoryStorage();
     _setStorageInstanceForTesting(mockStorage);
 
-    (MCPClient.prototype as any).initialize = async function () {
-      (this as any).client = {} as any;
+    (MCPClient.prototype as any).ensureSession = async function () {
       (this as any).oauthProvider = { authUrl: '' };
       await createPendingSession(this as MCPClient);
     };
@@ -119,8 +118,7 @@ test.describe('MCPClient session expiration lifecycle', () => {
     const mockStorage = new TrackingMemoryStorage();
     _setStorageInstanceForTesting(mockStorage);
 
-    (MCPClient.prototype as any).initialize = async function () {
-      (this as any).client = {} as any;
+    (MCPClient.prototype as any).ensureSession = async function () {
       (this as any).oauthProvider = { authUrl: 'https://auth.example.com' };
       await createPendingSession(this as MCPClient);
     };
@@ -151,7 +149,7 @@ test.describe('MCPClient session expiration lifecycle', () => {
     const mockStorage = new TrackingMemoryStorage();
     _setStorageInstanceForTesting(mockStorage);
 
-    (MCPClient.prototype as any).initialize = async function () {
+    (MCPClient.prototype as any).ensureSession = async function () {
       (this as any).oauthProvider = { authUrl: 'https://auth.example.com' };
       await createPendingSession(this as MCPClient);
     };
@@ -188,7 +186,7 @@ test.describe('MCPClient session expiration lifecycle', () => {
     const mockStorage = new TrackingMemoryStorage();
     _setStorageInstanceForTesting(mockStorage);
 
-    (MCPClient.prototype as any).initialize = async function () {
+    (MCPClient.prototype as any).ensureSession = async function () {
       (this as any).oauthProvider = { authUrl: 'https://auth.example.com' };
       await createPendingSession(this as MCPClient);
     };

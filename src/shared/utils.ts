@@ -1,17 +1,10 @@
-import { customAlphabet } from 'nanoid';
+import { customAlphabet, nanoid } from 'nanoid';
 
 const OAUTH_STATE_SEPARATOR = '.';
 
-/** first char: letters only (required by OpenAI) */
-const firstChar = customAlphabet(
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
-    1
-);
-
-/** remaining chars: alphanumeric */
-const rest = customAlphabet(
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
-    11
+const serverIdAlphabet = customAlphabet(
+    'abcdefghijklmnopqrstuvwxyz0123456789',
+    12
 );
 
 /**
@@ -32,11 +25,20 @@ export function sanitizeServerLabel(name: string): string {
 }
 
 /**
- * Generates a standard 12-character session ID compliant with external tool restrictions.
- * First character is always a letter.
+ * Generates a session ID with a human-readable prefix for easy identification.
+ * Format: sess_<21-char nanoid> (26 chars total).
+ * Not used in tool names, so length is not constrained.
  */
 export function generateSessionId(): string {
-    return firstChar() + rest();
+    return 'sess_' + nanoid(21);
+}
+
+/**
+ * Generates a short server ID suitable for use in tool names.
+ * 12-char alphanumeric string that keeps tool_<serverId>_<toolName> under 64 chars.
+ */
+export function generateServerId(): string {
+    return serverIdAlphabet();
 }
 
 export interface ParsedOAuthState {

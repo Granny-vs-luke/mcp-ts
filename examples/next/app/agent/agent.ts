@@ -1,5 +1,6 @@
 import { ToolLoopAgent, InferAgentUIMessage, stepCountIs } from "ai";
 import { MultiSessionClient } from "@mcp-ts/sdk/server";
+import type { McpObservabilityEvent } from "@mcp-ts/sdk/shared";
 import { AIAdapter } from "@mcp-ts/sdk/adapters/ai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 
@@ -27,7 +28,26 @@ function getMcpClient(userId: string): MultiSessionClient {
 
   let client = globalForMcp.mcpClientMap.get(userId);
   if (!client) {
-    client = new MultiSessionClient(userId);
+    client = new MultiSessionClient(userId, {
+      onSessionConnected: (_sessionId, mcpClient) => {
+        mcpClient.onObservabilityEvent((event: McpObservabilityEvent) => {
+          const prefix = `[MCP][${event.serverId ?? event.sessionId ?? '?'}]`;
+          switch (event.level) {
+            case 'error':
+              console.error(prefix, event.message, event.payload ?? '');
+              break;
+            case 'warn':
+              console.warn(prefix, event.message, event.payload ?? '');
+              break;
+            case 'debug':
+              console.debug(prefix, event.message, event.payload ?? '');
+              break;
+            default:
+              console.log(prefix, event.message, event.payload ?? '');
+          }
+        });
+      },
+    });
     globalForMcp.mcpClientMap.set(userId, client);
   }
 

@@ -38,7 +38,7 @@ import { UnauthorizedError } from '../../shared/errors.js';
 import { isConnectionEvent, isRpcResponseEvent } from '../../shared/event-routing.js';
 import { parseOAuthState } from '../../shared/utils.js';
 import { MCPClient } from '../mcp/oauth-client.js';
-import { sessions } from '../storage/index.js';
+import { sessions, generateServerId } from '../storage/index.js';
 
 // ============================================
 // Types & Interfaces
@@ -256,7 +256,7 @@ export class SSEConnectionManager {
     // Tool name format: tool_<serverId>_<toolName> - with 12 char serverId leaves 46 chars for tool name
     const serverId = params.serverId && params.serverId.length <= 12
       ? params.serverId
-      : await sessions.generateSessionId();
+      : generateServerId();
 
     // Check for existing connections
     const existingSessions = await sessions.list(this.userId);
