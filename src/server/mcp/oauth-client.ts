@@ -686,27 +686,15 @@ export class MCPClient {
           authenticatedStateEmitted = true;
         }
 
-        this.emitProgress('Creating authenticated client...');
-
-        this.client = new Client(
-          {
-            name: MCP_CLIENT_NAME,
-            version: MCP_CLIENT_VERSION,
-          },
-          {
-            capabilities: {
-              extensions: {
-                'io.modelcontextprotocol/ui': {
-                  mimeTypes: ['text/html+mcp'],
-                },
-              },
-            } as McpAppClientCapabilities
-          }
-        );
-
         this.emitStateChange('CONNECTING');
 
-        /** We explicitly try to connect with the transport we just auth'd with first */
+        // The SDK Client may still have a transport attached from a prior
+        // connect() that failed with UnauthorizedError; close it first so
+        // we can negotiate a fresh session with the newly-exchanged tokens.
+        if (this.client.transport) {
+          try { await this.client.close(); } catch {}
+        }
+
         await this.client.connect(this.transport);
 
         /** Connection succeeded — lock in the transport type */
@@ -767,10 +755,6 @@ export class MCPClient {
    * @throws {Error} When client is not connected
    */
   async listTools(): Promise<ListToolsResult> {
-    if (!this.client) {
-      throw new Error('Not connected to server');
-    }
-
     this.emitStateChange('DISCOVERING');
 
     try {
@@ -814,9 +798,6 @@ export class MCPClient {
    * @throws {Error} When client is not connected
    */
   async callTool(toolName: string, toolArgs: Record<string, unknown>): Promise<CallToolResult> {
-    if (!this.client) {
-      throw new Error('Not connected to server');
-    }
 
     const request: CallToolRequest = {
       method: 'tools/call',
@@ -877,10 +858,6 @@ export class MCPClient {
    * @throws {Error} When client is not connected
    */
   async listPrompts(): Promise<ListPromptsResult> {
-    if (!this.client) {
-      throw new Error('Not connected to server');
-    }
-
     this.emitStateChange('DISCOVERING');
 
     try {
@@ -913,9 +890,6 @@ export class MCPClient {
    * @throws {Error} When client is not connected
    */
   async getPrompt(name: string, args?: Record<string, string>): Promise<GetPromptResult> {
-    if (!this.client) {
-      throw new Error('Not connected to server');
-    }
 
     const request: GetPromptRequest = {
       method: 'prompts/get',
@@ -936,10 +910,6 @@ export class MCPClient {
    * @throws {Error} When client is not connected
    */
   async listResources(): Promise<ListResourcesResult> {
-    if (!this.client) {
-      throw new Error('Not connected to server');
-    }
-
     this.emitStateChange('DISCOVERING');
 
     try {
@@ -971,9 +941,6 @@ export class MCPClient {
    * @throws {Error} When client is not connected
    */
   async readResource(uri: string): Promise<ReadResourceResult> {
-    if (!this.client) {
-      throw new Error('Not connected to server');
-    }
 
     const request: ReadResourceRequest = {
       method: 'resources/read',
