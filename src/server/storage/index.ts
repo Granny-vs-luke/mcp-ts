@@ -9,7 +9,7 @@ import type { SessionStore, Session, SessionMutationEvent, SessionMutationListen
 
 // Re-export types
 export * from './types.js';
-export { generateSessionId } from '../../shared/utils.js';
+export { generateSessionId, generateServerId } from '../../shared/utils.js';
 export { RedisStorageBackend, MemoryStorageBackend, FileStorageBackend, SqliteStorage, SupabaseStorageBackend, NeonStorageBackend };
 
 export function createSupabaseStorageBackend(client: any): SupabaseStorageBackend {
