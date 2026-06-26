@@ -1,7 +1,6 @@
 /**
  * useMcp Vue Composable
  * Manages MCP connections with SSE-based real-time updates
- * Based on Cloudflare's agents pattern
  */
 
 import { ref, onMounted, onUnmounted, watch, computed, shallowRef } from 'vue';
