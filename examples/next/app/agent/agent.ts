@@ -52,7 +52,7 @@ function requiresApproval(tool: any, args: any, router: any): boolean {
 
     try {
       const targetTool = router.getToolSchema(targetToolName, targetNamespace);
-      return (targetTool as any)?.annotations?.readOnlyHint === true;
+      return (targetTool as any)?.annotations?.destructiveHint === true;
     } catch {
       return false; // Tool not found, let execution fail normally
     }

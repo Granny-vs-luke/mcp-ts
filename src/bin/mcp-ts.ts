@@ -82,13 +82,13 @@ async function initSupabase() {
             console.log('   npx supabase db push');
             console.log('\n3. Add your Supabase credentials to .env:');
             console.log('   SUPABASE_URL=https://<your-project-id>.supabase.co');
-            console.log('   SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>');
-            console.log('\n⚠️  Important: Use the service_role key (not the anon key) for server-side storage.');
-            console.log('   The service_role key bypasses RLS policies and is required for mcp-ts to work correctly.');
-            console.log('   Find it in: Supabase Dashboard -> Project Settings -> API -> service_role');
+            console.log('   SUPABASE_SECRET_KEY=<your-secret-key>');
+            console.log('\n⚠️  Important: Use the secret key (not the anon key) for server-side storage.');
+            console.log('   The secret key bypasses RLS policies and is required for mcp-ts to work correctly.');
+            console.log('   Find it in: Supabase Dashboard -> Project Settings -> API -> Secret key');
         } else if (files.length > 0) {
             console.log('\n👍 All migration files are already present in your project.');
-            console.log('   Ensure SUPABASE_SERVICE_ROLE_KEY (not SUPABASE_ANON_KEY) is set in your .env');
+            console.log('   Ensure SUPABASE_SECRET_KEY (not SUPABASE_ANON_KEY) is set in your .env');
         } else {
             console.log('⚠️  No migration files found to copy.');
         }
