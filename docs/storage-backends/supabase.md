@@ -27,11 +27,11 @@ MCP_TS_STORAGE_TYPE=supabase
 # Supabase connection details (required)
 SUPABASE_URL=https://your-project.supabase.co
 # Use the service_role key for server-side storage (not the anon key)
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_SECRET_KEY=your-secret-key
 ```
 
 <Warning>
-**Always use `SUPABASE_SERVICE_ROLE_KEY`** for server-side storage — not `SUPABASE_ANON_KEY`. The anon key is subject to Row Level Security (RLS) policies which will block session creation. The service_role key is designed for trusted server-to-server communication and bypasses RLS. Find it in: **Supabase Dashboard → Project Settings → API → service_role**.
+**Always use `SUPABASE_SECRET_KEY`** for server-side storage — not `SUPABASE_ANON_KEY`. The anon key is subject to Row Level Security (RLS) policies which will block session creation. The service_role key is designed for trusted server-to-server communication and bypasses RLS. Find it in: **Supabase Dashboard → Project Settings → API → service_role**.
 </Warning>
 
 ## Database Setup
@@ -71,7 +71,7 @@ Unlike the simpler single-table examples in some backends, the Supabase install 
 - `public.mcp_sessions` stores connection/session metadata
 - `public.mcp_credentials` stores runtime OAuth credentials and is linked by `(user_id, session_id)`
 
-Run the migration with your trusted database role before connecting your application with `SUPABASE_SERVICE_ROLE_KEY`.
+Run the migration with your trusted database role before connecting your application with `SUPABASE_SECRET_KEY`.
 
 ### `public.mcp_sessions`
 
@@ -160,7 +160,7 @@ auth.uid()::text = user_id
 That means:
 
 - authenticated users can only access rows tied to their own Supabase user ID
-- server-side code using `SUPABASE_SERVICE_ROLE_KEY` bypasses those policies, which is why `mcp-ts` recommends that key for backend storage operations
+- server-side code using `SUPABASE_SECRET_KEY` bypasses those policies, which is why `mcp-ts` recommends that key for backend storage operations
 
 ## Features
 
@@ -241,7 +241,7 @@ SELECT cron.unschedule('cleanup-dormant-sessions');
 
 ### Option 1: Automatic Detection (Recommended)
 
-When `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are present in your environment, the global `sessions` proxy automatically uses the Supabase backend.
+When `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are present in your environment, the global `sessions` proxy automatically uses the Supabase backend.
 
 ```typescript
 import { sessions } from '@mcp-ts/sdk/server';
@@ -269,7 +269,7 @@ import { createClient } from '@supabase/supabase-js';
 // Always use the service_role key for server-side usage
 const supabase = createClient(
   process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SECRET_KEY!
 );
 
 const supabaseBackend = createSupabaseStorageBackend(supabase);

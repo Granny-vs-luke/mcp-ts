@@ -83,7 +83,7 @@ npm test            # Run Playwright tests
 
 ### Setting Up Supabase Storage
 1. Run `npx mcp-ts supabase-init` to eject migrations.
-2. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+2. Set `SUPABASE_URL` and `SUPABASE_SECRET_KEY`.
 3. Storage is auto-detected and initialized on startup.
 
 ### Setting Up Neon Storage
