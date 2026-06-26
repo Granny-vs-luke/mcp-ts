@@ -153,6 +153,19 @@ export class MultiSessionClient implements ToolClientProvider {
     }
 
     /**
+     * Removes and disconnects a single session by ID.
+     *
+     * @returns `true` if the session was found and removed, `false` if not found.
+     */
+    async removeSession(sessionId: string): Promise<boolean> {
+        const idx = this.clients.findIndex(c => c.getSessionId() === sessionId);
+        if (idx === -1) return false;
+        const [client] = this.clients.splice(idx, 1);
+        await client.disconnect();
+        return true;
+    }
+
+    /**
      * Gracefully disconnects all active MCP clients and clears the internal list.
      *
      * For Streamable HTTP sessions, each client sends an HTTP DELETE to its MCP

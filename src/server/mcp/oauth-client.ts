@@ -257,7 +257,6 @@ export class MCPClient {
           const hasSessionHeader = init?.headers && new Headers(init.headers as HeadersInit).has('mcp-session-id');
 
           if (response.status === 404 && hasSessionHeader) {
-            this.client = null;
             throw new Error("MCP_SESSION_EXPIRED: Downstream session was not found on the server.");
           }
 
@@ -791,7 +790,9 @@ export class MCPClient {
         params: {},
       };
 
-      const result = await this.client.request(request, ListToolsResultSchema);
+      const result = await this.withRetry(() =>
+        this.client!.request(request, ListToolsResultSchema)
+      );
 
       if (this.serverId) {
         this._onConnectionEvent.fire({
@@ -837,7 +838,9 @@ export class MCPClient {
     };
 
     try {
-      const result = await this.client.request(request, CallToolResultSchema);
+      const result = await this.withRetry(() =>
+        this.client!.request(request, CallToolResultSchema)
+      );
 
       this._onObservabilityEvent.fire({
         type: 'mcp:client:tool_call',
@@ -897,7 +900,9 @@ export class MCPClient {
         params: {},
       };
 
-      const result = await this.client.request(request, ListPromptsResultSchema);
+      const result = await this.withRetry(() =>
+        this.client!.request(request, ListPromptsResultSchema)
+      );
 
       this.emitStateChange('READY');
       this.emitProgress(`Discovered ${result.prompts.length} prompts`);
@@ -931,7 +936,9 @@ export class MCPClient {
       },
     };
 
-    return await this.client.request(request, GetPromptResultSchema);
+    return await this.withRetry(() =>
+      this.client!.request(request, GetPromptResultSchema)
+    );
   }
 
   /**
@@ -952,7 +959,9 @@ export class MCPClient {
         params: {},
       };
 
-      const result = await this.client.request(request, ListResourcesResultSchema);
+      const result = await this.withRetry(() =>
+        this.client!.request(request, ListResourcesResultSchema)
+      );
 
       this.emitStateChange('READY');
       this.emitProgress(`Discovered ${result.resources.length} resources`);
@@ -984,7 +993,34 @@ export class MCPClient {
       },
     };
 
-    return await this.client.request(request, ReadResourceResultSchema);
+    return await this.withRetry(() =>
+      this.client!.request(request, ReadResourceResultSchema)
+    );
+  }
+
+  /**
+   * Wraps an MCP request with automatic transport-session recovery.
+   *
+   * When the downstream MCP server rejects the request with a 404 indicating
+   * the transport session has expired, this method tears down the stale SDK
+   * client and transport, calls {@link reconnect} to negotiate a fresh session,
+   * and retries the request once.
+   *
+   * Non-transient errors (network failures, auth errors, etc.) propagate as-is.
+   */
+  private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      if (!(error instanceof Error && error.message.includes('MCP_SESSION_EXPIRED'))) throw error;
+      if (this.client) {
+        try { await this.client.close(); } catch {}
+        this.transport = null;
+        this.client = null;
+      }
+      await this.reconnect();
+      return await fn();
+    }
   }
 
   /**
@@ -998,6 +1034,12 @@ export class MCPClient {
 
     if (!this.oauthProvider) {
       throw new Error('OAuth provider not initialized');
+    }
+
+    // Close the client initialize() may have created — we need a fresh
+    // client that will negotiate a new transport session.
+    if (this.client) {
+      try { await this.client.close(); } catch {}
     }
 
     this.client = new Client(

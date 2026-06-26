@@ -141,13 +141,13 @@ async function createStorage(): Promise<SessionStore> {
 
     if (type === 'supabase') {
         const url = process.env.SUPABASE_URL;
-        const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+        const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY;
         
         if (!url || !key) {
-            console.warn('[mcp-ts][Storage] Explicit selection "supabase" requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+            console.warn('[mcp-ts][Storage] Explicit selection "supabase" requires SUPABASE_URL and SUPABASE_SECRET_KEY.');
         } else {
-            if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-                console.warn('[mcp-ts][Storage] ⚠️  Warning: Using "SUPABASE_ANON_KEY" for server-side storage. You may encounter RLS policy violations. "SUPABASE_SERVICE_ROLE_KEY" is recommended.');
+            if (!process.env.SUPABASE_SECRET_KEY) {
+                console.warn('[mcp-ts][Storage] ⚠️  Warning: Using "SUPABASE_ANON_KEY" for server-side storage. You may encounter RLS policy violations. "SUPABASE_SECRET_KEY" is recommended.');
             }
             try {
                 const { createClient } = await import('@supabase/supabase-js');
@@ -210,14 +210,14 @@ async function createStorage(): Promise<SessionStore> {
         return await initializeStorage(new SqliteStorage({ path: process.env.MCP_TS_STORAGE_SQLITE_PATH }));
     }
 
-    if (process.env.SUPABASE_URL && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)) {
+    if (process.env.SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY)) {
         try {
             const { createClient } = await import('@supabase/supabase-js');
             const url = process.env.SUPABASE_URL;
-            const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
+            const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY!;
             
-            if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-                console.warn('[mcp-ts][Storage] ⚠️ Warning: Using "SUPABASE_ANON_KEY" for server-side storage. You may encounter RLS policy violations. "SUPABASE_SERVICE_ROLE_KEY" is recommended.');
+            if (!process.env.SUPABASE_SECRET_KEY) {
+                console.warn('[mcp-ts][Storage] ⚠️ Warning: Using "SUPABASE_ANON_KEY" for server-side storage. You may encounter RLS policy violations. "SUPABASE_SECRET_KEY" is recommended.');
             }
 
             const client = createClient(url, key);
