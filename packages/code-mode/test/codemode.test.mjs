@@ -399,7 +399,8 @@ test("MCP envelopes are normalized to script-friendly values", { skip: !hasIsola
     return {
       structured: docs.structured_search({ query: "a" }),
       jsonText: callTool("docs", "json_text_search", { query: "b" }),
-      plainText: docs.plain_text_search({ query: "c" })
+      plainText: docs.plain_text_search({ query: "c" }),
+      multipart: callTool("docs", "multipart_search", { query: "d" })
     };
   `);
 
@@ -411,12 +412,57 @@ test("MCP envelopes are normalized to script-friendly values", { skip: !hasIsola
     items: [{ title: "JSON text result" }]
   });
   assert.equal(result.value.plainText, "plain text result");
+  assert.deepEqual(result.value.multipart, {
+    content: [
+      { type: "text", text: "first" },
+      { type: "text", text: "second" }
+    ],
+    isError: true
+  });
 });
 
 // -----------------------------------------------------------------------
-// Test 13: Downstream error propagates to result.error via callTool()
+// Test 13: Single text error envelope preserves isError flag
 // -----------------------------------------------------------------------
-test("downstream isError propagates to result.error via callTool()", { skip: !hasIsolatedVm }, async () => {
+test("error envelope: single text content preserves isError", { skip: !hasIsolatedVm }, async () => {
+  const { createCodeModeRuntime } = await import("../dist/index.js");
+  const { source } = fakeMcpEnvelopeSource();
+  const runtime = await createCodeModeRuntime({ servers: [source] });
+
+  const result = await runtime.run(`
+    return callTool("docs", "error_single_text", { query: "x" });
+  `);
+
+  assert.equal(result.error, undefined);
+  assert.ok(result.value !== null && typeof result.value === "object");
+  assert.equal(result.value.isError, true);
+  assert.equal(result.value.content, "resource not found");
+});
+
+// -----------------------------------------------------------------------
+// Test 14: JSON text error envelope preserves isError with parsed content
+// -----------------------------------------------------------------------
+test("error envelope: JSON text content is parsed and isError preserved", { skip: !hasIsolatedVm }, async () => {
+  const { createCodeModeRuntime } = await import("../dist/index.js");
+  const { source } = fakeMcpEnvelopeSource();
+  const runtime = await createCodeModeRuntime({ servers: [source] });
+
+  const result = await runtime.run(`
+    return callTool("docs", "error_json_text", { query: "x" });
+  `);
+
+  assert.equal(result.error, undefined);
+  assert.ok(result.value !== null && typeof result.value === "object");
+  assert.equal(result.value.isError, true);
+  assert.ok(result.value.content !== null && typeof result.value.content === "object");
+  assert.equal(result.value.content.code, 400);
+  assert.equal(result.value.content.error, "invalid input");
+});
+
+// -----------------------------------------------------------------------
+// Test 15: Error envelopes set toolCalls[].ok to false
+// -----------------------------------------------------------------------
+test("error envelope: toolCalls[].ok is false with error message", { skip: !hasIsolatedVm }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeMcpEnvelopeSource();
   const runtime = await createCodeModeRuntime({ servers: [source] });
@@ -426,85 +472,26 @@ test("downstream isError propagates to result.error via callTool()", { skip: !ha
     return "done";
   `);
 
-  assert.notEqual(result.error, undefined);
-  assert.equal(result.error.code, "SANDBOX_ERROR");
-  assert.equal(result.error.message, "resource not found");
-});
-
-// -----------------------------------------------------------------------
-// Test 14: Namespace bridge also propagates downstream error
-// -----------------------------------------------------------------------
-test("namespace bridge propagates isError to result.error", { skip: !hasIsolatedVm }, async () => {
-  const { createCodeModeRuntime } = await import("../dist/index.js");
-  const { source } = fakeMcpEnvelopeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source] });
-
-  const result = await runtime.run(`
-    docs.error_single_text({ query: "x" });
-    return "done";
-  `);
-
-  assert.notEqual(result.error, undefined);
-  assert.equal(result.error.code, "SANDBOX_ERROR");
-  assert.equal(result.error.message, "resource not found");
-});
-
-// -----------------------------------------------------------------------
-// Test 15: User script can catch downstream error with try/catch
-// -----------------------------------------------------------------------
-test("user script can catch downstream isError with try/catch", { skip: !hasIsolatedVm }, async () => {
-  const { createCodeModeRuntime } = await import("../dist/index.js");
-  const { source } = fakeMcpEnvelopeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source] });
-
-  const result = await runtime.run(`
-    let caught;
-    try {
-      callTool("docs", "error_single_text", { query: "x" });
-    } catch (e) {
-      caught = String(e);
-    }
-    return { caught };
-  `);
-
   assert.equal(result.error, undefined);
-  assert.equal(result.value.caught, "resource not found");
+  assert.equal(result.value, "done");
   assert.equal(result.toolCalls.length, 1);
   assert.equal(result.toolCalls[0].ok, false);
   assert.equal(result.toolCalls[0].error, "resource not found");
+  assert.equal(result.toolCalls[0].serverId, "docs");
+  assert.equal(result.toolCalls[0].toolName, "error_single_text");
 });
 
 // -----------------------------------------------------------------------
-// Test 16: callToolRaw still returns raw MCP envelope for errors
+// Test 16: Successful tool calls still show ok: true alongside error ones
 // -----------------------------------------------------------------------
-test("callToolRaw preserves raw MCP envelope on downstream error", { skip: !hasIsolatedVm }, async () => {
-  const { createCodeModeRuntime } = await import("../dist/index.js");
-  const { source } = fakeMcpEnvelopeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source] });
-
-  const result = await runtime.run(`
-    return callToolRaw("docs", "error_single_text", { query: "x" });
-  `);
-
-  assert.equal(result.error, undefined);
-  assert.ok(result.value !== null && typeof result.value === "object");
-  assert.equal(result.value.isError, true);
-  assert.equal(result.value.content[0].text, "resource not found");
-});
-
-// -----------------------------------------------------------------------
-// Test 17: Successful and failed calls are both tracked in toolCalls
-// -----------------------------------------------------------------------
-test("successful and failed calls are both tracked in toolCalls", { skip: !hasIsolatedVm }, async () => {
+test("error envelope: successful and failed calls are both tracked", { skip: !hasIsolatedVm }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeMcpEnvelopeSource();
   const runtime = await createCodeModeRuntime({ servers: [source] });
 
   const result = await runtime.run(`
     docs.plain_text_search({ query: "ok" });
-    try {
-      callTool("docs", "error_single_text", { query: "fail" });
-    } catch (e) {}
+    callTool("docs", "error_single_text", { query: "fail" });
     return "done";
   `);
 

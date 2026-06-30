@@ -178,12 +178,11 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
 
         const result = await server.callTool(toolName, JSON.parse(argsJson));
         if (isRecord(result) && result.isError === true) {
-          const errorMsg = extractToolErrorText(result) || "MCP tool returned an error";
           call.ok = false;
-          call.error = errorMsg;
-          return JSON.stringify({ success: false, error: errorMsg });
+          call.error = extractToolErrorText(result) || "MCP tool returned an error";
+        } else {
+          call.ok = true;
         }
-        call.ok = true;
         return JSON.stringify({ success: true, result });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
