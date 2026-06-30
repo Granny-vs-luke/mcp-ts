@@ -60,9 +60,9 @@ jobs:
           fi
 
           if printf '%s\n' "$CHANGED_FILES" | grep -Fxq 'packages/code-mode/package.json'; then
-            echo 'code_mode_changed=true' >> "$GITHUB_OUTPUT"
+            echo 'codemode_changed=true' >> "$GITHUB_OUTPUT"
           else
-            echo 'code_mode_changed=false' >> "$GITHUB_OUTPUT"
+            echo 'codemode_changed=false' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Resolve package metadata
@@ -73,8 +73,8 @@ jobs:
           SDK_VERSION=$(node -p "require('./package.json').version")
           TOOL_ROUTER_NAME=$(node -p "require('./packages/tool-router/package.json').name")
           TOOL_ROUTER_VERSION=$(node -p "require('./packages/tool-router/package.json').version")
-          CODE_MODE_NAME=$(node -p "require('./packages/code-mode/package.json').name")
-          CODE_MODE_VERSION=$(node -p "require('./packages/code-mode/package.json').version")
+          CODEMODE_NAME=$(node -p "require('./packages/code-mode/package.json').name")
+          CODEMODE_VERSION=$(node -p "require('./packages/code-mode/package.json').version")
 
           echo "sdk_name=$SDK_NAME" >> "$GITHUB_OUTPUT"
           echo "sdk_version=$SDK_VERSION" >> "$GITHUB_OUTPUT"
@@ -84,9 +84,9 @@ jobs:
           echo "tool_router_version=$TOOL_ROUTER_VERSION" >> "$GITHUB_OUTPUT"
           echo "tool_router_tag=tool-router-v$TOOL_ROUTER_VERSION" >> "$GITHUB_OUTPUT"
 
-          echo "code_mode_name=$CODE_MODE_NAME" >> "$GITHUB_OUTPUT"
-          echo "code_mode_version=$CODE_MODE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "code_mode_tag=code-mode-v$CODE_MODE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "codemode_name=$CODEMODE_NAME" >> "$GITHUB_OUTPUT"
+          echo "codemode_version=$CODEMODE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "codemode_tag=codemode-v$CODEMODE_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Decide publish targets
         id: publish
@@ -114,21 +114,21 @@ jobs:
           fi
           echo "tool_router_should_publish=$tool_router_should_publish" >> "$GITHUB_OUTPUT"
 
-          code_mode_should_publish=false
-          if [ '${{ steps.changed.outputs.code_mode_changed }}' = 'true' ]; then
-            if git rev-parse -q --verify "refs/tags/${{ steps.meta.outputs.code_mode_tag }}" >/dev/null; then
-              code_mode_should_publish=false
+          codemode_should_publish=false
+          if [ '${{ steps.changed.outputs.codemode_changed }}' = 'true' ]; then
+            if git rev-parse -q --verify "refs/tags/${{ steps.meta.outputs.codemode_tag }}" >/dev/null; then
+              codemode_should_publish=false
             else
-              code_mode_should_publish=true
+              codemode_should_publish=true
             fi
           fi
-          echo "code_mode_should_publish=$code_mode_should_publish" >> "$GITHUB_OUTPUT"
+          echo "codemode_should_publish=$codemode_should_publish" >> "$GITHUB_OUTPUT"
 
       - name: Install root dependencies
         if: |
           steps.publish.outputs.sdk_should_publish == 'true' ||
           steps.publish.outputs.tool_router_should_publish == 'true' ||
-          steps.publish.outputs.code_mode_should_publish == 'true'
+          steps.publish.outputs.codemode_should_publish == 'true'
         run: npm ci
 
       - name: Build root sdk package
@@ -184,28 +184,28 @@ jobs:
           body: "Release ${{ steps.meta.outputs.tool_router_name }} ${{ steps.meta.outputs.tool_router_tag }}"
 
       - name: Build code-mode package
-        if: steps.publish.outputs.code_mode_should_publish == 'true'
+        if: steps.publish.outputs.codemode_should_publish == 'true'
         working-directory: packages/code-mode
         run: npm run build
 
       - name: Publish code-mode package to npm
-        if: steps.publish.outputs.code_mode_should_publish == 'true'
+        if: steps.publish.outputs.codemode_should_publish == 'true'
         working-directory: packages/code-mode
         run: npm publish --ignore-scripts --provenance --access public
 
       - name: Create and push code-mode git tag
-        if: steps.publish.outputs.code_mode_should_publish == 'true'
+        if: steps.publish.outputs.codemode_should_publish == 'true'
         run: |
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git tag -a "${{ steps.meta.outputs.code_mode_tag }}" -m "Release ${{ steps.meta.outputs.code_mode_tag }}"
-          git push origin "refs/tags/${{ steps.meta.outputs.code_mode_tag }}"
+          git tag -a "${{ steps.meta.outputs.codemode_tag }}" -m "Release ${{ steps.meta.outputs.codemode_tag }}"
+          git push origin "refs/tags/${{ steps.meta.outputs.codemode_tag }}"
 
       - name: Create code-mode GitHub Release
-        if: steps.publish.outputs.code_mode_should_publish == 'true'
+        if: steps.publish.outputs.codemode_should_publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.meta.outputs.code_mode_tag }}
-          name: ${{ steps.meta.outputs.code_mode_tag }}
+          tag_name: ${{ steps.meta.outputs.codemode_tag }}
+          name: ${{ steps.meta.outputs.codemode_tag }}
           generate_release_notes: true
-          body: "Release ${{ steps.meta.outputs.code_mode_name }} ${{ steps.meta.outputs.code_mode_tag }}"
+          body: "Release ${{ steps.meta.outputs.codemode_name }} ${{ steps.meta.outputs.codemode_tag }}"
