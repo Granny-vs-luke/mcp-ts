@@ -87,24 +87,30 @@ export class SupabaseStorageBackend implements SessionStore {
         const updatedAt = new Date(session.updatedAt ?? session.createdAt ?? Date.now()).toISOString();
         const expiresAt = resolveSessionExpiresAt(status, new Date(createdAt).getTime());
 
+        const insertData: Record<string, unknown> = {
+            session_id: sessionId,
+            user_id: userId,
+            server_id: session.serverId,
+            server_name: session.serverName,
+            server_url: session.serverUrl,
+            transport_type: session.transportType,
+            callback_url: session.callbackUrl,
+            created_at: createdAt,
+            updated_at: updatedAt,
+            headers: encryptObject(session.headers),
+            auth_url: session.authUrl ?? null,
+            status,
+            expires_at: expiresAt === null ? null : new Date(expiresAt).toISOString(),
+        };
+
+        const toolPolicy = normalizeToolPolicy(session.toolPolicy);
+        if (toolPolicy) {
+            insertData.tool_policy = toolPolicy;
+        }
+
         const { error } = await this.supabase
             .from('mcp_sessions')
-            .insert({
-                session_id: sessionId,
-                user_id: userId,
-                server_id: session.serverId,
-                server_name: session.serverName,
-                server_url: session.serverUrl,
-                transport_type: session.transportType,
-                callback_url: session.callbackUrl,
-                created_at: createdAt,
-                updated_at: updatedAt,
-                headers: encryptObject(session.headers),
-                auth_url: session.authUrl ?? null,
-                status,
-                expires_at: expiresAt === null ? null : new Date(expiresAt).toISOString(),
-                tool_policy: normalizeToolPolicy(session.toolPolicy) ?? { mode: 'all', toolIds: [], updatedAt },
-            });
+            .insert(insertData);
 
         if (error) {
             if (error.code === '23505') {

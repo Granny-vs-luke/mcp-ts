@@ -65,7 +65,32 @@ interface Session {
   updatedAt?: number;
   expiresAt?: number | null;
   headers?: Record<string, string>;
+  toolPolicy?: ToolPolicy;
 }
+
+### Tool Policy Types
+
+```typescript
+import { createToolId, isToolAllowed, filterToolsByPolicy } from '@mcp-ts/sdk/server';
+
+interface ToolPolicy {
+  mode: 'all' | 'allowlist' | 'denylist';
+  toolIds: string[];
+  updatedAt: number;
+}
+```
+
+**Utility functions:**
+
+| Function | Description |
+|----------|-------------|
+| `createToolId(serverId, toolName)` | Creates composite `{serverId}::{toolName}` ID |
+| `normalizeToolPolicy(input, now?)` | Normalizes raw input into `ToolPolicy \| undefined` |
+| `normalizeToolPolicyForUpdate(input, now?)` | Like above but falls back to `{ mode: 'all', toolIds: [], updatedAt }` |
+| `isToolAllowed(policy, toolName, serverId?)` | Checks if a tool is permitted under the policy |
+| `assertToolAllowed(policy, toolName, serverId?)` | Throws if tool is not allowed |
+| `filterToolsByPolicy(tools, policy, serverId?)` | Filters tool array to only allowed tools |
+| `validateToolPolicyAgainstTools(policy, tools, serverId?)` | Validates all tool IDs correspond to actual tools |
 ```
 
 ## Error Handling

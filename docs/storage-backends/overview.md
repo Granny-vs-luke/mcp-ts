@@ -115,6 +115,7 @@ interface Session {
   updatedAt?: number;
   expiresAt?: number | null;
   headers?: Record<string, string>;
+  toolPolicy?: ToolPolicy;
 }
 ```
 
