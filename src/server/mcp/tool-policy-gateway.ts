@@ -29,6 +29,10 @@ export class ToolPolicyGateway implements ToolClient {
         return this.client.getServerName?.();
     }
 
+    getServerUrl(): string | undefined {
+        return this.client.getServerUrl?.();
+    }
+
     getSessionId(): string {
         return this.client.getSessionId?.() ?? this.sessionId;
     }

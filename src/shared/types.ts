@@ -21,6 +21,7 @@ export interface ToolClient {
   callTool(name: string, args: Record<string, unknown>): Promise<any>;
   getServerId?(): string | undefined;
   getServerName?(): string | undefined;
+  getServerUrl?(): string | undefined;
   getSessionId?(): string;
 }
 
