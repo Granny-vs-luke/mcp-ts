@@ -1,5 +1,6 @@
 import { MCPClient } from '../server/mcp/oauth-client';
 import { MultiSessionClient } from '../server/mcp/multi-session-client';
+import type { ToolClient } from '../shared/types.js';
 import type { z } from 'zod';
 
 export interface MastraAdapterOptions {
@@ -51,7 +52,7 @@ export class MastraAdapter {
 
 
 
-    private async transformTools(client: MCPClient): Promise<Record<string, MastraTool>> {
+    private async transformTools(client: ToolClient): Promise<Record<string, MastraTool>> {
         if (!client.isConnected()) {
             return {};
         }
@@ -59,7 +60,7 @@ export class MastraAdapter {
         await this.ensureZod();
 
         const result = await client.listTools();
-        const prefix = this.options.prefix ?? client.getServerId()?.replace(/-/g, '').substring(0, 8) ?? 'mcp';
+        const prefix = this.options.prefix ?? client.getServerId?.()?.replace(/-/g, '').substring(0, 8) ?? 'mcp';
         const tools: Record<string, MastraTool> = {};
 
         for (const tool of result.tools) {
@@ -113,7 +114,7 @@ export class MastraAdapter {
                 try {
                     return await this.transformTools(client);
                 } catch (error) {
-                    console.error(`[MastraAdapter] Failed to fetch tools from ${client.getServerId()}:`, error);
+                    console.error(`[MastraAdapter] Failed to fetch tools from ${client.getServerId?.() ?? "unknown"}:`, error);
                     return {};
                 }
             })
@@ -128,3 +129,4 @@ export class MastraAdapter {
         return new MastraAdapter(client, options).getTools();
     }
 }
+

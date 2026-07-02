@@ -3,6 +3,7 @@ import { MultiSessionClient } from '../server/mcp/multi-session-client';
 import type { DynamicStructuredTool, StructuredTool } from '@langchain/core/tools';
 import type { z } from 'zod';
 import { ToolRouter } from '../shared/tool-router.js';
+import type { ToolClient } from '../shared/types.js';
 import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
 
 export interface LangChainAdapterOptions {
@@ -58,7 +59,7 @@ export class LangChainAdapter {
         }
     }
 
-    private async transformTools(client: MCPClient): Promise<StructuredTool[]> {
+    private async transformTools(client: ToolClient): Promise<StructuredTool[]> {
         if (!client.isConnected()) {
             return [];
         }
@@ -66,7 +67,7 @@ export class LangChainAdapter {
         await this.ensureDependencies();
 
         const result = await client.listTools();
-        const prefix = this.options.prefix ?? client.getServerId()?.replace(/-/g, '').substring(0, 8) ?? 'mcp';
+        const prefix = this.options.prefix ?? client.getServerId?.()?.replace(/-/g, '').substring(0, 8) ?? 'mcp';
 
         return result.tools.map((tool) => {
             // In a real implementation, you would use a library like 'json-schema-to-zod'
@@ -127,7 +128,7 @@ export class LangChainAdapter {
                 try {
                     return await this.transformTools(client);
                 } catch (error) {
-                    console.error(`[LangChainAdapter] Failed to fetch tools from ${client.getServerId()}:`, error);
+                    console.error(`[LangChainAdapter] Failed to fetch tools from ${client.getServerId?.() ?? "unknown"}:`, error);
                     return [];
                 }
             })
@@ -203,3 +204,4 @@ export class LangChainAdapter {
         return new LangChainAdapter(client, options).getTools();
     }
 }
+

@@ -782,24 +782,32 @@ export class MCPClient {
   }
 
   /**
+   * Lists all available tools from the connected MCP server without emitting discovery events.
+   * Gateways use this to apply policy before publishing tools to agents or UI state.
+   */
+  async fetchTools(): Promise<ListToolsResult> {
+    const request: ListToolsRequest = {
+      method: 'tools/list',
+      params: {},
+    };
+
+    return await this.withRetry(() =>
+      this.client!.request(request, ListToolsResultSchema)
+    );
+  }
+
+  /**
    * Lists all available tools from the connected MCP server
    * @returns List of tools with their schemas and descriptions
    * @throws {Error} When client is not connected
    */
-  async listTools(options: { emitDiscoveryEvent?: boolean } = {}): Promise<ListToolsResult> {
+  async listTools(): Promise<ListToolsResult> {
     this.emitStateChange('DISCOVERING');
 
     try {
-      const request: ListToolsRequest = {
-        method: 'tools/list',
-        params: {},
-      };
+      const result = await this.fetchTools();
 
-      const result = await this.withRetry(() =>
-        this.client!.request(request, ListToolsResultSchema)
-      );
-
-      if (options.emitDiscoveryEvent !== false && this.serverId) {
+      if (this.serverId) {
         this._onConnectionEvent.fire({
           type: 'tools_discovered',
           sessionId: this.sessionId,
@@ -821,7 +829,6 @@ export class MCPClient {
       throw error;
     }
   }
-
   /**
    * Executes a tool on the connected MCP server
    * @param toolName - Name of the tool to execute

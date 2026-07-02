@@ -32,10 +32,10 @@ import type {
   ListPromptsResult,
   ListResourcesResult,
   CallToolResult,
-  UpdateSessionToolPolicyParams,
-  UpdateSessionToolPolicyResult,
-  GetSessionToolAccessParams,
-  GetSessionToolAccessResult,
+  SetToolPolicyParams,
+  SetToolPolicyResult,
+  GetToolPolicyParams,
+  GetToolPolicyResult,
 } from '../../shared/types.js';
 import { RpcErrorCodes } from '../../shared/errors.js';
 import { UnauthorizedError } from '../../shared/errors.js';
@@ -155,7 +155,7 @@ export class SSEConnectionManager {
    */
   async handleRequest(request: McpRpcRequest): Promise<McpRpcResponse> {
     try {
-      let result: SessionListResult | ConnectResult | DisconnectResult | GetSessionResult | FinishAuthResult | ListToolsRpcResult | UpdateSessionToolPolicyResult | GetSessionToolAccessResult | ListPromptsResult | ListResourcesResult | unknown;
+      let result: SessionListResult | ConnectResult | DisconnectResult | GetSessionResult | FinishAuthResult | ListToolsRpcResult | SetToolPolicyResult | GetToolPolicyResult | ListPromptsResult | ListResourcesResult | unknown;
 
       switch (request.method) {
         case 'listSessions':
@@ -174,12 +174,12 @@ export class SSEConnectionManager {
           result = await this.listTools(request.params as SessionParams);
           break;
 
-        case 'updateSessionToolPolicy':
-          result = await this.updateSessionToolPolicy(request.params as UpdateSessionToolPolicyParams);
+        case 'setToolPolicy':
+          result = await this.setToolPolicy(request.params as SetToolPolicyParams);
           break;
 
-        case 'getSessionToolAccess':
-          result = await this.getSessionToolAccess(request.params as GetSessionToolAccessParams);
+        case 'getToolPolicy':
+          result = await this.getToolPolicy(request.params as GetToolPolicyParams);
           break;
 
         case 'callTool':
@@ -455,7 +455,7 @@ export class SSEConnectionManager {
   /**
    * Get all raw tools with effective access state for management UI.
    */
-  private async getSessionToolAccess(params: GetSessionToolAccessParams): Promise<GetSessionToolAccessResult> {
+  private async getToolPolicy(params: GetToolPolicyParams): Promise<GetToolPolicyResult> {
     const { sessionId } = params;
     const session = await sessions.get(this.userId, sessionId);
     if (!session) {
@@ -463,7 +463,7 @@ export class SSEConnectionManager {
     }
 
     const client = await this.getOrCreateClient(sessionId);
-    const allTools = await client.listTools({ emitDiscoveryEvent: false });
+    const allTools = await client.fetchTools();
     const toolPolicy = session.toolPolicy ?? {
       mode: 'all' as const,
       toolIds: [],
@@ -487,7 +487,7 @@ export class SSEConnectionManager {
   /**
    * Update per-session tool access policy.
    */
-  private async updateSessionToolPolicy(params: UpdateSessionToolPolicyParams): Promise<UpdateSessionToolPolicyResult> {
+  private async setToolPolicy(params: SetToolPolicyParams): Promise<SetToolPolicyResult> {
     const { sessionId } = params;
     const session = await sessions.get(this.userId, sessionId);
     if (!session) {
@@ -495,7 +495,7 @@ export class SSEConnectionManager {
     }
 
     const client = await this.getOrCreateClient(sessionId);
-    const allTools = await client.listTools({ emitDiscoveryEvent: false });
+    const allTools = await client.fetchTools();
     const toolPolicy = normalizeToolPolicyForUpdate(params.toolPolicy);
     validateToolPolicyAgainstTools(toolPolicy, allTools.tools, session.serverId);
 
@@ -788,6 +788,7 @@ function writeSSEEvent(res: { write: Function }, event: string, data: unknown): 
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
+
 
 
 

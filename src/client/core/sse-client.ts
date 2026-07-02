@@ -25,8 +25,8 @@ import type {
   ListToolsRpcResult,
   ListPromptsResult,
   ListResourcesResult,
-  UpdateSessionToolPolicyResult,
-  GetSessionToolAccessResult,
+  SetToolPolicyResult,
+  GetToolPolicyResult,
   ToolPolicy,
 } from '../../shared/types.js';
 
@@ -102,15 +102,15 @@ export class SSEClient {
     return this.sendRequest<DisconnectResult>('disconnect', { sessionId });
   }
 
-  async updateSessionToolPolicy(
+  async setToolPolicy(
     sessionId: string,
     toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[] }
-  ): Promise<UpdateSessionToolPolicyResult> {
-    return this.sendRequest<UpdateSessionToolPolicyResult>('updateSessionToolPolicy', { sessionId, toolPolicy });
+  ): Promise<SetToolPolicyResult> {
+    return this.sendRequest<SetToolPolicyResult>('setToolPolicy', { sessionId, toolPolicy });
   }
 
-  async getSessionToolAccess(sessionId: string): Promise<GetSessionToolAccessResult> {
-    return this.sendRequest<GetSessionToolAccessResult>('getSessionToolAccess', { sessionId });
+  async getToolPolicy(sessionId: string): Promise<GetToolPolicyResult> {
+    return this.sendRequest<GetToolPolicyResult>('getToolPolicy', { sessionId });
   }
 
   async listTools(sessionId: string): Promise<ListToolsRpcResult> {

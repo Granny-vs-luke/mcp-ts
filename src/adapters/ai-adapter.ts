@@ -3,6 +3,7 @@ import { MultiSessionClient } from '../server/mcp/multi-session-client';
 import type { JSONSchema7 } from 'json-schema';
 import type { ToolSet } from 'ai';
 import { ToolRouter } from '../shared/tool-router.js';
+import type { ToolClient } from '../shared/types.js';
 import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
 
 export interface AIAdapterOptions {
@@ -54,7 +55,7 @@ export class AIAdapter {
         }
     }
 
-    private async transformTools(client: MCPClient): Promise<ToolSet> {
+    private async transformTools(client: ToolClient): Promise<ToolSet> {
         // Safe check for isConnected method (duck typing for bundler compatibility)
         const isConnected = typeof client.isConnected === 'function'
             ? client.isConnected()
@@ -217,3 +218,4 @@ export class AIAdapter {
         return new AIAdapter(client, options).getTools();
     }
 }
+

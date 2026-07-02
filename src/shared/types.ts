@@ -190,8 +190,8 @@ export type McpRpcMethod =
   | 'getPrompt'
   | 'listResources'
   | 'readResource'
-  | 'updateSessionToolPolicy'
-  | 'getSessionToolAccess';
+  | 'setToolPolicy'
+  | 'getToolPolicy';
 
 export interface McpRpcRequest {
   id: string;
@@ -248,7 +248,7 @@ export interface FinishAuthParams {
   code: string;
 }
 
-export interface UpdateSessionToolPolicyParams {
+export interface SetToolPolicyParams {
   sessionId: string;
   toolPolicy: {
     mode: ToolPolicyMode;
@@ -256,7 +256,7 @@ export interface UpdateSessionToolPolicyParams {
   };
 }
 
-export interface GetSessionToolAccessParams {
+export interface GetToolPolicyParams {
   sessionId: string;
 }
 
@@ -268,8 +268,8 @@ export type McpRpcParams =
   | GetPromptParams
   | ReadResourceParams
   | FinishAuthParams
-  | UpdateSessionToolPolicyParams
-  | GetSessionToolAccessParams
+  | SetToolPolicyParams
+  | GetToolPolicyParams
   | undefined;
 
 // RPC Result Types
@@ -316,7 +316,7 @@ export interface ListToolsRpcResult {
   tools: Tool[];
 }
 
-export interface UpdateSessionToolPolicyResult {
+export interface SetToolPolicyResult {
   success: boolean;
   toolPolicy: ToolPolicy;
   tools: Tool[];
@@ -328,7 +328,7 @@ export type ToolAccessInfo = Tool & {
   allowed: boolean;
 };
 
-export interface GetSessionToolAccessResult {
+export interface GetToolPolicyResult {
   toolPolicy: ToolPolicy;
   tools: ToolAccessInfo[];
   toolCount: number;

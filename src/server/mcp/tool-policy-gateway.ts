@@ -5,7 +5,8 @@ import type { Session } from '../storage/types.js';
 import { assertToolAllowed, filterToolsByPolicy } from '../storage/tool-policy.js';
 
 type RawToolClient = ToolClient & {
-    listTools(options?: { emitDiscoveryEvent?: boolean }): Promise<{ tools: Tool[] }>;
+    fetchTools(): Promise<{ tools: Tool[] }>;
+    listTools(): Promise<{ tools: Tool[] }>;
     callTool(name: string, args: Record<string, unknown>): Promise<CallToolResult>;
 };
 
@@ -34,7 +35,7 @@ export class ToolPolicyGateway implements ToolClient {
 
     async listTools(): Promise<ListToolsResult> {
         const session = await this.getSession();
-        const result = await this.client.listTools({ emitDiscoveryEvent: false });
+        const result = await this.client.fetchTools();
         const tools = this.filterTools(session, result.tools);
 
         return {
@@ -44,7 +45,7 @@ export class ToolPolicyGateway implements ToolClient {
     }
 
     async listAllTools(): Promise<ListToolsResult> {
-        return await this.client.listTools({ emitDiscoveryEvent: false }) as ListToolsResult;
+        return await this.client.fetchTools() as ListToolsResult;
     }
 
     async callTool(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
@@ -81,4 +82,5 @@ export function createToolPolicyGateway(
 ): ToolPolicyGateway {
     return new ToolPolicyGateway(userId, sessionId, client);
 }
+
 

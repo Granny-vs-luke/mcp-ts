@@ -25,6 +25,12 @@ function rawClient(overrides: Record<string, unknown> = {}) {
     getSessionId: () => 'policy-session',
     getServerId: () => 'github',
     getServerName: () => 'GitHub',
+    fetchTools: async () => ({
+      tools: [
+        { name: 'get_issue', description: 'Read issue' },
+        { name: 'create_issue', description: 'Write issue' },
+      ],
+    }),
     listTools: async () => ({
       tools: [
         { name: 'get_issue', description: 'Read issue' },
@@ -103,7 +109,7 @@ test.describe('MCP session tool policy', () => {
     expect(downstreamCalls).toBe(0);
   });
 
-  test('SSE listSessions includes toolPolicy and updateSessionToolPolicy persists changes', async () => {
+  test('SSE listSessions includes toolPolicy and setToolPolicy persists changes', async () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
     await storage.create(activeSession() as any);
@@ -113,7 +119,7 @@ test.describe('MCP session tool policy', () => {
 
     const update = await manager.handleRequest({
       id: 'update-policy',
-      method: 'updateSessionToolPolicy',
+      method: 'setToolPolicy',
       params: {
         sessionId: 'policy-session',
         toolPolicy: {
@@ -143,7 +149,7 @@ test.describe('MCP session tool policy', () => {
 
     const access = await manager.handleRequest({
       id: 'tool-access',
-      method: 'getSessionToolAccess',
+      method: 'getToolPolicy',
       params: { sessionId: 'policy-session' },
     } as any);
 
@@ -197,4 +203,5 @@ test.describe('MCP session tool policy', () => {
     await manager.dispose();
   });
 });
+
 

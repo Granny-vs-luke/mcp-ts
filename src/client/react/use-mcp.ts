@@ -19,8 +19,8 @@ import type {
   ListResourcesResult,
   SessionInfo,
   ToolPolicy,
-  UpdateSessionToolPolicyResult,
-  GetSessionToolAccessResult,
+  SetToolPolicyResult,
+  GetToolPolicyResult,
 } from '../../shared/types';
 
 export interface UseMcpOptions {
@@ -203,12 +203,12 @@ export interface McpClient {
   updateToolPolicy: (
     sessionId: string,
     toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[] }
-  ) => Promise<UpdateSessionToolPolicyResult>;
+  ) => Promise<SetToolPolicyResult>;
 
   /**
    * Get all tools and effective policy state for access management
    */
-  getToolAccess: (sessionId: string) => Promise<GetSessionToolAccessResult>;
+  getToolAccess: (sessionId: string) => Promise<GetToolPolicyResult>;
 
   /**
    * List available prompts for a session
@@ -631,12 +631,12 @@ export function useMcp(options: UseMcpOptions): McpClient {
   const updateToolPolicy = useCallback(async (
     sessionId: string,
     toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[] }
-  ): Promise<UpdateSessionToolPolicyResult> => {
+  ): Promise<SetToolPolicyResult> => {
     if (!clientRef.current) {
       throw new Error('SSE client not initialized');
     }
 
-    const result = await clientRef.current.updateSessionToolPolicy(sessionId, toolPolicy);
+    const result = await clientRef.current.setToolPolicy(sessionId, toolPolicy);
     if (isMountedRef.current) {
       setConnections((prev: McpConnection[]) => prev.map((connection) =>
         connection.sessionId === sessionId
@@ -654,12 +654,12 @@ export function useMcp(options: UseMcpOptions): McpClient {
   /**
    * Get all tools with effective access state for a session
    */
-  const getToolAccess = useCallback(async (sessionId: string): Promise<GetSessionToolAccessResult> => {
+  const getToolAccess = useCallback(async (sessionId: string): Promise<GetToolPolicyResult> => {
     if (!clientRef.current) {
       throw new Error('SSE client not initialized');
     }
 
-    return await clientRef.current.getSessionToolAccess(sessionId);
+    return await clientRef.current.getToolPolicy(sessionId);
   }, []);
   /**
    * List prompts
