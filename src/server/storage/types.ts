@@ -14,6 +14,14 @@ export interface OAuthState {
 
 export type SessionStatus = 'pending' | 'active';
 
+export type ToolPolicyMode = 'all' | 'allowlist' | 'denylist';
+
+export interface ToolPolicy {
+    mode: ToolPolicyMode;
+    toolIds: string[];
+    updatedAt: number;
+}
+
 export interface Session {
     sessionId: string;
     serverId?: string; // Database server ID for mapping
@@ -37,6 +45,7 @@ export interface Session {
      * - active: restorable session after successful connection/auth completion
      */
     status?: SessionStatus;
+    toolPolicy?: ToolPolicy;
 }
 
 export interface SessionCredentials {
@@ -158,3 +167,5 @@ export interface SessionStore {
      */
     disconnect(): Promise<void>;
 }
+
+

@@ -18,6 +18,9 @@ import type {
   ListPromptsResult,
   ListResourcesResult,
   SessionInfo,
+  ToolPolicy,
+  UpdateSessionToolPolicyResult,
+  GetSessionToolAccessResult,
 } from '../../shared/types';
 
 export interface UseMcpOptions {
@@ -89,6 +92,7 @@ export interface McpConnection {
   error?: string;
   createdAt?: Date;
   updatedAt?: Date;
+  toolPolicy?: ToolPolicy;
 }
 
 export interface McpClient {
@@ -192,6 +196,19 @@ export interface McpClient {
    * List available tools for a session
    */
   listTools: (sessionId: string) => Promise<ListToolsRpcResult>;
+
+  /**
+   * Update per-session tool access policy
+   */
+  updateToolPolicy: (
+    sessionId: string,
+    toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[] }
+  ) => Promise<UpdateSessionToolPolicyResult>;
+
+  /**
+   * Get all tools and effective policy state for access management
+   */
+  getToolAccess: (sessionId: string) => Promise<GetSessionToolAccessResult>;
 
   /**
    * List available prompts for a session
@@ -428,6 +445,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
             state: getInitialConnectionState(s.status),
             createdAt: new Date(s.createdAt),
             updatedAt: new Date(s.updatedAt ?? s.createdAt),
+            toolPolicy: s.toolPolicy,
             tools: [],
           }))
         );
@@ -608,6 +626,42 @@ export function useMcp(options: UseMcpOptions): McpClient {
   }, []);
 
   /**
+   * Update tool access policy for a session
+   */
+  const updateToolPolicy = useCallback(async (
+    sessionId: string,
+    toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[] }
+  ): Promise<UpdateSessionToolPolicyResult> => {
+    if (!clientRef.current) {
+      throw new Error('SSE client not initialized');
+    }
+
+    const result = await clientRef.current.updateSessionToolPolicy(sessionId, toolPolicy);
+    if (isMountedRef.current) {
+      setConnections((prev: McpConnection[]) => prev.map((connection) =>
+        connection.sessionId === sessionId
+          ? {
+              ...connection,
+              toolPolicy: result.toolPolicy,
+              tools: result.tools,
+              updatedAt: new Date(),
+            }
+          : connection
+      ));
+    }
+    return result;
+  }, []);
+  /**
+   * Get all tools with effective access state for a session
+   */
+  const getToolAccess = useCallback(async (sessionId: string): Promise<GetSessionToolAccessResult> => {
+    if (!clientRef.current) {
+      throw new Error('SSE client not initialized');
+    }
+
+    return await clientRef.current.getSessionToolAccess(sessionId);
+  }, []);
+  /**
    * List prompts
    */
   const listPrompts = useCallback(async (sessionId: string): Promise<ListPromptsResult> => {
@@ -700,6 +754,8 @@ export function useMcp(options: UseMcpOptions): McpClient {
       resumeAuth,
       callTool,
       listTools,
+      updateToolPolicy,
+      getToolAccess,
       listPrompts,
       getPrompt,
       listResources,
@@ -724,6 +780,8 @@ export function useMcp(options: UseMcpOptions): McpClient {
       resumeAuth,
       callTool,
       listTools,
+      updateToolPolicy,
+      getToolAccess,
       listPrompts,
       getPrompt,
       listResources,
@@ -732,3 +790,8 @@ export function useMcp(options: UseMcpOptions): McpClient {
     ]
   );
 }
+
+
+
+
+

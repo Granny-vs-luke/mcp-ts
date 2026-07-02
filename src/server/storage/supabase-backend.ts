@@ -3,6 +3,7 @@ import type { SessionStore, Session, SessionCredentials } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
 import { resolveSessionExpiresAt } from './session-lifecycle.js';
+import { normalizeToolPolicy } from './tool-policy.js';
 import { DORMANT_SESSION_EXPIRATION_MS } from '../../shared/constants.js';
 
 export class SupabaseStorageBackend implements SessionStore {
@@ -51,6 +52,7 @@ export class SupabaseStorageBackend implements SessionStore {
             headers: decryptObject(row.headers),
             authUrl: row.auth_url,
             status: row.status ?? 'pending',
+            toolPolicy: normalizeToolPolicy(row.tool_policy),
         };
     }
 
@@ -101,6 +103,7 @@ export class SupabaseStorageBackend implements SessionStore {
                 auth_url: session.authUrl ?? null,
                 status,
                 expires_at: expiresAt === null ? null : new Date(expiresAt).toISOString(),
+                tool_policy: normalizeToolPolicy(session.toolPolicy) ?? { mode: 'all', toolIds: [], updatedAt },
             });
 
         if (error) {
@@ -130,6 +133,7 @@ export class SupabaseStorageBackend implements SessionStore {
         }
         if ('headers' in data) updateData.headers = encryptObject(data.headers);
         if ('authUrl' in data) updateData.auth_url = data.authUrl ?? null;
+        if ('toolPolicy' in data) updateData.tool_policy = normalizeToolPolicy(data.toolPolicy);
 
         const shouldUpdateSession = Object.keys(updateData).some((key) => key !== 'updated_at');
 
@@ -351,3 +355,5 @@ export class SupabaseStorageBackend implements SessionStore {
         // Supabase client handles its own connection pooling over HTTP.
     }
 }
+
+

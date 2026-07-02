@@ -786,7 +786,7 @@ export class MCPClient {
    * @returns List of tools with their schemas and descriptions
    * @throws {Error} When client is not connected
    */
-  async listTools(): Promise<ListToolsResult> {
+  async listTools(options: { emitDiscoveryEvent?: boolean } = {}): Promise<ListToolsResult> {
     this.emitStateChange('DISCOVERING');
 
     try {
@@ -799,7 +799,7 @@ export class MCPClient {
         this.client!.request(request, ListToolsResultSchema)
       );
 
-      if (this.serverId) {
+      if (options.emitDiscoveryEvent !== false && this.serverId) {
         this._onConnectionEvent.fire({
           type: 'tools_discovered',
           sessionId: this.sessionId,
@@ -830,7 +830,6 @@ export class MCPClient {
    * @throws {Error} When client is not connected
    */
   async callTool(toolName: string, toolArgs: Record<string, unknown>): Promise<CallToolResult> {
-
     const request: CallToolRequest = {
       method: 'tools/call',
       params: {
@@ -1173,3 +1172,12 @@ export class MCPClient {
   }
 
 }
+
+
+
+
+
+
+
+
+

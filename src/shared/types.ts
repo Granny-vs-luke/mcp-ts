@@ -169,6 +169,13 @@ export type ToolInfo = {
 // Transport type
 export type TransportType = 'sse' | 'streamable-http';
 export type SessionStatus = 'pending' | 'active';
+export type ToolPolicyMode = 'all' | 'allowlist' | 'denylist';
+
+export interface ToolPolicy {
+  mode: ToolPolicyMode;
+  toolIds: string[];
+  updatedAt: number;
+}
 
 // SSE/RPC types
 export type McpRpcMethod =
@@ -182,7 +189,9 @@ export type McpRpcMethod =
   | 'listPrompts'
   | 'getPrompt'
   | 'listResources'
-  | 'readResource';
+  | 'readResource'
+  | 'updateSessionToolPolicy'
+  | 'getSessionToolAccess';
 
 export interface McpRpcRequest {
   id: string;
@@ -239,6 +248,18 @@ export interface FinishAuthParams {
   code: string;
 }
 
+export interface UpdateSessionToolPolicyParams {
+  sessionId: string;
+  toolPolicy: {
+    mode: ToolPolicyMode;
+    toolIds?: string[];
+  };
+}
+
+export interface GetSessionToolAccessParams {
+  sessionId: string;
+}
+
 export type McpRpcParams =
   | ConnectParams
   | DisconnectParams
@@ -247,6 +268,8 @@ export type McpRpcParams =
   | GetPromptParams
   | ReadResourceParams
   | FinishAuthParams
+  | UpdateSessionToolPolicyParams
+  | GetSessionToolAccessParams
   | undefined;
 
 // RPC Result Types
@@ -263,6 +286,7 @@ export interface SessionInfo {
    * `pending` means auth is in progress and should be resumed explicitly by user action.
    */
   status: SessionStatus;
+  toolPolicy?: ToolPolicy;
 }
 
 export interface SessionListResult {
@@ -292,6 +316,25 @@ export interface ListToolsRpcResult {
   tools: Tool[];
 }
 
+export interface UpdateSessionToolPolicyResult {
+  success: boolean;
+  toolPolicy: ToolPolicy;
+  tools: Tool[];
+  toolCount: number;
+}
+
+export type ToolAccessInfo = Tool & {
+  toolId: string;
+  allowed: boolean;
+};
+
+export interface GetSessionToolAccessResult {
+  toolPolicy: ToolPolicy;
+  tools: ToolAccessInfo[];
+  toolCount: number;
+  allowedToolCount: number;
+}
+
 export interface ListPromptsResult {
   prompts: Array<{
     name: string;
@@ -314,3 +357,6 @@ export interface ListResourcesResult {
 }
 
 export type { CallToolResult };
+
+
+

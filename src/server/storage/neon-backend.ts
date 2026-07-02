@@ -4,6 +4,7 @@ import { DORMANT_SESSION_EXPIRATION_MS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
 import { resolveSessionExpiresAt } from './session-lifecycle.js';
+import { normalizeToolPolicy } from './tool-policy.js';
 
 export interface NeonStorageOptions {
     schema?: string;
@@ -30,6 +31,7 @@ type NeonSessionRow = {
     headers?: unknown;
     auth_url?: string | null;
     status?: SessionStatus | null;
+    tool_policy?: unknown;
 };
 
 type NeonCredentialsRow = {
@@ -103,6 +105,7 @@ export class NeonStorageBackend implements SessionStore {
             headers: decryptObject(row.headers),
             authUrl: row.auth_url ?? undefined,
             status: row.status ?? 'pending',
+            toolPolicy: normalizeToolPolicy(row.tool_policy as Parameters<typeof normalizeToolPolicy>[0]),
         };
     }
 
@@ -135,7 +138,9 @@ export class NeonStorageBackend implements SessionStore {
         const status = session.status ?? 'pending';
         const createdAt = new Date(session.createdAt || Date.now()).toISOString();
         const updatedAt = new Date(session.updatedAt ?? session.createdAt ?? Date.now()).toISOString();
-        const expiresAt = resolveSessionExpiresAt(status, new Date(createdAt).getTime());
+        const createdAtMs = new Date(createdAt).getTime();
+        const expiresAt = resolveSessionExpiresAt(status, createdAtMs);
+        const toolPolicy = normalizeToolPolicy(session.toolPolicy, createdAtMs) ?? { mode: 'all' as const, toolIds: [], updatedAt: createdAtMs };
 
         try {
             await this.sql.query(
@@ -152,10 +157,11 @@ export class NeonStorageBackend implements SessionStore {
                     headers,
                     auth_url,
                     status,
-                    expires_at
+                    expires_at,
+                    tool_policy
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8,
-                    $9, $10, $11, $12, $13
+                    $9, $10, $11, $12, $13, $14
                 )`,
                 [
                     sessionId,
@@ -171,6 +177,7 @@ export class NeonStorageBackend implements SessionStore {
                     session.authUrl ?? null,
                     status,
                     expiresAt === null ? null : new Date(expiresAt).toISOString(),
+                    toolPolicy,
                 ]
             );
         } catch (error: any) {
@@ -191,6 +198,8 @@ export class NeonStorageBackend implements SessionStore {
         const updatedSession = { ...currentSession, ...data };
         const status = updatedSession.status ?? 'pending';
         const expiresAt = resolveSessionExpiresAt(status);
+        const policyUpdatedAt = updatedSession.updatedAt ?? Date.now();
+        const toolPolicy = normalizeToolPolicy(updatedSession.toolPolicy, policyUpdatedAt) ?? { mode: 'all' as const, toolIds: [], updatedAt: policyUpdatedAt };
 
         const shouldUpdateSession = (
             'serverId' in data ||
@@ -200,7 +209,8 @@ export class NeonStorageBackend implements SessionStore {
             'callbackUrl' in data ||
             'status' in data ||
             'headers' in data ||
-            'authUrl' in data
+            'authUrl' in data ||
+            'toolPolicy' in data
         );
 
         if (shouldUpdateSession) {
@@ -216,8 +226,9 @@ export class NeonStorageBackend implements SessionStore {
                     headers = $7,
                     auth_url = $8,
                     expires_at = $9,
+                    tool_policy = $10,
                     updated_at = now()
-                 WHERE user_id = $10 AND session_id = $11
+                 WHERE user_id = $11 AND session_id = $12
                  RETURNING id`,
                 [
                     updatedSession.serverId,
@@ -229,6 +240,7 @@ export class NeonStorageBackend implements SessionStore {
                     encryptObject(updatedSession.headers),
                     updatedSession.authUrl ?? null,
                     expiresAt === null ? null : new Date(expiresAt).toISOString(),
+                    toolPolicy,
                     userId,
                     sessionId,
                 ]
@@ -412,3 +424,7 @@ export class NeonStorageBackend implements SessionStore {
         // Neon HTTP queries do not hold a persistent connection.
     }
 }
+
+
+
+
