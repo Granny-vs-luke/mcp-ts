@@ -135,7 +135,6 @@ export function createOAuthPopupRedirectHandler(
     openCenteredPopup(url, {
       ...options,
       onBlocked: options.onBlocked ?? ((blockedUrl) => {
-        window.alert('Popup blocked! Allow popups for this site to complete authentication.');
         window.location.href = blockedUrl;
       }),
     });
@@ -179,30 +178,26 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
             : '';
       const targetSessionId = rawState ? parseOAuthState(rawState)?.sessionId || rawState : '';
 
-      if (popupWindow && targetSessionId) {
+      if (targetSessionId) {
         pendingPopupsRef.current.set(targetSessionId, { popupWindow, state: rawState });
       }
 
       if (!targetSessionId) {
-        if (popupWindow) {
-          postPopupResult(popupWindow, {
-            success: false,
-            error: 'Missing OAuth session identifier',
-          });
-        }
+        postPopupResult(popupWindow, {
+          success: false,
+          error: 'Missing OAuth session identifier',
+        });
         return;
       }
 
       const targetSession = connections.find((connection) => connection.sessionId === targetSessionId);
       if (!targetSession) {
-        if (popupWindow) {
-          postPopupResult(popupWindow, {
-            sessionId: targetSessionId,
-            state: rawState,
-            success: false,
-            error: 'OAuth session not found in the current client state',
-          });
-        }
+        postPopupResult(popupWindow, {
+          sessionId: targetSessionId,
+          state: rawState,
+          success: false,
+          error: 'OAuth session not found in the current client state',
+        });
         return;
       }
 
@@ -217,14 +212,12 @@ export function useMcpOAuthPopup<TConnection extends OAuthPopupConnectionLike>(
       } catch (error) {
         processingCodesRef.current.delete(codeKey);
         pendingPopupsRef.current.delete(targetSession.sessionId);
-        if (popupWindow) {
-          postPopupResult(popupWindow, {
-            sessionId: rawState,
-            state: rawState,
-            success: false,
-            error: error instanceof Error ? error.message : 'Failed to finish auth',
-          });
-        }
+        postPopupResult(popupWindow, {
+          sessionId: rawState,
+          state: rawState,
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to finish auth',
+        });
       }
     };
 
