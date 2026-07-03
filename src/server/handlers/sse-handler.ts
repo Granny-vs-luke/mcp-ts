@@ -508,6 +508,22 @@ export class SSEConnectionManager {
     return client;
   }
 
+  /**
+   * Fetches all tools from the remote MCP server and emits a `tools_discovered` event.
+   *
+   * Two lists are always published together:
+   * - `tools`    — policy-filtered list that agents are allowed to call.
+   * - `allTools` — the complete, unfiltered list used by the management UI so
+   *                that blocked tools still appear as checkboxes in the dialog.
+   *
+   * `fetchTools()` is called first (populates the in-memory cache), then
+   * `gateway.listTools()` re-uses that cache internally — so only one remote
+   * network round-trip is made regardless of how many callers follow.
+   *
+   * @param sessionId - The session whose tools should be discovered.
+   * @returns The session record and the policy-filtered tool list.
+   * @throws {Error} When the session does not exist in the store.
+   */
   private async listPolicyFilteredTools(sessionId: string): Promise<{ session: Session; result: ListToolsRpcResult }> {
     const session = await sessions.get(this.userId, sessionId);
     if (!session) {
@@ -515,6 +531,7 @@ export class SSEConnectionManager {
     }
 
     const client = await this.getOrCreateClient(sessionId);
+    const allTools = await client.fetchTools().catch(() => ({ tools: [] }));
     const gateway = createToolPolicyGateway(this.userId, sessionId, client);
     const result = await gateway.listTools();
 
@@ -524,13 +541,17 @@ export class SSEConnectionManager {
       serverId: session.serverId ?? 'unknown',
       toolCount: result.tools.length,
       tools: result.tools,
+      allTools: allTools.tools,
       timestamp: Date.now(),
     });
 
     return { session, result };
   }
+
   /**
-   * List tools from a session
+   * Returns the policy-filtered tool list for a session (agent-facing).
+   * Internally re-uses `listPolicyFilteredTools` which also emits a
+   * `tools_discovered` SSE event to keep client state up to date.
    */
   private async listTools(params: SessionParams): Promise<ListToolsRpcResult> {
     const { sessionId } = params;
@@ -571,7 +592,15 @@ export class SSEConnectionManager {
   }
 
   /**
-   * Update per-session tool access policy.
+   * Persists a new tool access policy for a session and broadcasts the updated
+   * filtered tool list to all connected browser clients via a `tools_discovered` event.
+   *
+   * Both `tools` (policy-filtered) and `allTools` (complete list) are emitted
+   * so the management UI can immediately reflect the new checkbox states without
+   * an additional round-trip to the server.
+   *
+   * @param params - Session ID and the new `{ mode, toolIds }` policy to apply.
+   * @throws {Error} When the session does not exist or the policy references unknown tool IDs.
    */
   private async setToolPolicy(params: SetToolPolicyParams): Promise<SetToolPolicyResult> {
     const { sessionId } = params;
@@ -594,6 +623,7 @@ export class SSEConnectionManager {
       serverId: session.serverId ?? 'unknown',
       toolCount: filteredTools.length,
       tools: filteredTools,
+      allTools: allTools.tools,
       timestamp: Date.now(),
     });
 
@@ -604,8 +634,10 @@ export class SSEConnectionManager {
       toolCount: filteredTools.length,
     };
   }
+
   /**
-   * Call a tool on the MCP server
+   * Proxies a tool invocation to the remote MCP server.
+   * Resolves the client for the given session and delegates to the tool router.
    */
   private async callTool(params: CallToolParams): Promise<CallToolResult> {
     const { sessionId, toolName, toolArgs } = params;

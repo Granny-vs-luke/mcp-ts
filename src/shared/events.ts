@@ -98,6 +98,7 @@ export type McpConnectionEvent =
     serverId: string;
     toolCount: number;
     tools: any[];
+    allTools?: any[];
     timestamp: number;
   }
   | {

@@ -371,7 +371,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
           }
 
           return prev.map((c: McpConnection) =>
-            c.sessionId === event.sessionId ? { ...c, tools: event.tools, state: 'READY', updatedAt: new Date() } : c
+            c.sessionId === event.sessionId ? { ...c, tools: event.tools, allTools: (event as any).allTools, state: 'READY', updatedAt: new Date() } : c
           );
         }
 
