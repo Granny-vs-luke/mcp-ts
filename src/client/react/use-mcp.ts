@@ -516,24 +516,15 @@ export function useMcp(options: UseMcpOptions): McpClient {
         throw new Error('SSE client not initialized');
       }
 
-      // Find and disconnect existing session for the same server
-      const existing = connections.find(
-        (c: McpConnection) => c.serverId === params.serverId || c.serverUrl === params.serverUrl
-      );
-      if (existing) {
-        await clientRef.current.disconnectFromServer(existing.sessionId);
-        if (isMountedRef.current) {
-          setConnections((prev: McpConnection[]) =>
-            prev.filter((c: McpConnection) => c.sessionId !== existing.sessionId)
-          );
-        }
-      }
+      const result = await clientRef.current.reconnectToServer(params);
 
-      // Connect fresh
-      const result = await clientRef.current.connectToServer(params);
+      // The server emits connection events for the new session via SSE,
+      // so local state is kept in sync automatically. No manual removal
+      // of the old session or insertion of the new one needed here.
+
       return result.sessionId;
     },
-    [connections]
+    []
   );
 
   /**

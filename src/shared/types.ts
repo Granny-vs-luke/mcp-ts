@@ -182,6 +182,7 @@ export interface ToolPolicy {
 export type McpRpcMethod =
   | 'connect'
   | 'disconnect'
+  | 'reconnect'
   | 'listTools'
   | 'callTool'
   | 'listSessions'
@@ -222,6 +223,8 @@ export interface ConnectParams {
 export interface DisconnectParams {
   sessionId: string;
 }
+
+export type ReconnectParams = ConnectParams;
 
 export interface SessionParams {
   sessionId: string;
@@ -264,6 +267,7 @@ export interface GetToolPolicyParams {
 export type McpRpcParams =
   | ConnectParams
   | DisconnectParams
+  | ReconnectParams
   | SessionParams
   | CallToolParams
   | GetPromptParams

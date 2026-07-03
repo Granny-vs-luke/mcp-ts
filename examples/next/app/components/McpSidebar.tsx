@@ -45,6 +45,7 @@ export default function McpSidebar({ mcpClient, onCollapse }: McpSidebarProps) {
     isInitializing,
     connect,
     disconnect,
+    reconnect,
     callTool,
     finishAuth,
   } = mcpClient;
@@ -77,6 +78,22 @@ export default function McpSidebar({ mcpClient, onCollapse }: McpSidebarProps) {
     try {
       await disconnect(sessionId);
     } catch {}
+  };
+
+  const handleReconnect = async (connection: Connection) => {
+    try {
+      const callbackUrl = `${window.location.origin}/oauth/callback-popup`;
+      await reconnect({
+        serverId: connection.serverId,
+        serverName: connection.serverName,
+        serverUrl: connection.serverUrl,
+        callbackUrl,
+        transportType:
+          connection.transport === "streamable-http" ? "streamable-http" : "sse",
+      });
+    } catch (err) {
+      console.error("Failed to reconnect:", err);
+    }
   };
 
   const handleSelectTool = (sessionId: string, toolName: string) => {
@@ -160,6 +177,7 @@ export default function McpSidebar({ mcpClient, onCollapse }: McpSidebarProps) {
             connections={connections as Connection[]}
             isInitializing={isInitializing}
             onDisconnect={handleDisconnect}
+            onReconnect={handleReconnect}
             onSelectTool={handleSelectTool}
           />
         </div>

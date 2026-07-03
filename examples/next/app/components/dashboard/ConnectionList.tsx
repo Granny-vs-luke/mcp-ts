@@ -8,6 +8,7 @@ interface ConnectionListProps {
   connections: Connection[];
   isInitializing: boolean;
   onDisconnect: (sessionId: string) => void;
+  onReconnect: (connection: Connection) => void;
   onSelectTool: (sessionId: string, toolName: string) => void;
 }
 
@@ -15,6 +16,7 @@ export default function ConnectionList({
   connections,
   isInitializing,
   onDisconnect,
+  onReconnect,
   onSelectTool,
 }: ConnectionListProps) {
   return (
@@ -49,6 +51,7 @@ export default function ConnectionList({
             <ConnectionItem
               connection={connection}
               onDisconnect={onDisconnect}
+              onReconnect={onReconnect}
               onSelectTool={onSelectTool}
             />
           </li>

@@ -13,6 +13,7 @@ import type { Connection } from "./types";
 interface ConnectionItemProps {
   connection: Connection;
   onDisconnect: (sessionId: string) => void;
+  onReconnect: (connection: Connection) => void;
   onSelectTool: (sessionId: string, toolName: string) => void;
 }
 
@@ -46,6 +47,7 @@ function formatTimestamp(value?: Date | string | number) {
 export default function ConnectionItem({
   connection,
   onDisconnect,
+  onReconnect,
   onSelectTool,
 }: ConnectionItemProps) {
   const sessionIdStr = String(connection.sessionId);
@@ -71,15 +73,26 @@ export default function ConnectionItem({
             </span>
           </div>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 shrink-0 text-xs"
-          onClick={() => onDisconnect(sessionIdStr)}
-        >
-          Disconnect
-        </Button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs hover:bg-accent hover:text-accent-foreground"
+            onClick={() => onReconnect(connection)}
+          >
+            Reconnect
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs text-destructive hover:bg-destructive/10"
+            onClick={() => onDisconnect(sessionIdStr)}
+          >
+            Disconnect
+          </Button>
+        </div>
       </div>
 
       {connection.error ? (

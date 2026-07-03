@@ -18,6 +18,7 @@ import type {
   McpRpcResponse,
   ConnectParams,
   DisconnectParams,
+  ReconnectParams,
   SessionParams,
   CallToolParams,
   GetPromptParams,
@@ -164,6 +165,10 @@ export class SSEConnectionManager {
 
         case 'connect':
           result = await this.connect(request.params as ConnectParams);
+          break;
+
+        case 'reconnect':
+          result = await this.reconnect(request.params as ReconnectParams);
           break;
 
         case 'disconnect':
@@ -359,6 +364,87 @@ export class SSEConnectionManager {
       // Clean up client
       this.clients.delete(sessionId);
 
+      throw error;
+    }
+  }
+
+  /**
+   * Reconnect to an MCP server — tears down the active client transport/connection
+   * and creates a fresh connection while reusing the existing session credentials in a single RPC call.
+   */
+  private async reconnect(params: ReconnectParams): Promise<ConnectResult> {
+    const { serverId: rawServerId, serverName, serverUrl, callbackUrl, transportType } = params;
+    const headers = normalizeHeaders(params.headers);
+
+    // Normalize serverId the same way connect() does
+    const serverId = rawServerId && rawServerId.length <= 12
+      ? rawServerId
+      : generateServerId();
+
+    // Find existing session for the same server to reuse its session ID
+    const existingSessions = await sessions.list(this.userId);
+    const duplicate = existingSessions.find(s =>
+      s.serverId === serverId || s.serverUrl === serverUrl
+    );
+
+    // Reuse the duplicate sessionId if present, otherwise generate a new one
+    const sessionId = duplicate ? duplicate.sessionId : await sessions.generateSessionId();
+
+    if (duplicate) {
+      // Disconnect any active in-memory client transport without deleting the database session
+      const existingClient = this.clients.get(duplicate.sessionId);
+      if (existingClient) {
+        await existingClient.disconnect();
+        this.clients.delete(duplicate.sessionId);
+      }
+    }
+
+    try {
+      const clientMetadata = await this.getResolvedClientMetadata();
+
+      // Create a new client instantiating the reused session ID (which preserves DCR credentials and tokens)
+      const client = new MCPClient({
+        userId: this.userId,
+        sessionId,
+        serverId,
+        serverName,
+        serverUrl,
+        callbackUrl,
+        transportType,
+        headers,
+        ...clientMetadata,
+      });
+
+      this.clients.set(sessionId, client);
+
+      client.onConnectionEvent((event) => {
+        this.emitConnectionEvent(event);
+      });
+
+      client.onObservabilityEvent((event) => {
+        this.sendEvent(event);
+      });
+
+      await client.connect();
+      await this.listPolicyFilteredTools(sessionId);
+
+      return { sessionId, success: true };
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        this.clients.delete(sessionId);
+        return { sessionId, success: true };
+      }
+
+      this.emitConnectionEvent({
+        type: 'error',
+        sessionId,
+        serverId,
+        error: error instanceof Error ? error.message : 'Connection failed',
+        errorType: 'connection',
+        timestamp: Date.now(),
+      });
+
+      this.clients.delete(sessionId);
       throw error;
     }
   }
