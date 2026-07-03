@@ -3,6 +3,7 @@ import type { SessionStore, Session, SessionCredentials } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
 import { resolveSessionExpiresAt } from './session-lifecycle.js';
+import { normalizeToolPolicy } from './tool-policy.js';
 import { DORMANT_SESSION_EXPIRATION_MS } from '../../shared/constants.js';
 
 export class SupabaseStorageBackend implements SessionStore {
@@ -51,6 +52,7 @@ export class SupabaseStorageBackend implements SessionStore {
             headers: decryptObject(row.headers),
             authUrl: row.auth_url,
             status: row.status ?? 'pending',
+            toolPolicy: normalizeToolPolicy(row.tool_policy),
         };
     }
 
@@ -85,23 +87,30 @@ export class SupabaseStorageBackend implements SessionStore {
         const updatedAt = new Date(session.updatedAt ?? session.createdAt ?? Date.now()).toISOString();
         const expiresAt = resolveSessionExpiresAt(status, new Date(createdAt).getTime());
 
+        const insertData: Record<string, unknown> = {
+            session_id: sessionId,
+            user_id: userId,
+            server_id: session.serverId,
+            server_name: session.serverName,
+            server_url: session.serverUrl,
+            transport_type: session.transportType,
+            callback_url: session.callbackUrl,
+            created_at: createdAt,
+            updated_at: updatedAt,
+            headers: encryptObject(session.headers),
+            auth_url: session.authUrl ?? null,
+            status,
+            expires_at: expiresAt === null ? null : new Date(expiresAt).toISOString(),
+        };
+
+        const toolPolicy = normalizeToolPolicy(session.toolPolicy);
+        if (toolPolicy) {
+            insertData.tool_policy = toolPolicy;
+        }
+
         const { error } = await this.supabase
             .from('mcp_sessions')
-            .insert({
-                session_id: sessionId,
-                user_id: userId,
-                server_id: session.serverId,
-                server_name: session.serverName,
-                server_url: session.serverUrl,
-                transport_type: session.transportType,
-                callback_url: session.callbackUrl,
-                created_at: createdAt,
-                updated_at: updatedAt,
-                headers: encryptObject(session.headers),
-                auth_url: session.authUrl ?? null,
-                status,
-                expires_at: expiresAt === null ? null : new Date(expiresAt).toISOString(),
-            });
+            .insert(insertData);
 
         if (error) {
             if (error.code === '23505') {
@@ -130,6 +139,7 @@ export class SupabaseStorageBackend implements SessionStore {
         }
         if ('headers' in data) updateData.headers = encryptObject(data.headers);
         if ('authUrl' in data) updateData.auth_url = data.authUrl ?? null;
+        if ('toolPolicy' in data) updateData.tool_policy = normalizeToolPolicy(data.toolPolicy);
 
         const shouldUpdateSession = Object.keys(updateData).some((key) => key !== 'updated_at');
 
@@ -351,3 +361,5 @@ export class SupabaseStorageBackend implements SessionStore {
         // Supabase client handles its own connection pooling over HTTP.
     }
 }
+
+

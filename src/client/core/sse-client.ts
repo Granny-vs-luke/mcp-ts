@@ -25,6 +25,9 @@ import type {
   ListToolsRpcResult,
   ListPromptsResult,
   ListResourcesResult,
+  SetToolPolicyResult,
+  GetToolPolicyResult,
+  ToolPolicy,
 } from '../../shared/types.js';
 
 export interface SSEClientOptions {
@@ -97,6 +100,17 @@ export class SSEClient {
 
   async disconnectFromServer(sessionId: string): Promise<DisconnectResult> {
     return this.sendRequest<DisconnectResult>('disconnect', { sessionId });
+  }
+
+  async setToolPolicy(
+    sessionId: string,
+    toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[] }
+  ): Promise<SetToolPolicyResult> {
+    return this.sendRequest<SetToolPolicyResult>('setToolPolicy', { sessionId, toolPolicy });
+  }
+
+  async getToolPolicy(sessionId: string): Promise<GetToolPolicyResult> {
+    return this.sendRequest<GetToolPolicyResult>('getToolPolicy', { sessionId });
   }
 
   async listTools(sessionId: string): Promise<ListToolsRpcResult> {
@@ -367,3 +381,6 @@ export class SSEClient {
     }
   }
 }
+
+
+

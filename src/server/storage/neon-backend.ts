@@ -4,6 +4,7 @@ import { DORMANT_SESSION_EXPIRATION_MS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
 import { resolveSessionExpiresAt } from './session-lifecycle.js';
+import { normalizeToolPolicy } from './tool-policy.js';
 
 export interface NeonStorageOptions {
     schema?: string;
@@ -30,6 +31,7 @@ type NeonSessionRow = {
     headers?: unknown;
     auth_url?: string | null;
     status?: SessionStatus | null;
+    tool_policy?: unknown;
 };
 
 type NeonCredentialsRow = {
@@ -103,6 +105,7 @@ export class NeonStorageBackend implements SessionStore {
             headers: decryptObject(row.headers),
             authUrl: row.auth_url ?? undefined,
             status: row.status ?? 'pending',
+            toolPolicy: normalizeToolPolicy(row.tool_policy as Parameters<typeof normalizeToolPolicy>[0]),
         };
     }
 
@@ -135,43 +138,35 @@ export class NeonStorageBackend implements SessionStore {
         const status = session.status ?? 'pending';
         const createdAt = new Date(session.createdAt || Date.now()).toISOString();
         const updatedAt = new Date(session.updatedAt ?? session.createdAt ?? Date.now()).toISOString();
-        const expiresAt = resolveSessionExpiresAt(status, new Date(createdAt).getTime());
+        const createdAtMs = new Date(createdAt).getTime();
+        const expiresAt = resolveSessionExpiresAt(status, createdAtMs);
+        const toolPolicy = normalizeToolPolicy(session.toolPolicy, createdAtMs);
+
+        const columns: string[] = [
+            'session_id', 'user_id', 'server_id', 'server_name',
+            'server_url', 'transport_type', 'callback_url',
+            'created_at', 'updated_at', 'headers', 'auth_url',
+            'status', 'expires_at',
+        ];
+        const values: unknown[] = [
+            sessionId, userId, session.serverId, session.serverName,
+            session.serverUrl, session.transportType, session.callbackUrl,
+            createdAt, updatedAt, encryptObject(session.headers),
+            session.authUrl ?? null, status,
+            expiresAt === null ? null : new Date(expiresAt).toISOString(),
+        ];
+
+        if (toolPolicy) {
+            columns.push('tool_policy');
+            values.push(toolPolicy);
+        }
+
+        const placeholders = values.map((_, i) => `$${i + 1}`);
 
         try {
             await this.sql.query(
-                `INSERT INTO ${this.tableName} (
-                    session_id,
-                    user_id,
-                    server_id,
-                    server_name,
-                    server_url,
-                    transport_type,
-                    callback_url,
-                    created_at,
-                    updated_at,
-                    headers,
-                    auth_url,
-                    status,
-                    expires_at
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8,
-                    $9, $10, $11, $12, $13
-                )`,
-                [
-                    sessionId,
-                    userId,
-                    session.serverId,
-                    session.serverName,
-                    session.serverUrl,
-                    session.transportType,
-                    session.callbackUrl,
-                    createdAt,
-                    updatedAt,
-                    encryptObject(session.headers),
-                    session.authUrl ?? null,
-                    status,
-                    expiresAt === null ? null : new Date(expiresAt).toISOString(),
-                ]
+                `INSERT INTO ${this.tableName} (${columns.join(', ')}) VALUES (${placeholders.join(', ')})`,
+                values
             );
         } catch (error: any) {
             if (error.code === '23505') {
@@ -200,38 +195,44 @@ export class NeonStorageBackend implements SessionStore {
             'callbackUrl' in data ||
             'status' in data ||
             'headers' in data ||
-            'authUrl' in data
+            'authUrl' in data ||
+            'toolPolicy' in data
         );
 
         if (shouldUpdateSession) {
+            const setClauses: string[] = [];
+            const values: unknown[] = [];
+            let paramIndex = 1;
+
+            const addSet = (column: string, value: unknown) => {
+                setClauses.push(`${column} = $${paramIndex++}`);
+                values.push(value);
+            };
+
+            addSet('server_id', updatedSession.serverId);
+            addSet('server_name', updatedSession.serverName);
+            addSet('server_url', updatedSession.serverUrl);
+            addSet('transport_type', updatedSession.transportType);
+            addSet('callback_url', updatedSession.callbackUrl);
+            addSet('status', status);
+            addSet('headers', encryptObject(updatedSession.headers));
+            addSet('auth_url', updatedSession.authUrl ?? null);
+            addSet('expires_at', expiresAt === null ? null : new Date(expiresAt).toISOString());
+
+            if ('toolPolicy' in data) {
+                const policyUpdatedAt = updatedSession.updatedAt ?? Date.now();
+                const toolPolicy = normalizeToolPolicy(updatedSession.toolPolicy, policyUpdatedAt) ?? { mode: 'all' as const, toolIds: [], updatedAt: policyUpdatedAt };
+                addSet('tool_policy', toolPolicy);
+            }
+
+            setClauses.push('updated_at = now()');
+
             const updatedRows = await this.sql.query(
                 `UPDATE ${this.tableName}
-                 SET
-                    server_id = $1,
-                    server_name = $2,
-                    server_url = $3,
-                    transport_type = $4,
-                    callback_url = $5,
-                    status = $6,
-                    headers = $7,
-                    auth_url = $8,
-                    expires_at = $9,
-                    updated_at = now()
-                 WHERE user_id = $10 AND session_id = $11
+                 SET ${setClauses.join(', ')}
+                 WHERE user_id = $${paramIndex++} AND session_id = $${paramIndex++}
                  RETURNING id`,
-                [
-                    updatedSession.serverId,
-                    updatedSession.serverName,
-                    updatedSession.serverUrl,
-                    updatedSession.transportType,
-                    updatedSession.callbackUrl,
-                    status,
-                    encryptObject(updatedSession.headers),
-                    updatedSession.authUrl ?? null,
-                    expiresAt === null ? null : new Date(expiresAt).toISOString(),
-                    userId,
-                    sessionId,
-                ]
+                [...values, userId, sessionId]
             ) as Array<{ id: string }>;
 
             if (updatedRows.length === 0) {
@@ -412,3 +413,7 @@ export class NeonStorageBackend implements SessionStore {
         // Neon HTTP queries do not hold a persistent connection.
     }
 }
+
+
+
+

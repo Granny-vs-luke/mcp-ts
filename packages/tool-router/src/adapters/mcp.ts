@@ -12,6 +12,7 @@ export interface ToolClient {
   tools?(): Promise<Record<string, unknown>>;
   getServerId?(): string | undefined;
   getServerName?(): string | undefined;
+  getServerUrl?(): string | undefined;
 }
 
 export interface ToolClientProvider {

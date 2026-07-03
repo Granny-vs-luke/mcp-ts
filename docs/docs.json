@@ -89,6 +89,15 @@
                 ]
               },
               {
+                "group": "Tool Policy",
+                "icon": "shield",
+                "expanded": false,
+                "pages": [
+                  "tool-policy/overview",
+                  "tool-policy/configuration"
+                ]
+              },
+              {
                 "group": "Storage Backends",
                 "icon": "database",
                 "expanded": false,

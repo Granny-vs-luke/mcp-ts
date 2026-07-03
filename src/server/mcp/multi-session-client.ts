@@ -1,6 +1,7 @@
 import { MCPClient } from './oauth-client.js';
 import { sessions, type Session } from '../storage/index.js';
-import type { ToolClientProvider } from '../../shared/types.js';
+import type { ToolClient, ToolClientProvider } from '../../shared/types.js';
+import { createToolPolicyGateway } from './tool-policy-gateway.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -148,8 +149,10 @@ export class MultiSessionClient implements ToolClientProvider {
      * Use this to enumerate available tools across all connected servers,
      * or to route a tool call to the right client by `serverId`.
      */
-    getClients(): MCPClient[] {
-        return this.clients;
+    getClients(): ToolClient[] {
+        return this.clients.map((client) =>
+            createToolPolicyGateway(this.userId, client.getSessionId(), client)
+        );
     }
 
     /**
@@ -321,3 +324,4 @@ export class MultiSessionClient implements ToolClientProvider {
         );
     }
 }
+

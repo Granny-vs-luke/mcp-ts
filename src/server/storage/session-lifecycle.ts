@@ -4,6 +4,7 @@ import {
     STATE_EXPIRATION_MS,
 } from '../../shared/constants.js';
 import type { Session, SessionStatus } from './types.js';
+import { normalizeToolPolicy } from './tool-policy.js';
 
 export function resolveSessionExpiresAt(status: SessionStatus = 'pending', referenceTime = Date.now()): number | null {
     return status === 'active' ? null : referenceTime + STATE_EXPIRATION_MS;
@@ -26,6 +27,7 @@ export function normalizeNewSession(session: Session, now = Date.now()): Session
         createdAt,
         updatedAt,
         expiresAt: resolveSessionExpiresAt(status, status === 'active' ? updatedAt : createdAt),
+        toolPolicy: normalizeToolPolicy(session.toolPolicy, updatedAt),
     };
 }
 
@@ -46,6 +48,7 @@ export function mergeSessionUpdate(
         ...updated,
         status,
         expiresAt: resolveSessionExpiresAt(status, updatedAt),
+        toolPolicy: normalizeToolPolicy(updated.toolPolicy, updatedAt),
     };
 }
 
@@ -63,6 +66,7 @@ export function normalizeStoredSession(session: Session): Session {
         createdAt,
         updatedAt,
         expiresAt,
+        toolPolicy: normalizeToolPolicy(session.toolPolicy, updatedAt),
     };
 }
 
@@ -76,3 +80,4 @@ export function isSessionExpired(session: Session, now = Date.now()): boolean {
 
     return typeof hydrated.expiresAt === 'number' && hydrated.expiresAt < now;
 }
+

@@ -21,6 +21,7 @@ export interface ToolClient {
   callTool(name: string, args: Record<string, unknown>): Promise<any>;
   getServerId?(): string | undefined;
   getServerName?(): string | undefined;
+  getServerUrl?(): string | undefined;
   getSessionId?(): string;
 }
 
@@ -169,6 +170,13 @@ export type ToolInfo = {
 // Transport type
 export type TransportType = 'sse' | 'streamable-http';
 export type SessionStatus = 'pending' | 'active';
+export type ToolPolicyMode = 'all' | 'allowlist' | 'denylist';
+
+export interface ToolPolicy {
+  mode: ToolPolicyMode;
+  toolIds: string[];
+  updatedAt: number;
+}
 
 // SSE/RPC types
 export type McpRpcMethod =
@@ -182,7 +190,9 @@ export type McpRpcMethod =
   | 'listPrompts'
   | 'getPrompt'
   | 'listResources'
-  | 'readResource';
+  | 'readResource'
+  | 'setToolPolicy'
+  | 'getToolPolicy';
 
 export interface McpRpcRequest {
   id: string;
@@ -239,6 +249,18 @@ export interface FinishAuthParams {
   code: string;
 }
 
+export interface SetToolPolicyParams {
+  sessionId: string;
+  toolPolicy: {
+    mode: ToolPolicyMode;
+    toolIds?: string[];
+  };
+}
+
+export interface GetToolPolicyParams {
+  sessionId: string;
+}
+
 export type McpRpcParams =
   | ConnectParams
   | DisconnectParams
@@ -247,6 +269,8 @@ export type McpRpcParams =
   | GetPromptParams
   | ReadResourceParams
   | FinishAuthParams
+  | SetToolPolicyParams
+  | GetToolPolicyParams
   | undefined;
 
 // RPC Result Types
@@ -263,6 +287,7 @@ export interface SessionInfo {
    * `pending` means auth is in progress and should be resumed explicitly by user action.
    */
   status: SessionStatus;
+  toolPolicy?: ToolPolicy;
 }
 
 export interface SessionListResult {
@@ -292,6 +317,25 @@ export interface ListToolsRpcResult {
   tools: Tool[];
 }
 
+export interface SetToolPolicyResult {
+  success: boolean;
+  toolPolicy: ToolPolicy;
+  tools: Tool[];
+  toolCount: number;
+}
+
+export type ToolAccessInfo = Tool & {
+  toolId: string;
+  allowed: boolean;
+};
+
+export interface GetToolPolicyResult {
+  toolPolicy: ToolPolicy;
+  tools: ToolAccessInfo[];
+  toolCount: number;
+  allowedToolCount: number;
+}
+
 export interface ListPromptsResult {
   prompts: Array<{
     name: string;
@@ -314,3 +358,6 @@ export interface ListResourcesResult {
 }
 
 export type { CallToolResult };
+
+
+

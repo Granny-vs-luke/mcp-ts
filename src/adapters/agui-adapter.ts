@@ -29,6 +29,7 @@
 import { MCPClient } from '../server/mcp/oauth-client.js';
 import { MultiSessionClient } from '../server/mcp/multi-session-client.js';
 import { ToolRouter } from '../shared/tool-router.js';
+import type { ToolClient } from '../shared/types.js';
 import { executeMetaTool, isMetaTool } from '../shared/meta-tools.js';
 
 /**
@@ -184,7 +185,7 @@ export class AguiAdapter {
         return typeof (this.client as any).getClients === 'function';
     }
 
-    private async transformTools(client: MCPClient): Promise<AguiTool[]> {
+    private async transformTools(client: ToolClient): Promise<AguiTool[]> {
         if (!client.isConnected()) return [];
 
         const result = await client.listTools();
@@ -214,7 +215,7 @@ export class AguiAdapter {
         });
     }
 
-    private async transformToolDefinitions(client: MCPClient): Promise<AguiToolDefinition[]> {
+    private async transformToolDefinitions(client: ToolClient): Promise<AguiToolDefinition[]> {
         if (!client.isConnected()) return [];
 
         const result = await client.listTools();
@@ -299,3 +300,6 @@ export class AguiAdapter {
         return `tool_${normalized}_${toolName}`;
     }
 }
+
+
+

@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
         CHECK (status IN ('pending', 'active')),
     headers JSONB,
     auth_url TEXT,
+    tool_policy JSONB,
     CONSTRAINT mcp_sessions_user_session_unique
         UNIQUE (user_id, session_id)
 );

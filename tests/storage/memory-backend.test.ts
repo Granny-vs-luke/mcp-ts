@@ -64,6 +64,25 @@ test.describe('MemoryStorageBackend', () => {
             expect(retrieved?.serverId).toBe(session.serverId);
         });
 
+        test('should round-trip session tool policy updates', async () => {
+            const session = createMockSession();
+            await storage.create(session);
+
+            await storage.update(session.userId, session.sessionId, {
+                toolPolicy: {
+                    mode: 'allowlist',
+                    toolIds: ['github::get_issue', 'github::list_pull_requests'],
+                    updatedAt: 1780076400000,
+                },
+            });
+
+            const retrieved = await storage.get(session.userId, session.sessionId);
+            expect(retrieved?.toolPolicy).toEqual({
+                mode: 'allowlist',
+                toolIds: ['github::get_issue', 'github::list_pull_requests'],
+                updatedAt: 1780076400000,
+            });
+        });
         test('should throw if session does not exist', async () => {
             await expect(
                 storage.update('unknown', 'unknown', { status: 'active' })
@@ -97,3 +116,5 @@ test.describe('MemoryStorageBackend', () => {
         });
     });
 });
+
+

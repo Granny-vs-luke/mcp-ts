@@ -32,13 +32,19 @@ import type {
   ListPromptsResult,
   ListResourcesResult,
   CallToolResult,
+  SetToolPolicyParams,
+  SetToolPolicyResult,
+  GetToolPolicyParams,
+  GetToolPolicyResult,
 } from '../../shared/types.js';
 import { RpcErrorCodes } from '../../shared/errors.js';
 import { UnauthorizedError } from '../../shared/errors.js';
 import { isConnectionEvent, isRpcResponseEvent } from '../../shared/event-routing.js';
 import { parseOAuthState } from '../../shared/utils.js';
 import { MCPClient } from '../mcp/oauth-client.js';
-import { sessions, generateServerId } from '../storage/index.js';
+import { sessions, generateServerId, type Session } from '../storage/index.js';
+import { createToolId, isToolAllowed, normalizeToolPolicyForUpdate, validateToolPolicyAgainstTools } from '../storage/tool-policy.js';
+import { createToolPolicyGateway } from '../mcp/tool-policy-gateway.js';
 
 // ============================================
 // Types & Interfaces
@@ -149,7 +155,7 @@ export class SSEConnectionManager {
    */
   async handleRequest(request: McpRpcRequest): Promise<McpRpcResponse> {
     try {
-      let result: SessionListResult | ConnectResult | DisconnectResult | GetSessionResult | FinishAuthResult | ListToolsRpcResult | ListPromptsResult | ListResourcesResult | unknown;
+      let result: SessionListResult | ConnectResult | DisconnectResult | GetSessionResult | FinishAuthResult | ListToolsRpcResult | SetToolPolicyResult | GetToolPolicyResult | ListPromptsResult | ListResourcesResult | unknown;
 
       switch (request.method) {
         case 'listSessions':
@@ -166,6 +172,14 @@ export class SSEConnectionManager {
 
         case 'listTools':
           result = await this.listTools(request.params as SessionParams);
+          break;
+
+        case 'setToolPolicy':
+          result = await this.setToolPolicy(request.params as SetToolPolicyParams);
+          break;
+
+        case 'getToolPolicy':
+          result = await this.getToolPolicy(request.params as GetToolPolicyParams);
           break;
 
         case 'callTool':
@@ -241,6 +255,7 @@ export class SSEConnectionManager {
         createdAt: s.createdAt,
         updatedAt: s.updatedAt ?? s.createdAt,
         status: s.status ?? 'pending',
+        toolPolicy: s.toolPolicy,
       })),
     };
   }
@@ -315,8 +330,8 @@ export class SSEConnectionManager {
       // Attempt connection
       await client.connect();
 
-      // Fetch tools
-      await client.listTools();
+      // Fetch policy-filtered tools for agent-facing discovery
+      await this.listPolicyFilteredTools(sessionId);
 
       return {
         sessionId,
@@ -407,23 +422,109 @@ export class SSEConnectionManager {
     return client;
   }
 
+  private async listPolicyFilteredTools(sessionId: string): Promise<{ session: Session; result: ListToolsRpcResult }> {
+    const session = await sessions.get(this.userId, sessionId);
+    if (!session) {
+      throw new Error('Session not found');
+    }
+
+    const client = await this.getOrCreateClient(sessionId);
+    const gateway = createToolPolicyGateway(this.userId, sessionId, client);
+    const result = await gateway.listTools();
+
+    this.emitConnectionEvent({
+      type: 'tools_discovered',
+      sessionId,
+      serverId: session.serverId ?? 'unknown',
+      toolCount: result.tools.length,
+      tools: result.tools,
+      timestamp: Date.now(),
+    });
+
+    return { session, result };
+  }
   /**
    * List tools from a session
    */
   private async listTools(params: SessionParams): Promise<ListToolsRpcResult> {
     const { sessionId } = params;
-    const client = await this.getOrCreateClient(sessionId);
-    const result = await client.listTools();
+    const { result } = await this.listPolicyFilteredTools(sessionId);
     return { tools: result.tools };
   }
 
+  /**
+   * Get all raw tools with effective access state for management UI.
+   */
+  private async getToolPolicy(params: GetToolPolicyParams): Promise<GetToolPolicyResult> {
+    const { sessionId } = params;
+    const session = await sessions.get(this.userId, sessionId);
+    if (!session) {
+      throw new Error('Session not found');
+    }
+
+    const client = await this.getOrCreateClient(sessionId);
+    const allTools = await client.fetchTools();
+    const toolPolicy = session.toolPolicy ?? {
+      mode: 'all' as const,
+      toolIds: [],
+      updatedAt: session.updatedAt ?? session.createdAt,
+    };
+    const serverId = session.serverId ?? 'unknown';
+    const tools = allTools.tools.map((tool) => ({
+      ...tool,
+      toolId: createToolId(serverId, tool.name),
+      allowed: isToolAllowed(toolPolicy, tool.name, session.serverId),
+    }));
+
+    return {
+      toolPolicy,
+      tools,
+      toolCount: tools.length,
+      allowedToolCount: tools.filter((tool) => tool.allowed).length,
+    };
+  }
+
+  /**
+   * Update per-session tool access policy.
+   */
+  private async setToolPolicy(params: SetToolPolicyParams): Promise<SetToolPolicyResult> {
+    const { sessionId } = params;
+    const session = await sessions.get(this.userId, sessionId);
+    if (!session) {
+      throw new Error('Session not found');
+    }
+
+    const client = await this.getOrCreateClient(sessionId);
+    const allTools = await client.fetchTools();
+    const toolPolicy = normalizeToolPolicyForUpdate(params.toolPolicy);
+    validateToolPolicyAgainstTools(toolPolicy, allTools.tools, session.serverId);
+
+    await sessions.update(this.userId, sessionId, { toolPolicy });
+
+    const filteredTools = createToolPolicyGateway(this.userId, sessionId, client).filterTools({ ...session, toolPolicy }, allTools.tools);
+    this.emitConnectionEvent({
+      type: 'tools_discovered',
+      sessionId,
+      serverId: session.serverId ?? 'unknown',
+      toolCount: filteredTools.length,
+      tools: filteredTools,
+      timestamp: Date.now(),
+    });
+
+    return {
+      success: true,
+      toolPolicy,
+      tools: filteredTools,
+      toolCount: filteredTools.length,
+    };
+  }
   /**
    * Call a tool on the MCP server
    */
   private async callTool(params: CallToolParams): Promise<CallToolResult> {
     const { sessionId, toolName, toolArgs } = params;
     const client = await this.getOrCreateClient(sessionId);
-    const result = await client.callTool(toolName, toolArgs);
+    const result = await createToolPolicyGateway(this.userId, sessionId, client).callTool(toolName, toolArgs);
 
     // Inject sessionId into meta so client knows who handled it
     // This allows AppHost to auto-launch without scanning all sessions
@@ -485,7 +586,7 @@ export class SSEConnectionManager {
       await client.connect();
       this.clients.set(sessionId, client);
 
-      const tools = await client.listTools();
+      const { result: tools } = await this.listPolicyFilteredTools(sessionId);
 
       return { success: true, toolCount: tools.tools.length };
     } catch (error) {
@@ -541,7 +642,7 @@ export class SSEConnectionManager {
       await client.finishAuth(code, oauthState);
       this.clients.set(sessionId, client);
 
-      const tools = await client.listTools();
+      const { result: tools } = await this.listPolicyFilteredTools(sessionId);
 
       return { success: true, toolCount: tools.tools.length };
     } catch (error) {
@@ -687,3 +788,9 @@ function writeSSEEvent(res: { write: Function }, event: string, data: unknown): 
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
+
+
+
+
+
+
