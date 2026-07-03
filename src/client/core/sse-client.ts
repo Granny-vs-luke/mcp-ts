@@ -102,6 +102,10 @@ export class SSEClient {
     return this.sendRequest<DisconnectResult>('disconnect', { sessionId });
   }
 
+  async reconnectToServer(params: ConnectParams): Promise<ConnectResult> {
+    return this.sendRequest<ConnectResult>('reconnect', params);
+  }
+
   async setToolPolicy(
     sessionId: string,
     toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[] }
