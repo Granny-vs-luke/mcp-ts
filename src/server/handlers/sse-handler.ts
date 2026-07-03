@@ -369,8 +369,8 @@ export class SSEConnectionManager {
   }
 
   /**
-   * Reconnect to an MCP server — tears down the existing session and
-   * creates a fresh connection in a single RPC call.
+   * Reconnect to an MCP server — tears down the active client transport/connection
+   * and creates a fresh connection while reusing the existing session credentials in a single RPC call.
    */
   private async reconnect(params: ReconnectParams): Promise<ConnectResult> {
     const { serverId: rawServerId, serverName, serverUrl, callbackUrl, transportType } = params;
@@ -381,27 +381,28 @@ export class SSEConnectionManager {
       ? rawServerId
       : generateServerId();
 
-    // Find and disconnect existing session for the same server
+    // Find existing session for the same server to reuse its session ID
     const existingSessions = await sessions.list(this.userId);
     const duplicate = existingSessions.find(s =>
       s.serverId === serverId || s.serverUrl === serverUrl
     );
+
+    // Reuse the duplicate sessionId if present, otherwise generate a new one
+    const sessionId = duplicate ? duplicate.sessionId : await sessions.generateSessionId();
+
     if (duplicate) {
+      // Disconnect any active in-memory client transport without deleting the database session
       const existingClient = this.clients.get(duplicate.sessionId);
       if (existingClient) {
-        await existingClient.clearSession();
+        await existingClient.disconnect();
         this.clients.delete(duplicate.sessionId);
-      } else {
-        await sessions.delete(this.userId, duplicate.sessionId);
       }
     }
-
-    // Generate new session ID
-    const sessionId = await sessions.generateSessionId();
 
     try {
       const clientMetadata = await this.getResolvedClientMetadata();
 
+      // Create a new client instantiating the reused session ID (which preserves DCR credentials and tokens)
       const client = new MCPClient({
         userId: this.userId,
         sessionId,
