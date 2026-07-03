@@ -509,13 +509,20 @@ export class MCPClient {
   }
 
   /**
-   * Connects to the MCP server
-   * Automatically validates and refreshes OAuth tokens if needed
-   * Saves session to Redis on first successful connection
-   * @throws {UnauthorizedError} When OAuth authorization is required
-   * @throws {Error} When connection fails for other reasons
+   * Connects to the MCP server.
+   *
+   * Automatically validates and refreshes OAuth tokens if needed.
+   * Saves the session to Redis on first successful connection.
+   *
+   * The in-memory tools cache (`cachedTools`) is cleared at the start of every
+   * call so that a reconnection always fetches a fresh tool list from the remote
+   * server — even if the same `MCPClient` instance is reused.
+   *
+   * @throws {UnauthorizedError} When OAuth authorization is required.
+   * @throws {Error} When connection fails for other reasons.
    */
   async connect(): Promise<void> {
+    this.cachedTools = null;
     // Close any existing transport so we can negotiate a fresh session.
     // The SDK Client throws if asked to connect() while a transport is
     // already attached; close() detaches it cleanly so the same Client
@@ -782,18 +789,41 @@ export class MCPClient {
   }
 
   /**
-   * Lists all available tools from the connected MCP server without emitting discovery events.
-   * Gateways use this to apply policy before publishing tools to agents or UI state.
+   * In-memory cache for the remote server's full tools list.
+   *
+   * Populated on the first `fetchTools()` call and reused for the lifetime of
+   * the connection. Cleared to `null` at the start of `connect()` so that a
+   * reconnect always retrieves a fresh list, and also in `dispose()` to release
+   * the memory when the client is no longer needed.
+   */
+  private cachedTools: ListToolsResult | null = null;
+
+  /**
+   * Lists all available tools from the connected MCP server without emitting
+   * discovery events. The result is cached in memory for the lifetime of the
+   * connection — subsequent callers (e.g. `gateway.listTools()` running right
+   * after `fetchTools()`) pay zero extra network cost.
+   *
+   * Gateways use this to apply a tool-access policy before publishing the
+   * filtered list to agents or UI state.
+   *
+   * @returns The full `ListToolsResult` from the remote server.
+   * @throws {Error} When the client is not connected or the request times out.
    */
   async fetchTools(): Promise<ListToolsResult> {
+    if (this.cachedTools) {
+      return this.cachedTools;
+    }
     const request: ListToolsRequest = {
       method: 'tools/list',
       params: {},
     };
 
-    return await this.withRetry(() =>
+    const result = await this.withRetry(() =>
       this.client!.request(request, ListToolsResultSchema)
     );
+    this.cachedTools = result;
+    return result;
   }
 
   /**
@@ -1119,10 +1149,14 @@ export class MCPClient {
   }
 
   /**
-   * Dispose of all event emitters
-   * Call this when the client is no longer needed
+   * Disposes all event emitters and releases cached state.
+   *
+   * Clears `cachedTools` to free memory, and disposes the connection and
+   * observability event emitters so downstream listeners are unsubscribed.
+   * Call this when the client is permanently shut down (not just disconnected).
    */
   dispose(): void {
+    this.cachedTools = null;
     this._onConnectionEvent.dispose();
     this._onObservabilityEvent.dispose();
   }
@@ -1177,14 +1211,4 @@ export class MCPClient {
   getSessionId(): string {
     return this.sessionId;
   }
-
 }
-
-
-
-
-
-
-
-
-

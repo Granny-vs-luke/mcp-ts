@@ -84,6 +84,7 @@ export interface McpConnection {
     transport?: string;
     state: McpConnectionState;
     tools: ToolInfo[];
+    allTools?: ToolInfo[];
     authUrl?: string;
     error?: string;
     createdAt?: Date;
@@ -294,7 +295,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
             case 'tools_discovered': {
                 const index = connections.value.findIndex((c) => c.sessionId === event.sessionId);
                 if (index !== -1) {
-                    connections.value[index] = { ...connections.value[index], tools: event.tools, state: 'READY', updatedAt: new Date() };
+                    connections.value[index] = { ...connections.value[index], tools: event.tools, allTools: (event as any).allTools, state: 'READY', updatedAt: new Date() };
                 }
                 break;
             }
