@@ -83,22 +83,7 @@ export class MCPClient {
   private client: Client;
   public oauthProvider: OAuthClientProvider | null = null;
   private transport: StreamableHTTPClientTransport | SSEClientTransport | null = null;
-  private userId: string;
-  private serverId?: string;
-  private sessionId: string;
-  private serverName?: string;
-  private transportType: TransportType | undefined;
-  private serverUrl: string | undefined;
-  private callbackUrl: string | undefined;
-  private onRedirect: ((url: string) => void) | undefined;
-  private clientId?: string;
-  private clientSecret?: string;
-  private headers?: Record<string, string>;
-  /** OAuth Client Metadata */
-  private clientName?: string;
-  private clientUri?: string;
-  private logoUri?: string;
-  private policyUri?: string;
+  private config!: MCPOAuthClientOptions;
   private createdAt?: number;
 
   /** Event emitters for connection lifecycle */
@@ -116,21 +101,7 @@ export class MCPClient {
    * @param options - Client configuration options
    */
   constructor(options: MCPOAuthClientOptions) {
-    this.serverUrl = options.serverUrl;
-    this.serverName = options.serverName;
-    this.callbackUrl = options.callbackUrl;
-    this.onRedirect = options.onRedirect;
-    this.userId = options.userId;
-    this.serverId = options.serverId;
-    this.sessionId = options.sessionId;
-    this.transportType = options.transportType;
-    this.clientId = options.clientId;
-    this.clientSecret = options.clientSecret;
-    this.headers = options.headers;
-    this.clientName = options.clientName;
-    this.clientUri = options.clientUri;
-    this.logoUri = options.logoUri;
-    this.policyUri = options.policyUri;
+    this.config = { ...options };
 
     this.client = new Client(
       {
@@ -149,6 +120,22 @@ export class MCPClient {
     );
   }
 
+  /** Shared session-shaped data for ensureSession and saveSession */
+  private get session() {
+    return {
+      sessionId: this.config.sessionId,
+      userId: this.config.userId,
+      serverId: this.config.serverId!,
+      serverName: this.config.serverName,
+      serverUrl: this.config.serverUrl!,
+      callbackUrl: this.config.callbackUrl!,
+      transportType: (this.config.transportType || 'streamable-http') as TransportType,
+      headers: this.config.headers,
+      createdAt: this.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+    };
+  }
+
   /**
    * Emit a connection state change event
    * @private
@@ -157,14 +144,14 @@ export class MCPClient {
     const previousState = this.currentState;
     this.currentState = newState;
 
-    if (!this.serverId) return;
+    if (!this.config.serverId) return;
 
     this._onConnectionEvent.fire({
       type: 'state_changed',
-      sessionId: this.sessionId,
-      serverId: this.serverId,
-      serverName: this.serverName || this.serverId,
-      serverUrl: this.serverUrl || '',
+      sessionId: this.config.sessionId,
+      serverId: this.config.serverId,
+      serverName: this.config.serverName || this.config.serverId,
+      serverUrl: this.config.serverUrl || '',
       createdAt: this.createdAt,
       state: newState,
       previousState,
@@ -176,8 +163,8 @@ export class MCPClient {
       level: 'info',
       message: `Connection state: ${previousState} → ${newState}`,
       displayMessage: `State changed to ${newState}`,
-      sessionId: this.sessionId,
-      serverId: this.serverId,
+      sessionId: this.config.sessionId,
+      serverId: this.config.serverId,
       payload: { previousState, newState },
       timestamp: Date.now(),
       id: nanoid(),
@@ -189,12 +176,12 @@ export class MCPClient {
    * @private
    */
   private emitError(error: string, errorType: 'connection' | 'auth' | 'validation' | 'unknown' = 'unknown'): void {
-    if (!this.serverId) return;
+    if (!this.config.serverId) return;
 
     this._onConnectionEvent.fire({
       type: 'error',
-      sessionId: this.sessionId,
-      serverId: this.serverId,
+      sessionId: this.config.sessionId,
+      serverId: this.config.serverId,
       error,
       errorType,
       timestamp: Date.now(),
@@ -205,8 +192,8 @@ export class MCPClient {
       level: 'error',
       message: error,
       displayMessage: error,
-      sessionId: this.sessionId,
-      serverId: this.serverId,
+      sessionId: this.config.sessionId,
+      serverId: this.config.serverId,
       payload: { errorType, error },
       timestamp: Date.now(),
       id: nanoid(),
@@ -218,12 +205,12 @@ export class MCPClient {
    * @private
    */
   private emitProgress(message: string): void {
-    if (!this.serverId) return;
+    if (!this.config.serverId) return;
 
     this._onConnectionEvent.fire({
       type: 'progress',
-      sessionId: this.sessionId,
-      serverId: this.serverId,
+      sessionId: this.config.sessionId,
+      serverId: this.config.serverId,
       message,
       timestamp: Date.now(),
     });
@@ -243,16 +230,16 @@ export class MCPClient {
    * @private
    */
   private getTransport(type: TransportType): StreamableHTTPClientTransport | SSEClientTransport {
-    if (!this.serverUrl) {
+    if (!this.config.serverUrl) {
       throw new Error('Server URL is required to create transport');
     }
 
-    const baseUrl = new URL(this.serverUrl);
-    const hasAuthorizationHeader = Object.keys(this.headers || {})
+    const baseUrl = new URL(this.config.serverUrl);
+    const hasAuthorizationHeader = Object.keys(this.config.headers || {})
       .some((key) => key.toLowerCase() === 'authorization');
     const transportOptions: Record<string, any> = {
       ...(!hasAuthorizationHeader && { authProvider: this.oauthProvider }),
-      ...(this.headers && { requestInit: { headers: this.headers } }),
+      ...(this.config.headers && { requestInit: { headers: this.config.headers } }),
       /**
        * Custom fetch implementation to handle connection timeouts.
        * Observation: SDK 1.24.0+ connections may hang indefinitely in some environments.
@@ -301,75 +288,67 @@ export class MCPClient {
     this.emitStateChange('INITIALIZING');
     this.emitProgress('Loading session configuration...');
 
-    if (!this.serverUrl || !this.callbackUrl || !this.serverId) {
-      const existingSession = await sessions.get(this.userId, this.sessionId);
+    if (!this.config.serverUrl || !this.config.callbackUrl || !this.config.serverId) {
+      const existingSession = await sessions.get(this.config.userId, this.config.sessionId);
       if (!existingSession) {
-        throw new Error(`Session not found: ${this.sessionId}`);
+        throw new Error(`Session not found: ${this.config.sessionId}`);
       }
 
-      this.serverUrl = this.serverUrl || existingSession.serverUrl;
-      this.callbackUrl = this.callbackUrl || existingSession.callbackUrl;
-      this.serverName = this.serverName || existingSession.serverName;
-      this.serverId = this.serverId || existingSession.serverId || 'unknown';
-      this.headers = this.headers || existingSession.headers;
+      this.config.serverUrl = this.config.serverUrl || existingSession.serverUrl;
+      this.config.callbackUrl = this.config.callbackUrl || existingSession.callbackUrl;
+      this.config.serverName = this.config.serverName || existingSession.serverName;
+      this.config.serverId = this.config.serverId || existingSession.serverId || 'unknown';
+      this.config.headers = this.config.headers || existingSession.headers;
       this.createdAt = existingSession.createdAt;
     }
 
-    if (!this.serverUrl || !this.callbackUrl || !this.serverId) {
+    if (!this.config.serverUrl || !this.config.callbackUrl || !this.config.serverId) {
       throw new Error('Missing required connection metadata');
     }
 
     this.oauthProvider = new StorageOAuthClientProvider({
-      userId: this.userId,
-      serverId: this.serverId!,
-      sessionId: this.sessionId,
-      redirectUrl: this.callbackUrl!,
-      clientName: this.clientName,
-      clientUri: this.clientUri,
-      logoUri: this.logoUri,
-      policyUri: this.policyUri,
-      clientId: this.clientId,
-      clientSecret: this.clientSecret,
+      userId: this.config.userId,
+      serverId: this.config.serverId!,
+      sessionId: this.config.sessionId,
+      redirectUrl: this.config.callbackUrl!,
+      clientName: this.config.clientName,
+      clientUri: this.config.clientUri,
+      logoUri: this.config.logoUri,
+      policyUri: this.config.policyUri,
+      clientId: this.config.clientId,
+      clientSecret: this.config.clientSecret,
       onRedirect: (redirectUrl: string) => {
-        if (this.serverId) {
+        if (this.config.serverId) {
           this._onConnectionEvent.fire({
             type: 'auth_required',
-            sessionId: this.sessionId,
-            serverId: this.serverId,
+            sessionId: this.config.sessionId,
+            serverId: this.config.serverId,
             authUrl: redirectUrl,
             timestamp: Date.now(),
           });
         }
-        if (this.onRedirect) {
-          this.onRedirect(redirectUrl);
+        if (this.config.onRedirect) {
+          this.config.onRedirect(redirectUrl);
         }
       },
     });
 
     // Create session row BEFORE persisting credentials (FK constraint on mcp_credentials)
-    const existingSession = await sessions.get(this.userId, this.sessionId);
+    const existingSession = await sessions.get(this.config.userId, this.config.sessionId);
     if (!existingSession) {
       this.createdAt = Date.now();
       const updatedAt = this.createdAt;
       this._onObservabilityEvent.fire({
         type: 'mcp:client:session_created',
         level: 'info',
-        message: `Creating pending session ${this.sessionId} for connection setup`,
-        sessionId: this.sessionId,
-        serverId: this.serverId,
+        message: `Creating pending session ${this.config.sessionId} for connection setup`,
+        sessionId: this.config.sessionId,
+        serverId: this.config.serverId,
         timestamp: Date.now(),
         id: nanoid(),
       });
       await sessions.create({
-        sessionId: this.sessionId,
-        userId: this.userId,
-        serverId: this.serverId!,
-        serverName: this.serverName,
-        serverUrl: this.serverUrl!,
-        callbackUrl: this.callbackUrl!,
-        transportType: this.transportType || 'streamable-http',
-        headers: this.headers,
-        createdAt: this.createdAt,
+        ...this.session,
         updatedAt,
         status: 'pending',
       });
@@ -392,35 +371,22 @@ export class MCPClient {
     status: SessionStatus = 'active',
     existingSession?: Session | null
   ): Promise<void> {
-    if (!this.sessionId || !this.serverId || !this.serverUrl || !this.callbackUrl) {
+    if (!this.config.sessionId || !this.config.serverId || !this.config.serverUrl || !this.config.callbackUrl) {
       return;
     }
 
-    const sessionData = {
-      sessionId: this.sessionId,
-      userId: this.userId,
-      serverId: this.serverId,
-      serverName: this.serverName,
-      serverUrl: this.serverUrl,
-      callbackUrl: this.callbackUrl,
-      transportType: (this.transportType || 'streamable-http') as TransportType,
-      headers: this.headers,
-      createdAt: this.createdAt || Date.now(),
-      updatedAt: Date.now(),
-      status,
-    };
-    if (status === 'active') {
-      (sessionData as typeof sessionData & { authUrl: null }).authUrl = null;
+    if (existingSession === undefined) {
+      existingSession = await sessions.get(this.config.userId, this.config.sessionId);
     }
 
-    // Try to update first, create if doesn't exist
-    if (existingSession === undefined) {
-      existingSession = await sessions.get(this.userId, this.sessionId);
-    }
     if (existingSession) {
-      await sessions.update(this.userId, this.sessionId, sessionData);
+      await sessions.update(this.config.userId, this.config.sessionId, {
+        ...this.session,
+        status,
+        ...(status === 'active' && { authUrl: null }),
+      });
     } else {
-      await sessions.create(sessionData);
+      await sessions.create({ ...this.session, status });
     }
   }
 
@@ -430,7 +396,7 @@ export class MCPClient {
    */
   private async deleteTransientSession(): Promise<void> {
     try {
-      await sessions.delete(this.userId, this.sessionId);
+      await sessions.delete(this.config.userId, this.config.sessionId);
     } catch {
       // Best effort only: preserve the original connection/auth error.
     }
@@ -446,8 +412,8 @@ export class MCPClient {
      * If exact transport type is known, only try that.
      * Otherwise (auto mode), try streamable_http first, then sse.
      */
-    const transportsToTry: TransportType[] = this.transportType
-      ? [this.transportType]
+    const transportsToTry: TransportType[] = this.config.transportType
+      ? [this.config.transportType]
       : ['streamable-http', 'sse'];
 
     let lastError: unknown;
@@ -489,8 +455,8 @@ export class MCPClient {
         this._onObservabilityEvent.fire({
           level: 'warn',
           message: `Transport ${currentType} failed, falling back`,
-          sessionId: this.sessionId,
-          serverId: this.serverId,
+          sessionId: this.config.sessionId,
+          serverId: this.config.serverId,
           metadata: {
             failedTransport: currentType,
             error: errorMessage
@@ -545,7 +511,7 @@ export class MCPClient {
       const { transportType } = await this.tryConnect();
 
       /** Update transport type to the one that actually worked */
-      this.transportType = transportType;
+      this.config.transportType = transportType;
 
       this.emitStateChange('CONNECTED');
       this.emitProgress('Connected successfully');
@@ -555,9 +521,9 @@ export class MCPClient {
       this._onObservabilityEvent.fire({
         type: 'mcp:client:session_saved',
         level: 'info',
-        message: `Saving active session ${this.sessionId} (connect success)`,
-        sessionId: this.sessionId,
-        serverId: this.serverId,
+        message: `Saving active session ${this.config.sessionId} (connect success)`,
+        sessionId: this.config.sessionId,
+        serverId: this.config.serverId,
         timestamp: Date.now(),
         id: nanoid(),
       });
@@ -600,25 +566,25 @@ export class MCPClient {
         this._onObservabilityEvent.fire({
           type: 'mcp:client:session_saved',
           level: 'info',
-          message: `Saving pending OAuth session ${this.sessionId}`,
-          sessionId: this.sessionId,
-          serverId: this.serverId,
+          message: `Saving pending OAuth session ${this.config.sessionId}`,
+          sessionId: this.config.sessionId,
+          serverId: this.config.serverId,
           timestamp: Date.now(),
           id: nanoid(),
         });
         await this.saveSession('pending');
 
-        if (this.serverId) {
+        if (this.config.serverId) {
           this._onConnectionEvent.fire({
             type: 'auth_required',
-            sessionId: this.sessionId,
-            serverId: this.serverId,
+            sessionId: this.config.sessionId,
+            serverId: this.config.serverId,
             authUrl,
             timestamp: Date.now(),
           });
 
-          if (authUrl && this.onRedirect) {
-            this.onRedirect(authUrl);
+          if (authUrl && this.config.onRedirect) {
+            this.config.onRedirect(authUrl);
           }
         }
 
@@ -633,9 +599,9 @@ export class MCPClient {
       // Remove transient sessions that failed before becoming restorable.
       // Existing active sessions may still hold usable credentials for reconnect.
       try {
-        const existingSession = await sessions.get(this.userId, this.sessionId);
+        const existingSession = await sessions.get(this.config.userId, this.config.sessionId);
         if (!existingSession || existingSession.status !== 'active') {
-          await sessions.delete(this.userId, this.sessionId);
+          await sessions.delete(this.config.userId, this.config.sessionId);
         }
       } catch {
         // Best effort only: preserve the original connection error.
@@ -682,8 +648,8 @@ export class MCPClient {
      * Determine which transports to try for finishing auth
      * If transportType is set, use only that. Otherwise try streamable_http then sse.
      */
-    const transportsToTry: TransportType[] = this.transportType
-      ? [this.transportType]
+    const transportsToTry: TransportType[] = this.config.transportType
+      ? [this.config.transportType]
       : ['streamable-http', 'sse'];
 
     let lastError: unknown;
@@ -723,15 +689,15 @@ export class MCPClient {
         await this.client.connect(this.transport);
 
         /** Connection succeeded — lock in the transport type */
-        this.transportType = currentType;
+        this.config.transportType = currentType;
 
         this.emitStateChange('CONNECTED');
         this._onObservabilityEvent.fire({
           type: 'mcp:client:session_saved',
           level: 'info',
-          message: `Saving active session ${this.sessionId} (OAuth complete)`,
-          sessionId: this.sessionId,
-          serverId: this.serverId,
+          message: `Saving active session ${this.config.sessionId} (OAuth complete)`,
+          sessionId: this.config.sessionId,
+          serverId: this.config.serverId,
           timestamp: Date.now(),
           id: nanoid(),
         });
@@ -831,11 +797,11 @@ export class MCPClient {
     try {
       const result = await this.fetchTools();
 
-      if (this.serverId) {
+      if (this.config.serverId) {
         this._onConnectionEvent.fire({
           type: 'tools_discovered',
-          sessionId: this.sessionId,
-          serverId: this.serverId,
+          sessionId: this.config.sessionId,
+          serverId: this.config.serverId,
           toolCount: result.tools.length,
           tools: result.tools,
           timestamp: Date.now(),
@@ -879,8 +845,8 @@ export class MCPClient {
         level: 'info',
         message: `Tool ${toolName} called successfully`,
         displayMessage: `Called tool ${toolName}`,
-        sessionId: this.sessionId,
-        serverId: this.serverId,
+        sessionId: this.config.sessionId,
+        serverId: this.config.serverId,
         payload: {
           toolName,
           args: toolArgs,
@@ -898,8 +864,8 @@ export class MCPClient {
         level: 'error',
         message: errorMessage,
         displayMessage: `Failed to call tool ${toolName}`,
-        sessionId: this.sessionId,
-        serverId: this.serverId,
+        sessionId: this.config.sessionId,
+        serverId: this.config.serverId,
         payload: {
           errorType: 'tool_execution',
           error: errorMessage,
@@ -1064,8 +1030,8 @@ export class MCPClient {
         type: 'mcp:client:error',
         level: 'warn',
         message: 'Initialization failed during clearSession',
-        sessionId: this.sessionId,
-        serverId: this.serverId,
+        sessionId: this.config.sessionId,
+        serverId: this.config.serverId,
         payload: { error: String(error) },
         timestamp: Date.now(),
         id: nanoid(),
@@ -1076,7 +1042,7 @@ export class MCPClient {
       await (this.oauthProvider as any).invalidateCredentials('all');
     }
 
-    await sessions.delete(this.userId, this.sessionId);
+    await sessions.delete(this.config.userId, this.config.sessionId);
     await this.disconnect();
   }
 
@@ -1119,20 +1085,20 @@ export class MCPClient {
     this.transport = null;
 
     // Emit disconnected event
-    if (this.serverId) {
+    if (this.config.serverId) {
       this._onConnectionEvent.fire({
         type: 'disconnected',
-        sessionId: this.sessionId,
-        serverId: this.serverId,
+        sessionId: this.config.sessionId,
+        serverId: this.config.serverId,
         timestamp: Date.now(),
       });
 
       this._onObservabilityEvent.fire({
         type: 'mcp:client:disconnect',
         level: 'info',
-        message: `Disconnected from ${this.serverId}`,
-        sessionId: this.sessionId,
-        serverId: this.serverId,
+        message: `Disconnected from ${this.config.serverId}`,
+        sessionId: this.config.sessionId,
+        serverId: this.config.serverId,
         payload: {},
         timestamp: Date.now(),
         id: nanoid(),
@@ -1160,7 +1126,7 @@ export class MCPClient {
    * @returns Server URL or empty string if not set
    */
   getServerUrl(): string {
-    return this.serverUrl || '';
+    return this.config.serverUrl || '';
   }
 
   /**
@@ -1168,7 +1134,7 @@ export class MCPClient {
    * @returns Callback URL or empty string if not set
    */
   getCallbackUrl(): string {
-    return this.callbackUrl || '';
+    return this.config.callbackUrl || '';
   }
 
   /**
@@ -1176,7 +1142,7 @@ export class MCPClient {
    * @returns Transport type (defaults to 'streamable-http')
    */
   getTransportType(): TransportType {
-    return this.transportType || 'streamable-http';
+    return this.config.transportType || 'streamable-http';
   }
 
   /**
@@ -1186,8 +1152,8 @@ export class MCPClient {
   getServerName(): string | undefined {
     // Temporarily avoid deriving serverName from serverVersion metadata.
     // const info = (this.client as any)?.getServerVersion();
-    // return info?.title ?? info?.name ?? this.serverName;
-    return this.serverName;
+    // return info?.title ?? info?.name ?? this.config.serverName;
+    return this.config.serverName;
   }
 
   /**
@@ -1195,7 +1161,7 @@ export class MCPClient {
    * @returns Server ID or undefined
    */
   getServerId(): string | undefined {
-    return this.serverId;
+    return this.config.serverId;
   }
 
   /**
@@ -1203,6 +1169,6 @@ export class MCPClient {
    * @returns Session ID
    */
   getSessionId(): string {
-    return this.sessionId;
+    return this.config.sessionId;
   }
 }
