@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { SessionStore, Session, SessionCredentials } from './types.js';
+import type { SessionStore, Session, SessionCredentials, GetOptions, SessionResult } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { encryptObject, decryptObject } from './crypto.js';
 import { resolveSessionExpiresAt } from './session-lifecycle.js';
@@ -200,7 +200,29 @@ export class SupabaseStorageBackend implements SessionStore {
 
     }
 
-    async get(userId: string, sessionId: string): Promise<Session | null> {
+    async get(userId: string, sessionId: string, options?: GetOptions): Promise<SessionResult | null> {
+        if (options?.includeCredentials) {
+            const { data: sessionData, error: sessionError } = await this.supabase
+                .from('mcp_sessions')
+                .select('*, mcp_credentials(*)')
+                .eq('user_id', userId)
+                .eq('session_id', sessionId)
+                .maybeSingle();
+
+            if (sessionError) {
+                console.error('[SupabaseStorage] Failed to get session:', sessionError);
+                return null;
+            }
+            if (!sessionData) return null;
+
+            const session = this.mapRowToSessionData(sessionData);
+            const credsRow = (sessionData as any).mcp_credentials;
+            const creds = credsRow
+                ? this.mapRowToCredentials(credsRow, userId, sessionId)
+                : { sessionId, userId };
+            return { ...session, credentials: creds };
+        }
+
         const { data, error } = await this.supabase
             .from('mcp_sessions')
             .select('*')
@@ -216,6 +238,45 @@ export class SupabaseStorageBackend implements SessionStore {
         if (!data) return null;
 
         return this.mapRowToSessionData(data);
+    }
+
+    async forceUpdate(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
+        const updateData: any = {
+            updated_at: new Date().toISOString(),
+        };
+
+        if ('serverId' in data) updateData.server_id = data.serverId;
+        if ('serverName' in data) updateData.server_name = data.serverName;
+        if ('serverUrl' in data) updateData.server_url = data.serverUrl;
+        if ('transportType' in data) updateData.transport_type = data.transportType;
+        if ('callbackUrl' in data) updateData.callback_url = data.callbackUrl;
+        if ('status' in data) {
+            const status = data.status ?? 'pending';
+            const expiresAt = resolveSessionExpiresAt(status);
+            updateData.status = status;
+            updateData.expires_at = expiresAt === null ? null : new Date(expiresAt).toISOString();
+        }
+        if ('headers' in data) updateData.headers = encryptObject(data.headers);
+        if ('authUrl' in data) updateData.auth_url = data.authUrl ?? null;
+        if ('toolPolicy' in data) updateData.tool_policy = normalizeToolPolicy(data.toolPolicy);
+
+        const shouldUpdateSession = Object.keys(updateData).some((key) => key !== 'updated_at');
+        if (!shouldUpdateSession) return;
+
+        const result = await this.supabase
+            .from('mcp_sessions')
+            .update(updateData)
+            .eq('user_id', userId)
+            .eq('session_id', sessionId)
+            .select('id');
+
+        if (result.error) {
+            throw new Error(`Failed to update session: ${result.error.message}`);
+        }
+
+        if (!result.data || result.data.length === 0) {
+            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
+        }
     }
 
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {

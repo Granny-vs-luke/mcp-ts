@@ -86,6 +86,12 @@ export interface SetClientOptions {
 /**
  * Interface for MCP session stores.
  */
+export type GetOptions = {
+    includeCredentials?: boolean;
+};
+
+export type SessionResult = Session & { credentials?: SessionCredentials | null };
+
 export interface SessionStore {
     /**
      * Optional initialization (e.g., database connection)
@@ -112,15 +118,24 @@ export interface SessionStore {
     update(userId: string, sessionId: string, data: Partial<Session>): Promise<void>;
 
     /**
+     * Updates a session without verifying it exists first.
+     * Unlike update(), this does not do a pre-update existence check,
+     * saving one round-trip when the session is guaranteed to exist.
+     */
+    forceUpdate(userId: string, sessionId: string, data: Partial<Session>): Promise<void>;
+
+    /**
      * Patches runtime credentials for an existing session.
      * These values are separated from connection metadata in durable SQL stores.
      */
     patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void>;
 
     /**
-     * Retrieves a session
+     * Retrieves a session, optionally including its credentials in one round-trip.
+     * When includeCredentials is true, the returned session includes a `credentials`
+     * field with the associated SessionCredentials (or null if none exist).
      */
-    get(userId: string, sessionId: string): Promise<Session | null>;
+    get(userId: string, sessionId: string, options?: GetOptions): Promise<SessionResult | null>;
 
     /**
      * Retrieves runtime credentials for a session.

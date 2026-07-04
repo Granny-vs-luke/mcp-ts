@@ -1,5 +1,5 @@
 import type { Redis } from 'ioredis';
-import type { SessionStore, Session, SessionCredentials } from './types.js';
+import type { SessionStore, Session, SessionCredentials, GetOptions, SessionResult } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
 import {
     mergeSessionUpdate,
@@ -171,20 +171,58 @@ export class RedisStorageBackend implements SessionStore {
         }
     }
 
-    async get(userId: string, sessionId: string): Promise<Session | null> {
+    async get(userId: string, sessionId: string, options?: GetOptions): Promise<SessionResult | null> {
         try {
             const sessionKey = this.getSessionKey(userId, sessionId);
-            const sessionDataStr = await this.redis.get(sessionKey);
 
-            if (!sessionDataStr) {
-                return null;
+            if (options?.includeCredentials) {
+                const credentialsKey = this.getCredentialsKey(userId, sessionId);
+                const [sessionDataStr, credsStr] = await Promise.all([
+                    this.redis.get(sessionKey),
+                    this.redis.get(credentialsKey),
+                ]);
+
+                if (!sessionDataStr) return null;
+                const session = normalizeStoredSession(JSON.parse(sessionDataStr) as Session);
+                const creds = credsStr
+                    ? JSON.parse(credsStr) as SessionCredentials
+                    : { sessionId, userId };
+                return { ...session, credentials: creds };
             }
 
-            const session: Session = JSON.parse(sessionDataStr);
-            return normalizeStoredSession(session);
+            const sessionDataStr = await this.redis.get(sessionKey);
+            if (!sessionDataStr) return null;
+            return normalizeStoredSession(JSON.parse(sessionDataStr) as Session);
         } catch (error) {
             console.error('[RedisStorageBackend] Failed to get session:', error);
             return null;
+        }
+    }
+
+    async forceUpdate(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
+        const sessionKey = this.getSessionKey(userId, sessionId);
+        const script = `
+            local currentStr = redis.call("GET", KEYS[1])
+            if not currentStr then
+                return 0
+            end
+            local current = cjson.decode(currentStr)
+            local updated = cjson.decode(ARGV[1])
+            redis.call("SET", KEYS[1], cjson.encode(updated), "EX", ARGV[2])
+            return 1
+        `;
+
+        const current = await this.get(userId, sessionId);
+        if (!current) {
+            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
+        }
+
+        const updated = mergeSessionUpdate(current, data);
+        const effectiveTtl = resolveSessionRedisTtlSeconds(updated);
+
+        const result = await this.redis.eval(script, 1, sessionKey, JSON.stringify(updated), effectiveTtl);
+        if (result === 0) {
+            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
     }
 

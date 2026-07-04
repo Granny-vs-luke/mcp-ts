@@ -1,4 +1,4 @@
-import type { SessionStore, Session, SessionCredentials } from './types.js';
+import type { SessionStore, Session, SessionCredentials, GetOptions, SessionResult } from './types.js';
 import { generateSessionId } from '../../shared/utils.js';
 import { isSessionExpired, mergeSessionUpdate, normalizeNewSession } from './session-lifecycle.js';
 
@@ -72,9 +72,23 @@ export class MemoryStorageBackend implements SessionStore {
     }
 
 
-    async get(userId: string, sessionId: string): Promise<Session | null> {
+    async get(userId: string, sessionId: string, options?: GetOptions): Promise<SessionResult | null> {
         const sessionKey = this.getSessionKey(userId, sessionId);
-        return this.sessions.get(sessionKey) || null;
+        const session = this.sessions.get(sessionKey) || null;
+        if (!session || !options?.includeCredentials) return session;
+        const creds = this.credentials.get(sessionKey) ?? { sessionId, userId };
+        return { ...session, credentials: creds };
+    }
+
+    async forceUpdate(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
+        if (!userId || !sessionId) throw new Error('userId and sessionId required');
+        const sessionKey = this.getSessionKey(userId, sessionId);
+        const current = this.sessions.get(sessionKey);
+        if (!current) {
+            throw new Error(`Session ${sessionId} not found`);
+        }
+        const updated = mergeSessionUpdate(current, data);
+        this.sessions.set(sessionKey, updated);
     }
 
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {

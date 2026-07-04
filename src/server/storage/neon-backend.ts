@@ -1,4 +1,4 @@
-import type { SessionStore, Session, SessionCredentials } from './types.js';
+import type { SessionStore, Session, SessionCredentials, GetOptions, SessionResult } from './types.js';
 import type { SessionStatus } from './types.js';
 import { DORMANT_SESSION_EXPIRATION_MS } from '../../shared/constants.js';
 import { generateSessionId } from '../../shared/utils.js';
@@ -282,19 +282,88 @@ export class NeonStorageBackend implements SessionStore {
 
     }
 
-    async get(userId: string, sessionId: string): Promise<Session | null> {
+    async get(userId: string, sessionId: string, options?: GetOptions): Promise<SessionResult | null> {
         try {
+            if (options?.includeCredentials) {
+                const rows = await this.sql.query(
+                    `SELECT s.*, c.client_information, c.tokens, c.code_verifier, c.client_id, c.oauth_state
+                     FROM ${this.tableName} s
+                     LEFT JOIN ${this.credentialsTableName} c
+                       ON s.user_id = c.user_id AND s.session_id = c.session_id
+                     WHERE s.user_id = $1 AND s.session_id = $2`,
+                    [userId, sessionId]
+                ) as (NeonSessionRow & NeonCredentialsRow)[];
+
+                if (!rows[0]) return null;
+                const session = this.mapRowToSessionData(rows[0]);
+                const creds = rows[0].client_id !== undefined
+                    ? this.mapRowToCredentials(rows[0], userId, sessionId)
+                    : { sessionId, userId };
+                return { ...session, credentials: creds };
+            }
+
             const rows = await this.sql.query(
                 `SELECT * FROM ${this.tableName} WHERE user_id = $1 AND session_id = $2`,
                 [userId, sessionId]
             ) as NeonSessionRow[];
 
             if (!rows[0]) return null;
-
             return this.mapRowToSessionData(rows[0]);
         } catch (error) {
             console.error('[NeonStorage] Failed to get session:', error);
             return null;
+        }
+    }
+
+    async forceUpdate(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
+        if (!userId || !sessionId) throw new Error('userId and sessionId required');
+
+        const currentSession = await this.get(userId, sessionId);
+        if (!currentSession) {
+            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
+        }
+
+        const updatedSession = { ...currentSession, ...data };
+        const status = updatedSession.status ?? 'pending';
+        const expiresAt = resolveSessionExpiresAt(status);
+
+        const setClauses: string[] = [];
+        const values: unknown[] = [];
+        let paramIndex = 1;
+
+        const addSet = (column: string, value: unknown) => {
+            setClauses.push(`${column} = $${paramIndex++}`);
+            values.push(value);
+        };
+
+        addSet('server_id', updatedSession.serverId);
+        addSet('server_name', updatedSession.serverName);
+        addSet('server_url', updatedSession.serverUrl);
+        addSet('transport_type', updatedSession.transportType);
+        addSet('callback_url', updatedSession.callbackUrl);
+        addSet('status', status);
+        addSet('headers', encryptObject(updatedSession.headers));
+        addSet('auth_url', updatedSession.authUrl ?? null);
+        addSet('expires_at', expiresAt === null ? null : new Date(expiresAt).toISOString());
+
+        if (data.toolPolicy !== undefined) {
+            const policyUpdatedAt = updatedSession.updatedAt ?? Date.now();
+            const toolPolicy = normalizeToolPolicy(updatedSession.toolPolicy, policyUpdatedAt) ?? { mode: 'all' as const, toolIds: [], updatedAt: policyUpdatedAt };
+            addSet('tool_policy', toolPolicy);
+        }
+
+        setClauses.push('updated_at = now()');
+
+        const updatedRows = await this.sql.query(
+            `UPDATE ${this.tableName}
+             SET ${setClauses.join(', ')}
+             WHERE user_id = $${paramIndex++} AND session_id = $${paramIndex++}
+             RETURNING id`,
+            [...values, userId, sessionId]
+        ) as Array<{ id: string }>;
+
+        if (updatedRows.length === 0) {
+            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
         }
     }
 
