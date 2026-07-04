@@ -35,35 +35,6 @@ import {
   MCP_CLIENT_VERSION,
 } from '../../shared/constants.js';
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import type { OAuthClientMetadata } from '@modelcontextprotocol/sdk/shared/auth.js';
-
-/**
- * Minimal auth provider matching the SDK's dual-mode pattern.
- * Replace with SDK's built-in AuthProvider when v2 ships.
- */
-interface AuthProvider {
-  token(): Promise<string | undefined>;
-  onUnauthorized?(ctx: { response: Response }): Promise<void>;
-}
-
-/**
- * Wraps a minimal AuthProvider into OAuthClientProvider for v1.29.0 transport.
- */
-function adaptAuthProvider(auth: AuthProvider): OAuthClientProvider {
-  return {
-    get redirectUrl() { return undefined; },
-    get clientMetadata() { return {} as OAuthClientMetadata; },
-    clientInformation() { return Promise.resolve(undefined); },
-    async tokens() {
-      const token = await auth.token();
-      return token ? { access_token: token, token_type: 'bearer' } : undefined;
-    },
-    saveTokens() { /* no-op */ },
-    redirectToAuthorization() { /* no-op */ },
-    saveCodeVerifier() { /* no-op */ },
-    codeVerifier() { throw new Error('Bearer token auth does not support PKCE'); },
-  };
-}
 
 /**
  * Supported MCP transport types
@@ -129,15 +100,6 @@ export class MCPClient {
   private logoUri?: string;
   private policyUri?: string;
   private createdAt?: number;
-
-
-  /**
-   * Extracts bearer token from the Authorization header, if present.
-   */
-  private getBearerToken(): string | undefined {
-    const authHeader = this.headers?.['authorization'] ?? this.headers?.['Authorization'];
-    return authHeader?.match(/^bearer\s+(.+)/i)?.[1];
-  }
 
   /** Event emitters for connection lifecycle */
   private readonly _onConnectionEvent = new Emitter<McpConnectionEvent>();
@@ -286,14 +248,11 @@ export class MCPClient {
     }
 
     const baseUrl = new URL(this.serverUrl);
-    const transportHeaders = this.headers ? { ...this.headers } : undefined;
-    if (transportHeaders) {
-      delete transportHeaders['authorization'];
-      delete transportHeaders['Authorization'];
-    }
-    const transportOptions = {
-      authProvider: this.oauthProvider!,
-      ...(transportHeaders && Object.keys(transportHeaders).length > 0 && { requestInit: { headers: transportHeaders } }),
+    const hasAuthorizationHeader = Object.keys(this.headers || {})
+      .some((key) => key.toLowerCase() === 'authorization');
+    const transportOptions: Record<string, any> = {
+      ...(!hasAuthorizationHeader && { authProvider: this.oauthProvider }),
+      ...(this.headers && { requestInit: { headers: this.headers } }),
       /**
        * Custom fetch implementation to handle connection timeouts.
        * Observation: SDK 1.24.0+ connections may hang indefinitely in some environments.
@@ -360,7 +319,32 @@ export class MCPClient {
       throw new Error('Missing required connection metadata');
     }
 
-    this.oauthProvider = await this.createProvider();
+    this.oauthProvider = new StorageOAuthClientProvider({
+      userId: this.userId,
+      serverId: this.serverId!,
+      sessionId: this.sessionId,
+      redirectUrl: this.callbackUrl!,
+      clientName: this.clientName,
+      clientUri: this.clientUri,
+      logoUri: this.logoUri,
+      policyUri: this.policyUri,
+      clientId: this.clientId,
+      clientSecret: this.clientSecret,
+      onRedirect: (redirectUrl: string) => {
+        if (this.serverId) {
+          this._onConnectionEvent.fire({
+            type: 'auth_required',
+            sessionId: this.sessionId,
+            serverId: this.serverId,
+            authUrl: redirectUrl,
+            timestamp: Date.now(),
+          });
+        }
+        if (this.onRedirect) {
+          this.onRedirect(redirectUrl);
+        }
+      },
+    });
 
     // Create session row BEFORE persisting credentials (FK constraint on mcp_credentials)
     const existingSession = await sessions.get(this.userId, this.sessionId);
@@ -396,40 +380,6 @@ export class MCPClient {
     if (!existingSession && this.oauthProvider instanceof StorageOAuthClientProvider) {
         await this.oauthProvider.initializeCredentials();
     }
-  }
-
-  private async createProvider(): Promise<OAuthClientProvider> {
-    const bearerToken = this.getBearerToken();
-    if (bearerToken) {
-      return adaptAuthProvider({ token: async () => bearerToken });
-    }
-
-    return new StorageOAuthClientProvider({
-      userId: this.userId,
-      serverId: this.serverId!,
-      sessionId: this.sessionId,
-      redirectUrl: this.callbackUrl!,
-      clientName: this.clientName,
-      clientUri: this.clientUri,
-      logoUri: this.logoUri,
-      policyUri: this.policyUri,
-      clientId: this.clientId,
-      clientSecret: this.clientSecret,
-      onRedirect: (redirectUrl: string) => {
-        if (this.serverId) {
-          this._onConnectionEvent.fire({
-            type: 'auth_required',
-            sessionId: this.sessionId,
-            serverId: this.serverId,
-            authUrl: redirectUrl,
-            timestamp: Date.now(),
-          });
-        }
-        if (this.onRedirect) {
-          this.onRedirect(redirectUrl);
-        }
-      },
-    });
   }
 
   /**

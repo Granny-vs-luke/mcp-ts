@@ -74,7 +74,7 @@ test.describe('MCPClient', () => {
     });
 
     test.describe('static Authorization headers', () => {
-        test('creates auth provider when Authorization header is present', async () => {
+        test('creates StorageOAuthClientProvider even with Authorization header present', async () => {
             _setStorageInstanceForTesting(new MemoryStorageBackend());
 
             const client = new MCPClient({
@@ -94,11 +94,10 @@ test.describe('MCPClient', () => {
             const provider = (client as any).oauthProvider;
 
             expect(provider).toBeTruthy();
-            expect(typeof provider.tokens).toBe('function');
-            await expect(provider.tokens()).resolves.toEqual({ access_token: 'static-token', token_type: 'bearer' });
+            expect(provider.constructor.name).toBe('StorageOAuthClientProvider');
         });
 
-        test('passes non-auth custom headers to requestInit', async () => {
+        test('passes all headers including Authorization in requestInit', async () => {
             _setStorageInstanceForTesting(new MemoryStorageBackend());
 
             const client = new MCPClient({
@@ -119,11 +118,12 @@ test.describe('MCPClient', () => {
             const transport = (client as any).getTransport('streamable-http');
 
             expect((transport as any)._requestInit?.headers).toEqual({
+                Authorization: 'Bearer static-token',
                 'x-consumer-api-key': 'my-key',
             });
         });
 
-        test('does not include Authorization header in requestInit custom headers', async () => {
+        test('includes only Authorization header in requestInit when present alone', async () => {
             _setStorageInstanceForTesting(new MemoryStorageBackend());
 
             const client = new MCPClient({
@@ -142,7 +142,9 @@ test.describe('MCPClient', () => {
             await (client as any).ensureSession();
             const transport = (client as any).getTransport('streamable-http');
 
-            expect((transport as any)._requestInit).toBeUndefined();
+            expect((transport as any)._requestInit?.headers).toEqual({
+                Authorization: 'Bearer static-token',
+            });
         });
     });
 
