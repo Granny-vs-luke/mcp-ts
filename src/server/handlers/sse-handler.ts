@@ -269,7 +269,7 @@ export class SSEConnectionManager {
    * Connect to an MCP server
    */
   private async connect(params: ConnectParams): Promise<ConnectResult> {
-    const { serverName, serverUrl, callbackUrl, transportType, clientId, clientSecret } = params;
+    const { serverName, serverUrl, callbackUrl, transportType } = params;
     const headers = normalizeHeaders(params.headers);
 
     // Normalize serverId to max 12 chars to keep tool names under 64 chars (DeepSeek/OpenAI limits)
@@ -314,8 +314,6 @@ export class SSEConnectionManager {
         callbackUrl,
         transportType,
         headers,
-        clientId,
-        clientSecret,
         ...clientMetadata, // Spread client metadata (clientName, clientUri, logoUri, policyUri)
       });
 
@@ -375,7 +373,7 @@ export class SSEConnectionManager {
    * and creates a fresh connection while reusing the existing session credentials in a single RPC call.
    */
   private async reconnect(params: ReconnectParams): Promise<ConnectResult> {
-    const { serverId: rawServerId, serverName, serverUrl, callbackUrl, transportType, clientId, clientSecret } = params;
+    const { serverId: rawServerId, serverName, serverUrl, callbackUrl, transportType } = params;
     const headers = normalizeHeaders(params.headers);
 
     // Normalize serverId the same way connect() does
@@ -414,8 +412,6 @@ export class SSEConnectionManager {
         callbackUrl,
         transportType,
         headers,
-        clientId,
-        clientSecret,
         ...clientMetadata,
       });
 
