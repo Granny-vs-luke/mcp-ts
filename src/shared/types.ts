@@ -218,8 +218,6 @@ export interface ConnectParams {
   callbackUrl: string;
   transportType?: TransportType;
   headers?: Record<string, string>;
-  clientId?: string;
-  clientSecret?: string;
 }
 
 export interface DisconnectParams {
