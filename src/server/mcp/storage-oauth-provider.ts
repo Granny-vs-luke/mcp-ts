@@ -65,6 +65,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
 
     private _authUrl: string | undefined;
     private _clientId: string | undefined;
+    private _hasCodeVerifier = false;
     private onRedirectCallback?: (url: string) => void;
 
     /**
@@ -197,6 +198,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async state(): Promise<string> {
+        this._hasCodeVerifier = false;
         const nonce = nanoid(32);
         await this.patchCredentials({
             oauthState: {
@@ -284,12 +286,12 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async saveCodeVerifier(verifier: string): Promise<void> {
-        const data = await this.getCredentials();
-        if (data.codeVerifier) {
+        if (this._hasCodeVerifier) {
             return;
         }
 
         await this.patchCredentials({ codeVerifier: verifier });
+        this._hasCodeVerifier = true;
     }
 
     async codeVerifier(): Promise<string> {
@@ -307,6 +309,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
 
     async deleteCodeVerifier(): Promise<void> {
         await this.patchCredentials({ codeVerifier: null });
+        this._hasCodeVerifier = false;
     }
 
     async tokens(): Promise<OAuthTokens | undefined> {

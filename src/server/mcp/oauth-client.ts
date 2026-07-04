@@ -367,27 +367,16 @@ export class MCPClient {
    * @param status - Session lifecycle status used by storage cleanup
    * @private
    */
-  private async saveSession(
-    status: SessionStatus = 'active',
-    existingSession?: Session | null
-  ): Promise<void> {
+  private async saveSession(status: SessionStatus = 'active'): Promise<void> {
     if (!this.config.sessionId || !this.config.serverId || !this.config.serverUrl || !this.config.callbackUrl) {
       return;
     }
 
-    if (existingSession === undefined) {
-      existingSession = await sessions.get(this.config.userId, this.config.sessionId);
-    }
-
-    if (existingSession) {
-      await sessions.update(this.config.userId, this.config.sessionId, {
-        ...this.session,
-        status,
-        ...(status === 'active' && { authUrl: null }),
-      });
-    } else {
-      await sessions.create({ ...this.session, status });
-    }
+    await sessions.update(this.config.userId, this.config.sessionId, {
+      ...this.session,
+      status,
+      ...(status === 'active' && { authUrl: null }),
+    });
   }
 
   /**
@@ -633,15 +622,14 @@ export class MCPClient {
     }
 
     if (state) {
-      const stateCheck = await (this.oauthProvider as AgentsOAuthProvider).checkState(state);
-      if (!stateCheck.valid) {
-        const error = stateCheck.error || 'Invalid OAuth state';
-        this.emitError(error, 'auth');
+      try {
+        await (this.oauthProvider as AgentsOAuthProvider).consumeState(state);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Invalid OAuth state';
+        this.emitError(msg, 'auth');
         this.emitStateChange('FAILED');
-        throw new Error(error);
+        throw error;
       }
-
-      await (this.oauthProvider as AgentsOAuthProvider).consumeState(state);
     }
 
     /**
