@@ -140,6 +140,19 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
             this._clientId = data.clientId;
         }
 
+        // If we have clientId/clientSecret from constructor, but they aren't stored
+        // in database credentials yet, persist them now so they are available
+        // on subsequent connection recovery / session rehydration.
+        if (this._clientId && !data.clientId) {
+            await this.patchCredentials({
+                clientId: this._clientId,
+                clientInformation: {
+                    client_id: this._clientId,
+                    ...(this.clientSecret ? { client_secret: this.clientSecret } : {}),
+                }
+            });
+        }
+
         if (data.clientInformation) {
             return data.clientInformation;
         }
