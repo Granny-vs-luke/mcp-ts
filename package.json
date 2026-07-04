@@ -77,6 +77,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "postbuild": "node ../mcp-client/scripts/resolve-local-pkg.cjs",
     "dev": "tsup --watch",
     "type-check": "tsc --noEmit",
     "clean": "rimraf dist",

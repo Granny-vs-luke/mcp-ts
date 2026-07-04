@@ -74,7 +74,7 @@ test.describe('MCPClient', () => {
     });
 
     test.describe('static Authorization headers', () => {
-        test('passes Authorization through requestInit and disables OAuth provider on the transport', async () => {
+        test('creates auth provider when Authorization header is present', async () => {
             _setStorageInstanceForTesting(new MemoryStorageBackend());
 
             const client = new MCPClient({
@@ -91,12 +91,58 @@ test.describe('MCPClient', () => {
             });
 
             await (client as any).ensureSession();
+            const provider = (client as any).oauthProvider;
+
+            expect(provider).toBeTruthy();
+            expect(typeof provider.tokens).toBe('function');
+            await expect(provider.tokens()).resolves.toEqual({ access_token: 'static-token', token_type: 'bearer' });
+        });
+
+        test('passes non-auth custom headers to requestInit', async () => {
+            _setStorageInstanceForTesting(new MemoryStorageBackend());
+
+            const client = new MCPClient({
+                userId: 'test-user',
+                sessionId: 'custom-headers-session',
+                serverId: 'custom-headers-server',
+                serverName: 'Custom Headers Server',
+                serverUrl: 'https://example.com/mcp',
+                callbackUrl: 'https://app.local/auth/callback',
+                transportType: 'streamable-http',
+                headers: {
+                    Authorization: 'Bearer static-token',
+                    'x-consumer-api-key': 'my-key',
+                },
+            });
+
+            await (client as any).ensureSession();
             const transport = (client as any).getTransport('streamable-http');
 
             expect((transport as any)._requestInit?.headers).toEqual({
-                Authorization: 'Bearer static-token',
+                'x-consumer-api-key': 'my-key',
             });
-            expect((transport as any)._authProvider).toBeUndefined();
+        });
+
+        test('does not include Authorization header in requestInit custom headers', async () => {
+            _setStorageInstanceForTesting(new MemoryStorageBackend());
+
+            const client = new MCPClient({
+                userId: 'test-user',
+                sessionId: 'no-auth-custom-headers',
+                serverId: 'no-auth-custom-headers-server',
+                serverName: 'No Auth Custom Headers',
+                serverUrl: 'https://example.com/mcp',
+                callbackUrl: 'https://app.local/auth/callback',
+                transportType: 'streamable-http',
+                headers: {
+                    Authorization: 'Bearer static-token',
+                },
+            });
+
+            await (client as any).ensureSession();
+            const transport = (client as any).getTransport('streamable-http');
+
+            expect((transport as any)._requestInit).toBeUndefined();
         });
     });
 

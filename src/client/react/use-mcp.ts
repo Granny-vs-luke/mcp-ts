@@ -21,6 +21,7 @@ import type {
   ToolPolicy,
   SetToolPolicyResult,
   GetToolPolicyResult,
+  ConnectParams,
 } from '../../shared/types';
 
 export interface UseMcpOptions {
@@ -114,13 +115,7 @@ export interface McpClient {
   /**
    * Connect to an MCP server
    */
-  connect: (params: {
-    serverId: string;
-    serverName: string;
-    serverUrl: string;
-    callbackUrl: string;
-    transportType?: 'sse' | 'streamable-http';
-  }) => Promise<string>;
+  connect: (params: ConnectParams) => Promise<string>;
 
   /**
    * Disconnect from an MCP server
@@ -130,13 +125,7 @@ export interface McpClient {
   /**
    * Reconnect to an MCP server (disconnects existing session first)
    */
-  reconnect: (params: {
-    serverId: string;
-    serverName: string;
-    serverUrl: string;
-    callbackUrl: string;
-    transportType?: 'sse' | 'streamable-http';
-  }) => Promise<string>;
+  reconnect: (params: ConnectParams) => Promise<string>;
 
   /**
    * Get connection by session ID
@@ -484,13 +473,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
    * Connect to an MCP server
    */
   const connect = useCallback(
-    async (params: {
-      serverId: string;
-      serverName: string;
-      serverUrl: string;
-      callbackUrl: string;
-      transportType?: 'sse' | 'streamable-http';
-    }): Promise<string> => {
+    async (params: ConnectParams): Promise<string> => {
       if (!clientRef.current) {
         throw new Error('SSE client not initialized');
       }
@@ -505,13 +488,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
    * Reconnect to an MCP server (tears down existing session, then connects fresh)
    */
   const reconnect = useCallback(
-    async (params: {
-      serverId: string;
-      serverName: string;
-      serverUrl: string;
-      callbackUrl: string;
-      transportType?: 'sse' | 'streamable-http';
-    }): Promise<string> => {
+    async (params: ConnectParams): Promise<string> => {
       if (!clientRef.current) {
         throw new Error('SSE client not initialized');
       }

@@ -20,6 +20,7 @@ export { createNextMcpHandler, type NextMcpHandlerOptions } from './handlers/nex
 
 /** Utilities */
 export { sanitizeServerLabel } from '../shared/utils';
+export { encryptObject, decryptObject } from './storage/crypto.js';
 
 /** Re-export shared types */
 export type {

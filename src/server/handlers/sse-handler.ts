@@ -487,19 +487,23 @@ export class SSEConnectionManager {
       throw new Error('Session not found');
     }
 
+    // Load credentials so we can rehydrate clientId/clientSecret.
+    // Session rows do NOT store these — they live in SessionCredentials.
+    const creds = await sessions.getCredentials(this.userId, sessionId);
+    const clientId = creds?.clientId ?? undefined;
+    const clientSecret = (creds?.clientInformation as any)?.client_secret ?? undefined;
+
     const client = new MCPClient({
       userId: this.userId,
       sessionId,
-      // These fields are optional in MCPClient, but when rehydrating a known
-      // stored session on the server we pass them explicitly to preserve the
-      // original transport/connection metadata instead of relying on lazy
-      // reloading during initialize().
       serverId: session.serverId,
       serverName: session.serverName,
       serverUrl: session.serverUrl,
       callbackUrl: session.callbackUrl,
       transportType: session.transportType,
       headers: session.headers,
+      clientId,
+      clientSecret,
     });
 
     // Subscribe to events before connecting
@@ -686,19 +690,22 @@ export class SSEConnectionManager {
     try {
       const clientMetadata = await this.getResolvedClientMetadata();
 
+      // Load credentials to rehydrate clientId/clientSecret for session restore.
+      const creds = await sessions.getCredentials(this.userId, sessionId);
+      const clientId = creds?.clientId ?? undefined;
+      const clientSecret = (creds?.clientInformation as any)?.client_secret ?? undefined;
+
       const client = new MCPClient({
         userId: this.userId,
         sessionId,
-        // These fields are optional in MCPClient, but when rehydrating a known
-        // stored session on the server we pass them explicitly to preserve the
-        // original transport/connection metadata instead of relying on lazy
-        // reloading during initialize().
         serverId: session.serverId,
         serverName: session.serverName,
         serverUrl: session.serverUrl,
         callbackUrl: session.callbackUrl,
         transportType: session.transportType,
         headers: session.headers,
+        clientId,
+        clientSecret,
         ...clientMetadata,
       });
 
@@ -740,13 +747,16 @@ export class SSEConnectionManager {
     }
 
     try {
+      // Load credentials to rehydrate clientId/clientSecret.
+      // This is critical for pre-registered OAuth clients (clientId/clientSecret)
+      // where the secret must be passed during token exchange.
+      const creds = await sessions.getCredentials(this.userId, sessionId);
+      const clientId = creds?.clientId ?? undefined;
+      const clientSecret = (creds?.clientInformation as any)?.client_secret ?? undefined;
+
       const client = new MCPClient({
         userId: this.userId,
         sessionId,
-        // These fields are optional in MCPClient, but when rehydrating a known
-        // stored session on the server we pass them explicitly to preserve the
-        // original connection metadata instead of relying on lazy
-        // reloading during initialize().
         serverId: session.serverId,
         serverName: session.serverName,
         serverUrl: session.serverUrl,
@@ -757,6 +767,8 @@ export class SSEConnectionManager {
         // (try streamable_http → SSE fallback), which is critical for servers like
         // Neon that only support SSE transport.
         headers: session.headers,
+        clientId,
+        clientSecret,
       });
 
       client.onConnectionEvent((event) => this.emitConnectionEvent(event));

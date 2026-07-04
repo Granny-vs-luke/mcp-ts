@@ -131,40 +131,30 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     /**
-     * Retrieves stored OAuth client information
+     * Retrieves stored OAuth client information.
      */
     async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
+        if (this._clientId) {
+            return {
+                client_id: this._clientId,
+                ...(this.clientSecret ? { client_secret: this.clientSecret } : {}),
+            };
+        }
+
         const data = await this.getCredentials();
 
-        if (data.clientId && !this._clientId) {
+        if (data.clientId) {
             this._clientId = data.clientId;
+            if (data.clientInformation) {
+                return data.clientInformation;
+            }
+            return {
+                client_id: data.clientId,
+                ...(this.clientSecret ? { client_secret: this.clientSecret } : {}),
+            };
         }
 
-        // If we have clientId/clientSecret from constructor, but they aren't stored
-        // in database credentials yet, persist them now so they are available
-        // on subsequent connection recovery / session rehydration.
-        if (this._clientId && !data.clientId) {
-            await this.patchCredentials({
-                clientId: this._clientId,
-                clientInformation: {
-                    client_id: this._clientId,
-                    ...(this.clientSecret ? { client_secret: this.clientSecret } : {}),
-                }
-            });
-        }
-
-        if (data.clientInformation) {
-            return data.clientInformation;
-        }
-
-        if (!this._clientId) {
-            return undefined;
-        }
-
-        return {
-            client_id: this._clientId,
-            ...(this.clientSecret ? { client_secret: this.clientSecret } : {}),
-        };
+        return undefined;
     }
 
     /**
@@ -183,6 +173,23 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      */
     async saveTokens(tokens: OAuthTokens): Promise<void> {
         await this.patchCredentials({ tokens });
+    }
+
+    /**
+     * Persists static client credentials to DB immediately on creation.
+     * Ensures getOrCreateClient() finds them on rehydration, even when the
+     * server allows anonymous connect and never triggers DCR.
+     */
+    async initializeCredentials(): Promise<void> {
+        if (this._clientId) {
+            await this.patchCredentials({
+                clientId: this._clientId,
+                clientInformation: {
+                    client_id: this._clientId,
+                    ...(this.clientSecret ? { client_secret: this.clientSecret } : {}),
+                },
+            });
+        }
     }
 
     get authUrl() {

@@ -34,6 +34,36 @@ import {
   MCP_CLIENT_NAME,
   MCP_CLIENT_VERSION,
 } from '../../shared/constants.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+import type { OAuthClientMetadata } from '@modelcontextprotocol/sdk/shared/auth.js';
+
+/**
+ * Minimal auth provider matching the SDK's dual-mode pattern.
+ * Replace with SDK's built-in AuthProvider when v2 ships.
+ */
+interface AuthProvider {
+  token(): Promise<string | undefined>;
+  onUnauthorized?(ctx: { response: Response }): Promise<void>;
+}
+
+/**
+ * Wraps a minimal AuthProvider into OAuthClientProvider for v1.29.0 transport.
+ */
+function adaptAuthProvider(auth: AuthProvider): OAuthClientProvider {
+  return {
+    get redirectUrl() { return undefined; },
+    get clientMetadata() { return {} as OAuthClientMetadata; },
+    clientInformation() { return Promise.resolve(undefined); },
+    async tokens() {
+      const token = await auth.token();
+      return token ? { access_token: token, token_type: 'bearer' } : undefined;
+    },
+    saveTokens() { /* no-op */ },
+    redirectToAuthorization() { /* no-op */ },
+    saveCodeVerifier() { /* no-op */ },
+    codeVerifier() { throw new Error('Bearer token auth does not support PKCE'); },
+  };
+}
 
 /**
  * Supported MCP transport types
@@ -80,7 +110,7 @@ export interface MCPOAuthClientOptions {
  */
 export class MCPClient {
   private client: Client;
-  public oauthProvider: AgentsOAuthProvider | null = null;
+  public oauthProvider: OAuthClientProvider | null = null;
   private transport: StreamableHTTPClientTransport | SSEClientTransport | null = null;
   private userId: string;
   private serverId?: string;
@@ -100,6 +130,14 @@ export class MCPClient {
   private policyUri?: string;
   private createdAt?: number;
 
+
+  /**
+   * Extracts bearer token from the Authorization header, if present.
+   */
+  private getBearerToken(): string | undefined {
+    const authHeader = this.headers?.['authorization'] ?? this.headers?.['Authorization'];
+    return authHeader?.match(/^bearer\s+(.+)/i)?.[1];
+  }
 
   /** Event emitters for connection lifecycle */
   private readonly _onConnectionEvent = new Emitter<McpConnectionEvent>();
@@ -248,11 +286,14 @@ export class MCPClient {
     }
 
     const baseUrl = new URL(this.serverUrl);
-    const hasAuthorizationHeader = Object.keys(this.headers || {})
-      .some((key) => key.toLowerCase() === 'authorization');
+    const transportHeaders = this.headers ? { ...this.headers } : undefined;
+    if (transportHeaders) {
+      delete transportHeaders['authorization'];
+      delete transportHeaders['Authorization'];
+    }
     const transportOptions = {
-      ...(!hasAuthorizationHeader && { authProvider: this.oauthProvider! }),
-      ...(this.headers && { requestInit: { headers: this.headers } }),
+      authProvider: this.oauthProvider!,
+      ...(transportHeaders && Object.keys(transportHeaders).length > 0 && { requestInit: { headers: transportHeaders } }),
       /**
        * Custom fetch implementation to handle connection timeouts.
        * Observation: SDK 1.24.0+ connections may hang indefinitely in some environments.
@@ -296,28 +337,19 @@ export class MCPClient {
    * @private
    */
   private async ensureSession(): Promise<void> {
-    if (this.oauthProvider) {
-      return;
-    }
+    if (this.oauthProvider) return;
 
     this.emitStateChange('INITIALIZING');
     this.emitProgress('Loading session configuration...');
 
-    let existingSession: Session | null = null;
-
     if (!this.serverUrl || !this.callbackUrl || !this.serverId) {
-      existingSession = await sessions.get(this.userId, this.sessionId);
+      const existingSession = await sessions.get(this.userId, this.sessionId);
       if (!existingSession) {
         throw new Error(`Session not found: ${this.sessionId}`);
       }
 
       this.serverUrl = this.serverUrl || existingSession.serverUrl;
       this.callbackUrl = this.callbackUrl || existingSession.callbackUrl;
-      /**
-       * Do NOT load transportType from session if not explicitly provided.
-       * We want to re-negotiate (try streamable -> sse) on new connections if in "Auto" mode.
-       * this.transportType = this.transportType || sessionData.transportType; 
-       */
       this.serverName = this.serverName || existingSession.serverName;
       this.serverId = this.serverId || existingSession.serverId || 'unknown';
       this.headers = this.headers || existingSession.headers;
@@ -328,36 +360,11 @@ export class MCPClient {
       throw new Error('Missing required connection metadata');
     }
 
-    if (!this.oauthProvider) {
-      if (!this.serverId) {
-        throw new Error('serverId required for OAuth provider initialization');
-      }
-      this.oauthProvider = new StorageOAuthClientProvider({
-        userId: this.userId,
-        serverId: this.serverId,
-        sessionId: this.sessionId,
-        redirectUrl: this.callbackUrl!,
-        clientName: this.clientName,
-        clientUri: this.clientUri,
-        logoUri: this.logoUri,
-        policyUri: this.policyUri,
-        clientId: this.clientId,
-        clientSecret: this.clientSecret,
-        onRedirect: (redirectUrl: string) => {
-          if (this.onRedirect) {
-            this.onRedirect(redirectUrl);
-          }
-        }
-      });
-    }
+    this.oauthProvider = await this.createProvider();
 
-    // Create session in the session store if it doesn't exist yet
-    // This is needed BEFORE OAuth flow starts because the OAuth provider
-    // will call saveCodeVerifier() which requires the session to exist
-    if (existingSession === null) {
-      existingSession = await sessions.get(this.userId, this.sessionId);
-    }
-    if (!existingSession && this.serverId && this.serverUrl && this.callbackUrl) {
+    // Create session row BEFORE persisting credentials (FK constraint on mcp_credentials)
+    const existingSession = await sessions.get(this.userId, this.sessionId);
+    if (!existingSession) {
       this.createdAt = Date.now();
       const updatedAt = this.createdAt;
       this._onObservabilityEvent.fire({
@@ -372,10 +379,10 @@ export class MCPClient {
       await sessions.create({
         sessionId: this.sessionId,
         userId: this.userId,
-        serverId: this.serverId,
+        serverId: this.serverId!,
         serverName: this.serverName,
-        serverUrl: this.serverUrl,
-        callbackUrl: this.callbackUrl,
+        serverUrl: this.serverUrl!,
+        callbackUrl: this.callbackUrl!,
         transportType: this.transportType || 'streamable-http',
         headers: this.headers,
         createdAt: this.createdAt,
@@ -383,9 +390,47 @@ export class MCPClient {
         status: 'pending',
       });
     }
+
+    // Only persist credentials on first connect. Existing sessions already have
+    // credentials from the initial connect — no DB read needed to verify.
+    if (!existingSession && this.oauthProvider instanceof StorageOAuthClientProvider) {
+        await this.oauthProvider.initializeCredentials();
+    }
   }
 
+  private async createProvider(): Promise<OAuthClientProvider> {
+    const bearerToken = this.getBearerToken();
+    if (bearerToken) {
+      return adaptAuthProvider({ token: async () => bearerToken });
+    }
 
+    return new StorageOAuthClientProvider({
+      userId: this.userId,
+      serverId: this.serverId!,
+      sessionId: this.sessionId,
+      redirectUrl: this.callbackUrl!,
+      clientName: this.clientName,
+      clientUri: this.clientUri,
+      logoUri: this.logoUri,
+      policyUri: this.policyUri,
+      clientId: this.clientId,
+      clientSecret: this.clientSecret,
+      onRedirect: (redirectUrl: string) => {
+        if (this.serverId) {
+          this._onConnectionEvent.fire({
+            type: 'auth_required',
+            sessionId: this.sessionId,
+            serverId: this.serverId,
+            authUrl: redirectUrl,
+            timestamp: Date.now(),
+          });
+        }
+        if (this.onRedirect) {
+          this.onRedirect(redirectUrl);
+        }
+      },
+    });
+  }
 
   /**
    * Saves current session state to the session store
@@ -576,9 +621,8 @@ export class MCPClient {
         /** Set when the SDK calls redirectToAuthorization on the OAuth provider */
         let authUrl = '';
         if (this.oauthProvider) {
-          authUrl = (this.oauthProvider.authUrl || '').trim();
+          authUrl = ((this.oauthProvider as any).authUrl || '').trim();
         }
-
         /**
          * 401 without a usable URL means metadata/DCR failed or the server never started
          * an interactive OAuth flow — not recoverable as "pending OAuth".
@@ -673,7 +717,7 @@ export class MCPClient {
     }
 
     if (state) {
-      const stateCheck = await this.oauthProvider.checkState(state);
+      const stateCheck = await (this.oauthProvider as AgentsOAuthProvider).checkState(state);
       if (!stateCheck.valid) {
         const error = stateCheck.error || 'Invalid OAuth state';
         this.emitError(error, 'auth');
@@ -681,7 +725,7 @@ export class MCPClient {
         throw new Error(error);
       }
 
-      await this.oauthProvider.consumeState(state);
+      await (this.oauthProvider as AgentsOAuthProvider).consumeState(state);
     }
 
     /**
