@@ -168,11 +168,11 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
 
     (MCPClient.prototype as any).connect = async function () {
       seenOptions.push({
-        serverId: (this as any).serverId,
-        serverName: (this as any).serverName,
-        serverUrl: (this as any).serverUrl,
-        callbackUrl: (this as any).callbackUrl,
-        transportType: (this as any).transportType,
+        serverId: (this as any).config.serverId,
+        serverName: (this as any).config.serverName,
+        serverUrl: (this as any).config.serverUrl,
+        callbackUrl: (this as any).config.callbackUrl,
+        transportType: (this as any).config.transportType,
       });
     };
 
@@ -219,14 +219,29 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
 
     const originalConnect = (MCPClient.prototype as any).connect;
     const originalListTools = (MCPClient.prototype as any).listTools;
+    const originalFetchTools = (MCPClient.prototype as any).fetchTools;
 
     let seenHeaders: Record<string, string> | undefined;
 
     (MCPClient.prototype as any).connect = async function () {
-      seenHeaders = (this as any).headers;
+      seenHeaders = (this as any).config.headers;
+      await storage.create({
+        sessionId: (this as any).config.sessionId,
+        userId: (this as any).config.userId,
+        serverId: (this as any).config.serverId,
+        serverUrl: (this as any).config.serverUrl,
+        callbackUrl: (this as any).config.callbackUrl,
+        transportType: (this as any).config.transportType || 'streamable-http',
+        createdAt: Date.now(),
+        status: 'active',
+      });
     };
 
     (MCPClient.prototype as any).listTools = async function () {
+      return { tools: [] };
+    };
+
+    (MCPClient.prototype as any).fetchTools = async function () {
       return { tools: [] };
     };
 
@@ -253,6 +268,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     } finally {
       (MCPClient.prototype as any).connect = originalConnect;
       (MCPClient.prototype as any).listTools = originalListTools;
+      (MCPClient.prototype as any).fetchTools = originalFetchTools;
       manager.dispose();
     }
   });
@@ -288,6 +304,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
 
     const originalFinishAuth = (MCPClient.prototype as any).finishAuth;
     const originalListTools = (MCPClient.prototype as any).listTools;
+    const originalFetchTools = (MCPClient.prototype as any).fetchTools;
     let seenCode: string | undefined;
     let seenState: string | undefined;
 
@@ -297,6 +314,10 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     };
 
     (MCPClient.prototype as any).listTools = async function () {
+      return { tools: [] };
+    };
+
+    (MCPClient.prototype as any).fetchTools = async function () {
       return { tools: [] };
     };
 
@@ -317,6 +338,7 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
     } finally {
       (MCPClient.prototype as any).finishAuth = originalFinishAuth;
       (MCPClient.prototype as any).listTools = originalListTools;
+      (MCPClient.prototype as any).fetchTools = originalFetchTools;
       manager.dispose();
     }
   });

@@ -50,19 +50,19 @@ function expectPendingExpiration(expiresAt: unknown) {
 }
 
 async function createPendingSession(client: MCPClient) {
-  const userId = (client as any).userId;
-  const sessionId = (client as any).sessionId;
+  const userId = (client as any).config.userId;
+  const sessionId = (client as any).config.sessionId;
   const existing = await sessions.get(userId, sessionId);
 
   if (!existing) {
     await sessions.create({
       sessionId,
       userId,
-      serverId: (client as any).serverId,
-      serverName: (client as any).serverName,
-      serverUrl: (client as any).serverUrl,
-      callbackUrl: (client as any).callbackUrl,
-      transportType: (client as any).transportType || 'streamable-http',
+      serverId: (client as any).config.serverId,
+      serverName: (client as any).config.serverName,
+      serverUrl: (client as any).config.serverUrl,
+      callbackUrl: (client as any).config.callbackUrl,
+      transportType: (client as any).config.transportType || 'streamable-http',
       createdAt: Date.now(),
       status: 'pending',
     });
