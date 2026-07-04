@@ -34,6 +34,7 @@ import {
   MCP_CLIENT_NAME,
   MCP_CLIENT_VERSION,
 } from '../../shared/constants.js';
+import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 
 /**
@@ -72,6 +73,19 @@ export interface MCPOAuthClientOptions {
   clientUri?: string;
   logoUri?: string;
   policyUri?: string;
+  /**
+   * Credentials already loaded by the caller (e.g. via get({includeCredentials: true})).
+   * When provided, the StorageOAuthClientProvider uses these cached values to
+   * skip redundant DB reads for tokens() calls during reconnection.
+   */
+  cachedCredentials?: { tokens?: OAuthTokens };
+  /**
+   * When true, skips the redundant session-existence check in ensureSession().
+   * Set by callers that have already confirmed the session exists in storage
+   * (e.g. getOrCreateClient, getSession, finishAuth in sse-handler).
+   * Saves one round-trip per reconnection.
+   */
+  hasSession?: boolean;
 }
 
 /**
@@ -317,6 +331,7 @@ export class MCPClient {
       policyUri: this.config.policyUri,
       clientId: this.config.clientId,
       clientSecret: this.config.clientSecret,
+      cachedTokens: this.config.cachedCredentials?.tokens,
       onRedirect: (redirectUrl: string) => {
         if (this.config.serverId) {
           this._onConnectionEvent.fire({
@@ -334,7 +349,9 @@ export class MCPClient {
     });
 
     // Create session row BEFORE persisting credentials (FK constraint on mcp_credentials)
-    const existingSession = await sessions.get(this.config.userId, this.config.sessionId);
+    // When hasSession is set by the caller, the session is guaranteed
+    // to exist — skip the redundant round-trip.
+    const existingSession = this.config.hasSession ? {} as Session : await sessions.get(this.config.userId, this.config.sessionId);
     if (!existingSession) {
       this.createdAt = Date.now();
       const updatedAt = this.createdAt;
@@ -372,7 +389,7 @@ export class MCPClient {
       return;
     }
 
-    await sessions.update(this.config.userId, this.config.sessionId, {
+    await sessions.forceUpdate(this.config.userId, this.config.sessionId, {
       ...this.session,
       status,
       ...(status === 'active' && { authUrl: null }),

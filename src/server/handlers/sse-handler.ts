@@ -478,14 +478,14 @@ export class SSEConnectionManager {
       return existing;
     }
 
-    const session = await sessions.get(this.userId, sessionId);
+    const session = await sessions.get(this.userId, sessionId, { includeCredentials: true });
     if (!session) {
       throw new Error('Session not found');
     }
 
     // Load credentials so we can rehydrate clientId/clientSecret.
     // Session rows do NOT store these — they live in SessionCredentials.
-    const creds = await sessions.getCredentials(this.userId, sessionId);
+    const creds = session.credentials;
     const clientId = creds?.clientId ?? undefined;
     const clientSecret = (creds?.clientInformation as any)?.client_secret ?? undefined;
 
@@ -500,6 +500,8 @@ export class SSEConnectionManager {
       headers: session.headers,
       clientId,
       clientSecret,
+      hasSession: true,
+      cachedCredentials: { tokens: creds?.tokens ?? undefined },
     });
 
     // Subscribe to events before connecting
@@ -667,7 +669,7 @@ export class SSEConnectionManager {
   private async getSession(params: SessionParams): Promise<GetSessionResult> {
     const { sessionId } = params;
 
-    const session = await sessions.get(this.userId, sessionId);
+    const session = await sessions.get(this.userId, sessionId, { includeCredentials: true });
     if (!session) {
       throw new Error('Session not found');
     }
@@ -687,7 +689,7 @@ export class SSEConnectionManager {
       const clientMetadata = await this.getResolvedClientMetadata();
 
       // Load credentials to rehydrate clientId/clientSecret for session restore.
-      const creds = await sessions.getCredentials(this.userId, sessionId);
+      const creds = session.credentials;
       const clientId = creds?.clientId ?? undefined;
       const clientSecret = (creds?.clientInformation as any)?.client_secret ?? undefined;
 
@@ -702,6 +704,8 @@ export class SSEConnectionManager {
         headers: session.headers,
         clientId,
         clientSecret,
+        hasSession: true,
+        cachedCredentials: { tokens: creds?.tokens ?? undefined },
         ...clientMetadata,
       });
 
@@ -737,7 +741,7 @@ export class SSEConnectionManager {
     const parsedState = parseOAuthState(oauthState);
     const sessionId = parsedState?.sessionId || oauthState;
 
-    const session = await sessions.get(this.userId, sessionId);
+    const session = await sessions.get(this.userId, sessionId, { includeCredentials: true });
     if (!session) {
       throw new Error('Session not found');
     }
@@ -746,7 +750,7 @@ export class SSEConnectionManager {
       // Load credentials to rehydrate clientId/clientSecret.
       // This is critical for pre-registered OAuth clients (clientId/clientSecret)
       // where the secret must be passed during token exchange.
-      const creds = await sessions.getCredentials(this.userId, sessionId);
+      const creds = session.credentials;
       const clientId = creds?.clientId ?? undefined;
       const clientSecret = (creds?.clientInformation as any)?.client_secret ?? undefined;
 
@@ -765,6 +769,8 @@ export class SSEConnectionManager {
         headers: session.headers,
         clientId,
         clientSecret,
+        hasSession: true,
+        cachedCredentials: { tokens: creds?.tokens ?? undefined },
       });
 
       client.onConnectionEvent((event) => this.emitConnectionEvent(event));

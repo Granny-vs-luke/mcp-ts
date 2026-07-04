@@ -44,6 +44,7 @@ export interface StorageOAuthClientProviderOptions {
     policyUri?: string;
     clientId?: string;
     clientSecret?: string;
+    cachedTokens?: OAuthTokens;
     onRedirect?: (url: string) => void;
 }
 
@@ -66,6 +67,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     private _authUrl: string | undefined;
     private _clientId: string | undefined;
     private _hasCodeVerifier = false;
+    private _cachedTokens: OAuthTokens | undefined;
     private onRedirectCallback?: (url: string) => void;
 
     /**
@@ -83,6 +85,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         this.policyUri = options.policyUri;
         this._clientId = options.clientId;
         this.clientSecret = options.clientSecret;
+        this._cachedTokens = options.cachedTokens;
         this.onRedirectCallback = options.onRedirect;
     }
 
@@ -174,6 +177,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
      */
     async saveTokens(tokens: OAuthTokens): Promise<void> {
         await this.patchCredentials({ tokens });
+        this._cachedTokens = tokens;
     }
 
     /**
@@ -269,6 +273,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         scope: "all" | "client" | "tokens" | "verifier"
     ): Promise<void> {
         if (scope === "all") {
+            this._cachedTokens = undefined;
             await sessions.delete(this.userId, this.sessionId);
         } else {
             const updates: Partial<SessionCredentials> = {};
@@ -277,6 +282,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
                 updates.clientInformation = null;
                 updates.clientId = null;
             } else if (scope === "tokens") {
+                this._cachedTokens = undefined;
                 updates.tokens = null;
             } else if (scope === "verifier") {
                 updates.codeVerifier = null;
@@ -313,6 +319,10 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async tokens(): Promise<OAuthTokens | undefined> {
+        if (this._cachedTokens) {
+            return this._cachedTokens;
+        }
+
         const data = await this.getCredentials();
 
         if (data.clientId && !this._clientId) {

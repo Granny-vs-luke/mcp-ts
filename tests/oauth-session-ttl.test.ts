@@ -22,6 +22,7 @@ type UpdateCall = {
 class TrackingMemoryStorage extends MemoryStorageBackend {
   public createCalls: CreateCall[] = [];
   public updateCalls: UpdateCall[] = [];
+  public forceUpdateCalls: UpdateCall[] = [];
 
   async create(session: Session): Promise<void> {
     this.createCalls.push({ session, argumentCount: arguments.length });
@@ -32,13 +33,18 @@ class TrackingMemoryStorage extends MemoryStorageBackend {
     this.updateCalls.push({ userId, sessionId, data, argumentCount: arguments.length });
     return super.update(userId, sessionId, data);
   }
+
+  async forceUpdate(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
+    this.forceUpdateCalls.push({ userId, sessionId, data, argumentCount: arguments.length });
+    return super.forceUpdate(userId, sessionId, data);
+  }
 }
 
 function expectNoCallerTtl(storage: TrackingMemoryStorage) {
   for (const call of storage.createCalls) {
     expect(call.argumentCount).toBe(1);
   }
-  for (const call of storage.updateCalls) {
+  for (const call of storage.forceUpdateCalls) {
     expect(call.argumentCount).toBe(3);
   }
 }
@@ -107,7 +113,7 @@ test.describe('MCPClient session expiration lifecycle', () => {
     await client.connect();
 
     expectNoCallerTtl(mockStorage);
-    expect(mockStorage.updateCalls.filter((call) => call.data.status === 'active')).toHaveLength(2);
+    expect(mockStorage.forceUpdateCalls.filter((call) => call.data.status === 'active')).toHaveLength(2);
 
     const session = await sessions.get('user-1', 's-1');
     expect(session?.status).toBe('active');
@@ -175,7 +181,7 @@ test.describe('MCPClient session expiration lifecycle', () => {
     await client.finishAuth('auth-code');
 
     expectNoCallerTtl(mockStorage);
-    expect(mockStorage.updateCalls.some((call) => call.data.status === 'active')).toBe(true);
+    expect(mockStorage.forceUpdateCalls.some((call) => call.data.status === 'active')).toBe(true);
 
     const session = await sessions.get('user-3', 's-3');
     expect(session?.status).toBe('active');

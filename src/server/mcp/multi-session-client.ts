@@ -286,6 +286,7 @@ export class MultiSessionClient implements ToolClientProvider {
                     serverName: session.serverName,
                     transportType: session.transportType,
                     headers: session.headers,
+                    hasSession: true,
                 });
 
                 const timeoutMs = this.options.timeout;
