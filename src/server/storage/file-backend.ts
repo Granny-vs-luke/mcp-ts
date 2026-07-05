@@ -142,19 +142,6 @@ export class FileStorageBackend implements SessionStore {
         return { ...session, credentials: creds };
     }
 
-    async forceUpdate(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
-        await this.ensureInitialized();
-        if (!userId || !sessionId) throw new Error('userId and sessionId required');
-        const sessionKey = this.getSessionKey(userId, sessionId);
-        const current = this.memoryCache!.get(sessionKey);
-        if (!current) {
-            throw new Error(`Session ${sessionId} not found`);
-        }
-        const updated = mergeSessionUpdate(current, data);
-        this.memoryCache!.set(sessionKey, updated);
-        await this.flush();
-    }
-
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
         await this.ensureInitialized();
         const sessionKey = this.getSessionKey(userId, sessionId);

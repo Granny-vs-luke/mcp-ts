@@ -80,17 +80,6 @@ export class MemoryStorageBackend implements SessionStore {
         return { ...session, credentials: creds };
     }
 
-    async forceUpdate(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
-        if (!userId || !sessionId) throw new Error('userId and sessionId required');
-        const sessionKey = this.getSessionKey(userId, sessionId);
-        const current = this.sessions.get(sessionKey);
-        if (!current) {
-            throw new Error(`Session ${sessionId} not found`);
-        }
-        const updated = mergeSessionUpdate(current, data);
-        this.sessions.set(sessionKey, updated);
-    }
-
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
         const sessionKey = this.getSessionKey(userId, sessionId);
         if (!this.sessions.has(sessionKey)) return null;

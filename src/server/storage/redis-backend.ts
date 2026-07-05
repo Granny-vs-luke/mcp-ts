@@ -199,33 +199,6 @@ export class RedisStorageBackend implements SessionStore {
         }
     }
 
-    async forceUpdate(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
-        const sessionKey = this.getSessionKey(userId, sessionId);
-        const script = `
-            local currentStr = redis.call("GET", KEYS[1])
-            if not currentStr then
-                return 0
-            end
-            local current = cjson.decode(currentStr)
-            local updated = cjson.decode(ARGV[1])
-            redis.call("SET", KEYS[1], cjson.encode(updated), "EX", ARGV[2])
-            return 1
-        `;
-
-        const current = await this.get(userId, sessionId);
-        if (!current) {
-            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
-        }
-
-        const updated = mergeSessionUpdate(current, data);
-        const effectiveTtl = resolveSessionRedisTtlSeconds(updated);
-
-        const result = await this.redis.eval(script, 1, sessionKey, JSON.stringify(updated), effectiveTtl);
-        if (result === 0) {
-            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
-        }
-    }
-
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
         const session = await this.get(userId, sessionId);
         if (!session) return null;

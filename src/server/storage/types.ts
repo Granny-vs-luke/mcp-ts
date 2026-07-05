@@ -118,13 +118,6 @@ export interface SessionStore {
     update(userId: string, sessionId: string, data: Partial<Session>): Promise<void>;
 
     /**
-     * Updates a session without verifying it exists first.
-     * Unlike update(), this does not do a pre-update existence check,
-     * saving one round-trip when the session is guaranteed to exist.
-     */
-    forceUpdate(userId: string, sessionId: string, data: Partial<Session>): Promise<void>;
-
-    /**
      * Patches runtime credentials for an existing session.
      * These values are separated from connection metadata in durable SQL stores.
      */

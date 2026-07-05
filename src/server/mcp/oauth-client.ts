@@ -389,7 +389,7 @@ export class MCPClient {
       return;
     }
 
-    await sessions.forceUpdate(this.config.userId, this.config.sessionId, {
+    await sessions.update(this.config.userId, this.config.sessionId, {
       ...this.session,
       status,
       ...(status === 'active' && { authUrl: null }),

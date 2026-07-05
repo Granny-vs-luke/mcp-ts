@@ -315,58 +315,6 @@ export class NeonStorageBackend implements SessionStore {
         }
     }
 
-    async forceUpdate(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
-        if (!userId || !sessionId) throw new Error('userId and sessionId required');
-
-        const currentSession = await this.get(userId, sessionId);
-        if (!currentSession) {
-            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
-        }
-
-        const updatedSession = { ...currentSession, ...data };
-        const status = updatedSession.status ?? 'pending';
-        const expiresAt = resolveSessionExpiresAt(status);
-
-        const setClauses: string[] = [];
-        const values: unknown[] = [];
-        let paramIndex = 1;
-
-        const addSet = (column: string, value: unknown) => {
-            setClauses.push(`${column} = $${paramIndex++}`);
-            values.push(value);
-        };
-
-        addSet('server_id', updatedSession.serverId);
-        addSet('server_name', updatedSession.serverName);
-        addSet('server_url', updatedSession.serverUrl);
-        addSet('transport_type', updatedSession.transportType);
-        addSet('callback_url', updatedSession.callbackUrl);
-        addSet('status', status);
-        addSet('headers', encryptObject(updatedSession.headers));
-        addSet('auth_url', updatedSession.authUrl ?? null);
-        addSet('expires_at', expiresAt === null ? null : new Date(expiresAt).toISOString());
-
-        if (data.toolPolicy !== undefined) {
-            const policyUpdatedAt = updatedSession.updatedAt ?? Date.now();
-            const toolPolicy = normalizeToolPolicy(updatedSession.toolPolicy, policyUpdatedAt) ?? { mode: 'all' as const, toolIds: [], updatedAt: policyUpdatedAt };
-            addSet('tool_policy', toolPolicy);
-        }
-
-        setClauses.push('updated_at = now()');
-
-        const updatedRows = await this.sql.query(
-            `UPDATE ${this.tableName}
-             SET ${setClauses.join(', ')}
-             WHERE user_id = $${paramIndex++} AND session_id = $${paramIndex++}
-             RETURNING id`,
-            [...values, userId, sessionId]
-        ) as Array<{ id: string }>;
-
-        if (updatedRows.length === 0) {
-            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
-        }
-    }
-
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
         try {
             const credentialRows = await this.sql.query(

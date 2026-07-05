@@ -171,24 +171,6 @@ export class SqliteStorage implements SessionStore {
         return normalizeStoredSession(JSON.parse(row.data) as Session);
     }
 
-    async forceUpdate(userId: string, sessionId: string, data: Partial<Session>): Promise<void> {
-        this.ensureInitialized();
-        if (!sessionId || !userId) {
-            throw new Error('userId and sessionId required');
-        }
-
-        const currentSession = await this.get(userId, sessionId);
-        if (!currentSession) {
-            throw new Error(`Session ${sessionId} not found for userId ${userId}`);
-        }
-
-        const updatedSession = mergeSessionUpdate(currentSession, data);
-        const stmt = this.db!.prepare(
-            `UPDATE ${this.table} SET data = ?, expiresAt = ? WHERE sessionId = ? AND userId = ?`
-        );
-        stmt.run(JSON.stringify(updatedSession), updatedSession.expiresAt ?? null, sessionId, userId);
-    }
-
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
         this.ensureInitialized();
         if (!await this.get(userId, sessionId)) return null;
