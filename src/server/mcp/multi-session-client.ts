@@ -46,6 +46,12 @@ export interface MultiSessionOptions {
     sessionProvider?: () => Promise<Session[]>;
 
     /**
+     * Attached to each MCPClient before connect() so all connection lifecycle
+     * events (INITIALIZING, CONNECTING, CONNECTED, etc.) are captured.
+     */
+    onObservabilityEvent?: McpObservabilityEventHandler;
+
+    /**
      * Called after a session is successfully connected.
      */
     onSessionConnected?: (sessionId: string, client: MCPClient) => void;
@@ -61,6 +67,9 @@ export interface MultiSessionOptions {
      */
     onSessionFailed?: (sessionId: string, error: unknown) => void;
 }
+
+/** @internal */
+type McpObservabilityEventHandler = (event: import('../../shared/events.js').McpObservabilityEvent) => void;
 
 // ---------------------------------------------------------------------------
 // MultiSessionClient
@@ -95,7 +104,11 @@ export class MultiSessionClient implements ToolClientProvider {
             retryDelay: DEFAULT_RETRY_DELAY_MS,
             ...options,
         };
+        // Remap to avoid TS excess-property check on the spread target
+        this._observabilityHandler = options.onObservabilityEvent;
     }
+
+    private _observabilityHandler?: McpObservabilityEventHandler;
 
     // -----------------------------------------------------------------------
     // Public API
@@ -288,6 +301,11 @@ export class MultiSessionClient implements ToolClientProvider {
                     headers: session.headers,
                     hasSession: true,
                 });
+
+                // Attach observability listener BEFORE connect to capture all lifecycle events
+                if (this._observabilityHandler) {
+                    client.onObservabilityEvent(this._observabilityHandler);
+                }
 
                 const timeoutMs = this.options.timeout;
                 let timeoutTimer: ReturnType<typeof setTimeout>;
