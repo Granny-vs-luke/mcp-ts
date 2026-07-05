@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
     OAuthClientInformationFull,
@@ -17,6 +18,50 @@ import {
     STATE_EXPIRATION_MS,
 } from '../../shared/constants.js';
 import { formatOAuthState, parseOAuthState } from '../../shared/utils.js';
+
+/**
+ * Context stored in AsyncLocalStorage for callback-time code verifier resolution.
+ * Stores the raw verifier and method directly, matching Cloudflare's DurableObjectOAuthClientProvider.
+ * This avoids a DB read in codeVerifier() — the verifier is loaded once by the caller
+ * (from session.credentials after get({includeCredentials: true})) and propagated through ALS.
+ */
+interface CodeVerifierContext {
+    verifier: string;
+    method: 'S256';
+}
+
+const codeVerifierContext = new AsyncLocalStorage<CodeVerifierContext>();
+
+/**
+ * Run a function inside a code verifier context, providing the raw verifier and method
+ * so that codeVerifier() can return them without a DB read.
+ */
+export function runWithCodeVerifierState<T>(
+    verifier: string,
+    method: 'S256',
+    fn: () => Promise<T>
+): Promise<T> {
+    return codeVerifierContext.run({ verifier, method }, fn);
+}
+
+function base64UrlEncode(bytes: Uint8Array): string {
+    let binary = "";
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return btoa(binary)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+}
+
+async function createCodeChallenge(verifier: string): Promise<string> {
+    const digest = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(verifier)
+    );
+    return base64UrlEncode(new Uint8Array(digest));
+}
 
 /**
  * Extension of OAuthClientProvider interface with additional methods
@@ -66,6 +111,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
 
     private _authUrl: string | undefined;
     private _clientId: string | undefined;
+    private _codeVerifierRaw: string | undefined;
     private _hasCodeVerifier = false;
     private _cachedTokens: OAuthTokens | undefined;
     private onRedirectCallback?: (url: string) => void;
@@ -202,6 +248,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async state(): Promise<string> {
+        this._codeVerifierRaw = undefined;
         this._hasCodeVerifier = false;
         const nonce = nanoid(32);
         await this.patchCredentials({
@@ -212,6 +259,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
                 createdAt: Date.now(),
             },
             codeVerifier: null,
+            codeVerifierNonce: null,
         });
         return formatOAuthState(nonce, this.sessionId);
     }
@@ -263,7 +311,26 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
 
     async redirectToAuthorization(authUrl: URL): Promise<void> {
         this._authUrl = authUrl.toString();
-        await sessions.update(this.userId, this.sessionId, { authUrl: this._authUrl });
+
+        // Extract PKCE parameters from auth URL and persist verifier
+        // keyed by state nonce for callback-time retrieval.
+        const codeChallenge = authUrl.searchParams.get("code_challenge");
+        const state = authUrl.searchParams.get("state");
+
+        if (this._codeVerifierRaw && codeChallenge && state) {
+            const expectedChallenge = await createCodeChallenge(this._codeVerifierRaw);
+            if (expectedChallenge === codeChallenge) {
+                const parsed = parseOAuthState(state);
+                if (parsed) {
+                    await this.patchCredentials({
+                        codeVerifier: this._codeVerifierRaw,
+                        codeVerifierNonce: parsed.nonce,
+                        codeVerifierChallenge: null,
+                    });
+                }
+            }
+        }
+
         if (this.onRedirectCallback) {
             this.onRedirectCallback(authUrl.toString());
         }
@@ -285,7 +352,11 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
                 this._cachedTokens = undefined;
                 updates.tokens = null;
             } else if (scope === "verifier") {
+                this._codeVerifierRaw = undefined;
+                this._hasCodeVerifier = false;
                 updates.codeVerifier = null;
+                updates.codeVerifierChallenge = null;
+                updates.codeVerifierNonce = null;
             }
             await this.patchCredentials(updates);
         }
@@ -296,26 +367,41 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
             return;
         }
 
-        await this.patchCredentials({ codeVerifier: verifier });
+        const challenge = await createCodeChallenge(verifier);
+        await this.patchCredentials({ codeVerifierChallenge: challenge });
+        this._codeVerifierRaw = verifier;
         this._hasCodeVerifier = true;
     }
 
     async codeVerifier(): Promise<string> {
+        if (this._codeVerifierRaw) {
+            return this._codeVerifierRaw;
+        }
+
+        // ALS context carries the raw verifier directly (set by the caller via
+        // runWithCodeVerifierState), avoiding a DB read at callback time.
+        const ctx = codeVerifierContext.getStore();
+        if (ctx?.verifier) {
+            return ctx.verifier;
+        }
+
+        // Cross-instance fallback: read verifier from DB (no ALS context).
         const data = await this.getCredentials();
-
-        if (data.clientId && !this._clientId) {
-            this._clientId = data.clientId;
+        if (data.codeVerifier) {
+            return data.codeVerifier;
         }
 
-        if (!data.codeVerifier) {
-            throw new Error("No code verifier found");
-        }
-        return data.codeVerifier;
+        throw new Error("No code verifier found");
     }
 
     async deleteCodeVerifier(): Promise<void> {
-        await this.patchCredentials({ codeVerifier: null });
+        this._codeVerifierRaw = undefined;
         this._hasCodeVerifier = false;
+        await this.patchCredentials({
+            codeVerifier: null,
+            codeVerifierChallenge: null,
+            codeVerifierNonce: null,
+        });
     }
 
     async tokens(): Promise<OAuthTokens | undefined> {

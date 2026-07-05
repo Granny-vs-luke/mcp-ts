@@ -46,6 +46,7 @@ import { MCPClient } from '../mcp/oauth-client.js';
 import { sessions, generateServerId, type Session } from '../storage/index.js';
 import { createToolId, isToolAllowed, normalizeToolPolicyForUpdate, validateToolPolicyAgainstTools } from '../storage/tool-policy.js';
 import { createToolPolicyGateway } from '../mcp/tool-policy-gateway.js';
+import { runWithCodeVerifierState } from '../mcp/storage-oauth-provider.js';
 
 // ============================================
 // Types & Interfaces
@@ -775,7 +776,11 @@ export class SSEConnectionManager {
 
       client.onConnectionEvent((event) => this.emitConnectionEvent(event));
 
-      await client.finishAuth(code, oauthState);
+      // Run inside code verifier context so codeVerifier() can return
+      // the raw verifier without a DB read.
+      await runWithCodeVerifierState(creds?.codeVerifier ?? '', 'S256', async () => {
+        await client.finishAuth(code, oauthState);
+      });
       this.clients.set(sessionId, client);
 
       const { result: tools } = await this.listPolicyFilteredTools(sessionId);

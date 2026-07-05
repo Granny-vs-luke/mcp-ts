@@ -54,6 +54,8 @@ export interface SessionCredentials {
     clientInformation?: OAuthClientInformationMixed | null;
     tokens?: OAuthTokens | null;
     codeVerifier?: string | null;
+    codeVerifierChallenge?: string | null;
+    codeVerifierNonce?: string | null;
     clientId?: string | null;
     oauthState?: OAuthState | null;
 }

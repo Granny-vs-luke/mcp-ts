@@ -1,4 +1,4 @@
-import type { Tool, ListToolsResult, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { Tool, ListToolsResult, CallToolResult, Implementation } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolClient } from '../../shared/types.js';
 import { sessions } from '../storage/index.js';
 import type { Session } from '../storage/types.js';
@@ -13,6 +13,7 @@ type RawToolClient = ToolClient & {
     fetchTools(): Promise<{ tools: Tool[] }>;
     listTools(): Promise<{ tools: Tool[] }>;
     callTool(name: string, args: Record<string, unknown>): Promise<CallToolResult>;
+    getServerInfo?(): Implementation | undefined;
 };
 
 /**
@@ -44,6 +45,15 @@ export class ToolPolicyGateway implements ToolClient {
      */
     getServerId(): string | undefined {
         return this.client.getServerId?.();
+    }
+
+    /**
+     * Returns the full server metadata from the underlying client, if available.
+     * Includes name, version, icons, title, description, and website URL.
+     * Available only after the client has connected and completed initialization.
+     */
+    getServerInfo(): Implementation | undefined {
+        return this.client.getServerInfo?.();
     }
 
     /**

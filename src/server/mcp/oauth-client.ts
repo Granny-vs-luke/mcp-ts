@@ -24,6 +24,7 @@ import {
   ReadResourceRequest,
   ReadResourceResult,
   ReadResourceResultSchema,
+  type Implementation,
 } from '@modelcontextprotocol/sdk/types.js';
 import { StorageOAuthClientProvider, type AgentsOAuthProvider } from './storage-oauth-provider.js';
 import { Emitter, type McpConnectionEvent, type McpObservabilityEvent, type McpConnectionState } from '../../shared/events.js';
@@ -99,6 +100,7 @@ export class MCPClient {
   private transport: StreamableHTTPClientTransport | SSEClientTransport | null = null;
   private config!: MCPOAuthClientOptions;
   private createdAt?: number;
+  private _serverInfo: Implementation | undefined;
 
   /** Event emitters for connection lifecycle */
   private readonly _onConnectionEvent = new Emitter<McpConnectionEvent>();
@@ -392,7 +394,6 @@ export class MCPClient {
     await sessions.update(this.config.userId, this.config.sessionId, {
       ...this.session,
       status,
-      ...(status === 'active' && { authUrl: null }),
     });
   }
 
@@ -435,6 +436,9 @@ export class MCPClient {
 
         /** Race connection against timeout */
         await this.client!.connect(transport);
+
+        /** Capture server metadata from the initialize response */
+        this._serverInfo = this.client.getServerVersion();
 
         /** Success! Return the type that worked */
         return { transportType: currentType };
@@ -692,6 +696,9 @@ export class MCPClient {
         }
 
         await this.client.connect(this.transport);
+
+        /** Capture server metadata from the initialize response */
+        this._serverInfo = this.client.getServerVersion();
 
         /** Connection succeeded — lock in the transport type */
         this.config.transportType = currentType;
@@ -1151,7 +1158,18 @@ export class MCPClient {
   }
 
   /**
-   * Gets the human-readable server name
+   * Gets the full server metadata from the MCP initialize response.
+   * Includes name, version, icons, title, description, and website URL.
+   * Returns undefined if the client hasn't connected yet.
+   */
+  getServerInfo(): Implementation | undefined {
+    return this._serverInfo;
+  }
+
+  /**
+   * Gets the human-readable server name.
+   * Prefers the server's reported title/name from the initialize response,
+   * falling back to the name provided at construction or session metadata.
    * @returns Server name or undefined
    */
   getServerName(): string | undefined {
