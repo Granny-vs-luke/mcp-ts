@@ -1,5 +1,5 @@
 import { MCPClient } from './oauth-client.js';
-import { sessions, type Session } from '../storage/index.js';
+import { sessions, type Session, type SessionStore } from '../storage/index.js';
 import type { ToolClient, ToolClientProvider } from '../../shared/types.js';
 import { createToolPolicyGateway } from './tool-policy-gateway.js';
 
@@ -34,6 +34,13 @@ export interface MultiSessionOptions {
      * @default 1000
      */
     retryDelay?: number;
+
+    /**
+     * Custom session store. When provided, all DB operations go through
+     * this store instead of the default global `sessions` singleton.
+     * Useful for wrapping with `withDbObservability()` for debugging.
+     */
+    sessionStore?: SessionStore;
 
     /**
      * Custom session provider. When provided, `connect()` calls this
@@ -106,9 +113,11 @@ export class MultiSessionClient implements ToolClientProvider {
         };
         // Remap to avoid TS excess-property check on the spread target
         this._observabilityHandler = options.onObservabilityEvent;
+        this._store = options.sessionStore ?? sessions;
     }
 
     private _observabilityHandler?: McpObservabilityEventHandler;
+    private _store: SessionStore;
 
     // -----------------------------------------------------------------------
     // Public API
@@ -209,7 +218,7 @@ export class MultiSessionClient implements ToolClientProvider {
     private async fetchActiveSessions(): Promise<Session[]> {
         const sessionList = this.options.sessionProvider
             ? await this.options.sessionProvider()
-            : await sessions.list(this.userId);
+            : await this._store.list(this.userId);
 
         return sessionList.filter(s =>
             s.serverId &&
@@ -300,6 +309,7 @@ export class MultiSessionClient implements ToolClientProvider {
                     transportType: session.transportType,
                     headers: session.headers,
                     hasSession: true,
+                    sessionStore: this._store,
                 });
 
                 // Attach observability listener BEFORE connect to capture all lifecycle events

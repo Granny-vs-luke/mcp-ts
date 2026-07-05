@@ -46,6 +46,13 @@ export interface Session {
      */
     status?: SessionStatus;
     toolPolicy?: ToolPolicy;
+    clientInformation?: OAuthClientInformationMixed | null;
+    tokens?: OAuthTokens | null;
+    codeVerifier?: string | null;
+    codeVerifierChallenge?: string | null;
+    codeVerifierNonce?: string | null;
+    clientId?: string | null;
+    oauthState?: OAuthState | null;
 }
 
 export interface SessionCredentials {
@@ -92,7 +99,7 @@ export type GetOptions = {
     includeCredentials?: boolean;
 };
 
-export type SessionResult = Session & { credentials?: SessionCredentials | null };
+export type SessionResult = Session;
 
 export interface SessionStore {
     /**
@@ -126,9 +133,10 @@ export interface SessionStore {
     patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void>;
 
     /**
-     * Retrieves a session, optionally including its credentials in one round-trip.
-     * When includeCredentials is true, the returned session includes a `credentials`
-     * field with the associated SessionCredentials (or null if none exist).
+     * Retrieves a session, optionally including its credential fields in one round-trip.
+     * When includeCredentials is true, the returned session has credential fields
+     * (clientInformation, tokens, codeVerifier, etc.) populated from storage.
+     * When false or undefined, credential fields are left as undefined.
      */
     get(userId: string, sessionId: string, options?: GetOptions): Promise<SessionResult | null>;
 

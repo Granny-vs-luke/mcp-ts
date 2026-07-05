@@ -484,11 +484,8 @@ export class SSEConnectionManager {
       throw new Error('Session not found');
     }
 
-    // Load credentials so we can rehydrate clientId/clientSecret.
-    // Session rows do NOT store these — they live in SessionCredentials.
-    const creds = session.credentials;
-    const clientId = creds?.clientId ?? undefined;
-    const clientSecret = (creds?.clientInformation as any)?.client_secret ?? undefined;
+    const clientId = session.clientId ?? undefined;
+    const clientSecret = (session.clientInformation as any)?.client_secret ?? undefined;
 
     const client = new MCPClient({
       userId: this.userId,
@@ -502,7 +499,7 @@ export class SSEConnectionManager {
       clientId,
       clientSecret,
       hasSession: true,
-      cachedCredentials: { tokens: creds?.tokens ?? undefined },
+      cachedCredentials: { tokens: session.tokens ?? undefined },
     });
 
     // Subscribe to events before connecting
@@ -689,10 +686,8 @@ export class SSEConnectionManager {
     try {
       const clientMetadata = await this.getResolvedClientMetadata();
 
-      // Load credentials to rehydrate clientId/clientSecret for session restore.
-      const creds = session.credentials;
-      const clientId = creds?.clientId ?? undefined;
-      const clientSecret = (creds?.clientInformation as any)?.client_secret ?? undefined;
+      const clientId = session.clientId ?? undefined;
+      const clientSecret = (session.clientInformation as any)?.client_secret ?? undefined;
 
       const client = new MCPClient({
         userId: this.userId,
@@ -706,7 +701,7 @@ export class SSEConnectionManager {
         clientId,
         clientSecret,
         hasSession: true,
-        cachedCredentials: { tokens: creds?.tokens ?? undefined },
+        cachedCredentials: { tokens: session.tokens ?? undefined },
         ...clientMetadata,
       });
 
@@ -748,12 +743,8 @@ export class SSEConnectionManager {
     }
 
     try {
-      // Load credentials to rehydrate clientId/clientSecret.
-      // This is critical for pre-registered OAuth clients (clientId/clientSecret)
-      // where the secret must be passed during token exchange.
-      const creds = session.credentials;
-      const clientId = creds?.clientId ?? undefined;
-      const clientSecret = (creds?.clientInformation as any)?.client_secret ?? undefined;
+      const clientId = session.clientId ?? undefined;
+      const clientSecret = (session.clientInformation as any)?.client_secret ?? undefined;
 
       const client = new MCPClient({
         userId: this.userId,
@@ -771,14 +762,14 @@ export class SSEConnectionManager {
         clientId,
         clientSecret,
         hasSession: true,
-        cachedCredentials: { tokens: creds?.tokens ?? undefined },
+        cachedCredentials: { tokens: session.tokens ?? undefined },
       });
 
       client.onConnectionEvent((event) => this.emitConnectionEvent(event));
 
       // Run inside code verifier context so codeVerifier() can return
       // the raw verifier without a DB read.
-      await runWithCodeVerifierState(creds?.codeVerifier ?? '', 'S256', async () => {
+      await runWithCodeVerifierState(session.codeVerifier ?? '', 'S256', async () => {
         await client.finishAuth(code, oauthState);
       });
       this.clients.set(sessionId, client);

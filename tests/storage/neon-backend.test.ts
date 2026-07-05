@@ -19,22 +19,18 @@ type NeonRow = {
     status: SessionStatus;
     headers?: Record<string, string>;
     auth_url?: string | null;
-};
-
-type NeonCredentialsRow = {
-    id: string;
-    session_id: string;
-    user_id: string;
+    tool_policy?: unknown;
     client_information?: unknown;
     tokens?: unknown;
     code_verifier?: unknown;
+    code_verifier_challenge?: unknown;
+    code_verifier_nonce?: unknown;
     client_id?: string | null;
     oauth_state?: unknown;
 };
 
 function createMockNeonSql() {
     let sessions: NeonRow[] = [];
-    let credentials: NeonCredentialsRow[] = [];
     let simulateMissingTable = false;
 
     const query = async (text: string, params: unknown[] = []) => {
@@ -45,21 +41,8 @@ function createMockNeonSql() {
         }
 
         if (normalized.startsWith('insert into public.mcp_sessions')) {
-            const [
-                sessionId,
-                userId,
-                serverId,
-                serverName,
-                serverUrl,
-                transportType,
-                callbackUrl,
-                createdAt,
-                updatedAt,
-                headers,
-                authUrl,
-                status,
-                expiresAt,
-            ] = params;
+            const sessionId = params[0] as string;
+            const userId = params[1] as string;
 
             if (sessions.some((row) => row.session_id === sessionId)) {
                 const error = new Error('duplicate key value violates unique constraint');
@@ -67,88 +50,108 @@ function createMockNeonSql() {
                 throw error;
             }
 
-            sessions.push({
+            const row: NeonRow = {
                 id: `row-${sessions.length + 1}`,
-                session_id: sessionId as string,
-                user_id: userId as string,
-                server_id: serverId as string | undefined,
-                server_name: serverName as string | undefined,
-                server_url: serverUrl as string,
-                transport_type: transportType as 'sse' | 'streamable-http',
-                callback_url: callbackUrl as string,
-                created_at: createdAt as string,
-                updated_at: updatedAt as string,
-                expires_at: expiresAt as string | null,
-                status: status as SessionStatus,
-                headers: headers as Record<string, string> | undefined,
-                auth_url: authUrl as string | null,
-            });
-            return [];
-        }
+                session_id: sessionId,
+                user_id: userId,
+                server_id: params[2] as string | undefined,
+                server_name: params[3] as string | undefined,
+                server_url: params[4] as string,
+                transport_type: params[5] as 'sse' | 'streamable-http',
+                callback_url: params[6] as string,
+                created_at: params[7] as string,
+                updated_at: params[8] as string,
+                headers: params[9] as Record<string, string> | undefined,
+                auth_url: params[10] as string | null,
+                status: params[11] as SessionStatus,
+                expires_at: params[12] as string | null,
+            };
 
-        if (normalized.startsWith('insert into public.mcp_credentials')) {
-            const [
-                userId,
-                sessionId,
-                clientInformation,
-                tokens,
-                codeVerifier,
-                clientId,
-                oauthState,
-                hasClientInformation,
-                hasTokens,
-                hasCodeVerifier,
-                hasClientId,
-                hasOauthState,
-            ] = params;
-
-            let row = credentials.find((item) => item.user_id === userId && item.session_id === sessionId);
-            if (!row) {
-                row = {
-                    id: `credentials-${credentials.length + 1}`,
-                    user_id: userId as string,
-                    session_id: sessionId as string,
-                };
-                credentials.push(row);
+            if (params.length >= 14 && params[13] !== undefined) {
+                row.tool_policy = params[13];
             }
 
-            if (hasClientInformation) row.client_information = clientInformation;
-            if (hasTokens) row.tokens = tokens;
-            if (hasCodeVerifier) row.code_verifier = codeVerifier;
-            if (hasClientId) row.client_id = clientId as string | null;
-            if (hasOauthState) row.oauth_state = oauthState;
+            sessions.push(row);
             return [];
         }
 
-        if (normalized.startsWith('update public.mcp_sessions') && normalized.includes('set server_id')) {
-            const whereUserId = params[params.length - 2] as string;
-            const whereSessionId = params[params.length - 1] as string;
-            const row = sessions.find((item) => item.user_id === whereUserId && item.session_id === whereSessionId);
-            if (!row) {
+        if (normalized.startsWith('update public.mcp_sessions')) {
+            const isReturningId = normalized.includes('returning id');
+
+            if (normalized.includes('set server_id')) {
+                const whereUserId = params[params.length - 2] as string;
+                const whereSessionId = params[params.length - 1] as string;
+                const row = sessions.find((item) => item.user_id === whereUserId && item.session_id === whereSessionId);
+                if (!row) {
+                    return isReturningId ? [] : [];
+                }
+
+                row.server_id = params[0] as string | undefined;
+                row.server_name = params[1] as string | undefined;
+                row.server_url = params[2] as string;
+                row.transport_type = params[3] as 'sse' | 'streamable-http';
+                row.callback_url = params[4] as string;
+                row.status = params[5] as SessionStatus;
+                row.headers = params[6] as Record<string, string> | undefined;
+                row.auth_url = params[7] as string | null;
+                row.expires_at = params[8] as string | null;
+
+                if (params.length >= 11 && params[9] !== undefined) {
+                    row.tool_policy = params[9];
+                }
+
+                row.updated_at = new Date().toISOString();
+                return isReturningId ? [{ id: row.id }] : [];
+            }
+
+            if (normalized.includes('set client_information') || normalized.includes('set tokens') || normalized.includes('set code_verifier')) {
+                const whereUserId = params[params.length - 2] as string;
+                const whereSessionId = params[params.length - 1] as string;
+                const row = sessions.find((item) => item.user_id === whereUserId && item.session_id === whereSessionId);
+                if (!row) {
+                    return isReturningId ? [] : [];
+                }
+
+                const columnPatterns = [
+                    { col: 'client_information', key: 'client_information' },
+                    { col: 'tokens', key: 'tokens' },
+                    { col: 'code_verifier_challenge', key: 'code_verifier_challenge' },
+                    { col: 'code_verifier_nonce', key: 'code_verifier_nonce' },
+                    { col: 'code_verifier', key: 'code_verifier' },
+                    { col: 'client_id', key: 'client_id' },
+                    { col: 'oauth_state', key: 'oauth_state' },
+                ];
+
+                if (params.length === 2) {
+                    for (const { col, key } of columnPatterns) {
+                        if (normalized.includes(`${col} = null`)) {
+                            (row as any)[key] = null;
+                        }
+                    }
+                } else {
+                    let paramIdx = 0;
+                    for (const { col, key } of columnPatterns) {
+                        if (normalized.includes(`${col} = `)) {
+                            (row as any)[key] = params[paramIdx++];
+                        }
+                    }
+                }
+
+                row.updated_at = new Date().toISOString();
+                return isReturningId ? [{ id: row.id }] : [];
+            }
+
+            if (normalized.includes('set expires_at')) {
+                const [expiresAt, userId, sessionId] = params;
+                const row = sessions.find((item) => item.user_id === userId && item.session_id === sessionId);
+                if (row) {
+                    row.expires_at = expiresAt as string;
+                    row.updated_at = new Date().toISOString();
+                }
                 return [];
             }
 
-            row.server_id = params[0] as string | undefined;
-            row.server_name = params[1] as string | undefined;
-            row.server_url = params[2] as string;
-            row.transport_type = params[3] as 'sse' | 'streamable-http';
-            row.callback_url = params[4] as string;
-            row.status = params[5] as SessionStatus;
-            row.headers = params[6] as Record<string, string> | undefined;
-            row.auth_url = params[7] as string | null;
-            row.expires_at = params[8] as string | null;
-            row.updated_at = new Date().toISOString();
-            return [{ id: row.id }];
-        }
-
-        if (normalized.startsWith('update public.mcp_sessions') && normalized.includes('set expires_at')) {
-            const [expiresAt, userId, sessionId] = params;
-            const row = sessions.find((item) => item.user_id === userId && item.session_id === sessionId);
-            if (row) {
-                row.expires_at = expiresAt as string;
-                row.updated_at = new Date().toISOString();
-            }
-            return [];
+            throw new Error(`Unexpected query: ${text}`);
         }
 
         if (normalized.startsWith('select * from public.mcp_sessions where user_id = $1 and session_id = $2')) {
@@ -156,9 +159,42 @@ function createMockNeonSql() {
             return sessions.filter((row) => row.user_id === userId && row.session_id === sessionId);
         }
 
-        if (normalized.startsWith('select * from public.mcp_credentials where user_id = $1 and session_id = $2')) {
+        if (normalized.startsWith('select session_id') && normalized.startsWith('select session_id,') && normalized.includes('from public.mcp_sessions where user_id = $1 and session_id = $2')) {
             const [userId, sessionId] = params;
-            return credentials.filter((row) => row.user_id === userId && row.session_id === sessionId);
+            const rows = sessions.filter((row) => row.user_id === userId && row.session_id === sessionId);
+            return rows.map((row) => {
+                const result: Record<string, unknown> = {};
+                if (normalized.includes('session_id')) result.session_id = row.session_id;
+                if (normalized.includes('user_id')) result.user_id = row.user_id;
+                if (normalized.includes('server_id')) result.server_id = row.server_id;
+                if (normalized.includes('server_name')) result.server_name = row.server_name;
+                if (normalized.includes('server_url')) result.server_url = row.server_url;
+                if (normalized.includes('transport_type')) result.transport_type = row.transport_type;
+                if (normalized.includes('callback_url')) result.callback_url = row.callback_url;
+                if (normalized.includes('created_at')) result.created_at = row.created_at;
+                if (normalized.includes('updated_at')) result.updated_at = row.updated_at;
+                if (normalized.includes('expires_at')) result.expires_at = row.expires_at;
+                if (normalized.includes('headers')) result.headers = row.headers;
+                if (normalized.includes('auth_url')) result.auth_url = row.auth_url;
+                if (normalized.includes('status')) result.status = row.status;
+                if (normalized.includes('tool_policy')) result.tool_policy = row.tool_policy;
+                return result;
+            });
+        }
+
+        if (normalized.startsWith('select client_information') && normalized.includes('from public.mcp_sessions where user_id = $1 and session_id = $2')) {
+            const [userId, sessionId] = params;
+            const row = sessions.find((item) => item.user_id === userId && item.session_id === sessionId);
+            if (!row) return [];
+            const result: Record<string, unknown> = {};
+            if (normalized.includes('client_information')) result.client_information = row.client_information;
+            if (normalized.includes('code_verifier_challenge')) result.code_verifier_challenge = row.code_verifier_challenge;
+            if (normalized.includes('code_verifier_nonce')) result.code_verifier_nonce = row.code_verifier_nonce;
+            if (normalized.includes(', tokens')) result.tokens = row.tokens;
+            if (normalized.includes('code_verifier,') || normalized.includes('code_verifier ')) result.code_verifier = row.code_verifier;
+            if (normalized.includes('client_id')) result.client_id = row.client_id;
+            if (normalized.includes('oauth_state')) result.oauth_state = row.oauth_state;
+            return [result];
         }
 
         if (normalized.startsWith('select id from public.mcp_sessions where user_id = $1 and session_id = $2')) {
@@ -187,13 +223,6 @@ function createMockNeonSql() {
         if (normalized.startsWith('delete from public.mcp_sessions where user_id = $1 and session_id = $2')) {
             const [userId, sessionId] = params;
             sessions = sessions.filter((row) => !(row.user_id === userId && row.session_id === sessionId));
-            credentials = credentials.filter((row) => !(row.user_id === userId && row.session_id === sessionId));
-            return [];
-        }
-
-        if (normalized.startsWith('delete from public.mcp_credentials where user_id = $1 and session_id = $2')) {
-            const [userId, sessionId] = params;
-            credentials = credentials.filter((row) => !(row.user_id === userId && row.session_id === sessionId));
             return [];
         }
 
@@ -221,18 +250,12 @@ function createMockNeonSql() {
             return [];
         }
 
-        if (normalized.startsWith('delete from public.mcp_credentials')) {
-            credentials = [];
-            return [];
-        }
-
         throw new Error(`Unexpected query: ${text}`);
     };
 
     return {
         sql: { query },
         listSessions: () => sessions,
-        listCredentials: () => credentials,
         setMissingTable: (value: boolean) => {
             simulateMissingTable = value;
         },
@@ -342,7 +365,7 @@ test.describe('NeonStorageBackend', () => {
             const id1 = storage.generateSessionId();
             const id2 = storage.generateSessionId();
             expect(id1).not.toBe(id2);
-            expect(id1).toMatch(/^sess_[a-zA-Z0-9]{21}$/);
+            expect(id1).toMatch(/^sess_[a-zA-Z0-9_-]{21}$/);
         });
     });
 
@@ -395,11 +418,14 @@ test.describe('NeonStorageBackend', () => {
             await storage.patchCredentials(session.userId, session.sessionId, { tokens, oauthState });
 
             const sessionRows = mockNeon.listSessions();
-            const credentialRows = mockNeon.listCredentials();
-            expect((sessionRows[0] as any).tokens).toBeUndefined();
+            // get without credentials should not return tokens
+            const retrieved = await storage.get(session.userId, session.sessionId);
+            expect((retrieved as any).tokens).toBeUndefined();
             expect(sessionRows[0].headers).toEqual({ Authorization: 'Bearer xyz' });
-            expect(credentialRows[0].tokens).toEqual(tokens);
-            expect(credentialRows[0].oauth_state).toEqual(oauthState);
+            // getCredentials should return tokens
+            const credentials = await storage.getCredentials(session.userId, session.sessionId);
+            expect(credentials?.tokens).toEqual(tokens);
+            expect(credentials?.oauthState).toEqual(oauthState);
         });
     });
 
@@ -462,21 +488,21 @@ test.describe('NeonStorageBackend', () => {
 
     // ── clearCredentials ─────────────────────────────────────────────────
     test.describe('clearCredentials', () => {
-        test('removes credentials row while session remains intact', async () => {
+        test('removes credentials while session remains intact', async () => {
             const session = createMockSession();
             const tokens = createMockTokens();
             await storage.create(session);
             await storage.patchCredentials(session.userId, session.sessionId, { tokens });
 
-            expect(mockNeon.listCredentials().length).toBe(1);
+            const credentialsBefore = await storage.getCredentials(session.userId, session.sessionId);
+            expect(credentialsBefore?.tokens).not.toBeUndefined();
 
             await storage.clearCredentials(session.userId, session.sessionId);
 
             const credentials = await storage.getCredentials(session.userId, session.sessionId);
             const retrieved = await storage.get(session.userId, session.sessionId);
-            expect(credentials?.tokens).toBeUndefined();
+            expect(credentials?.tokens).toBeNull();
             expect(retrieved).not.toBeNull();
-            expect(mockNeon.listCredentials().length).toBe(0);
         });
     });
 
@@ -489,9 +515,7 @@ test.describe('NeonStorageBackend', () => {
 
             await storage.patchCredentials(session.userId, session.sessionId, { tokens: null });
 
-            const rows = mockNeon.listCredentials();
             const credentials = await storage.getCredentials(session.userId, session.sessionId);
-            expect(rows[0].tokens).toBeNull();
             expect(credentials?.tokens).toBeNull();
         });
 

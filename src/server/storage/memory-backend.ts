@@ -9,7 +9,6 @@ import { isSessionExpired, mergeSessionUpdate, normalizeNewSession } from './ses
 export class MemoryStorageBackend implements SessionStore {
     // Map<userId:sessionId, Session>
     private sessions = new Map<string, Session>();
-    private credentials = new Map<string, SessionCredentials>();
 
     // Map<userId, Set<sessionId>>
     private userIdSessions = new Map<string, Set<string>>();
@@ -63,27 +62,38 @@ export class MemoryStorageBackend implements SessionStore {
 
     async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void> {
         const sessionKey = this.getSessionKey(userId, sessionId);
-        if (!this.sessions.has(sessionKey)) {
+        const current = this.sessions.get(sessionKey);
+        if (!current) {
             throw new Error(`Session ${sessionId} not found`);
         }
 
-        const current = this.credentials.get(sessionKey) ?? { sessionId, userId };
-        this.credentials.set(sessionKey, { ...current, ...data, sessionId, userId });
+        this.sessions.set(sessionKey, { ...current, ...data, sessionId, userId });
     }
 
 
     async get(userId: string, sessionId: string, options?: GetOptions): Promise<SessionResult | null> {
         const sessionKey = this.getSessionKey(userId, sessionId);
         const session = this.sessions.get(sessionKey) || null;
-        if (!session || !options?.includeCredentials) return session;
-        const creds = this.credentials.get(sessionKey) ?? { sessionId, userId };
-        return { ...session, credentials: creds };
+        if (!session) return session;
+        if (!options?.includeCredentials) {
+            const { clientInformation, tokens, codeVerifier, codeVerifierChallenge, codeVerifierNonce, clientId, oauthState, ...sessionOnly } = session;
+            return sessionOnly as Session;
+        }
+        return session;
     }
 
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
         const sessionKey = this.getSessionKey(userId, sessionId);
-        if (!this.sessions.has(sessionKey)) return null;
-        return this.credentials.get(sessionKey) ?? { sessionId, userId };
+        const session = this.sessions.get(sessionKey);
+        if (!session) return null;
+
+        const { clientInformation, tokens, codeVerifier, codeVerifierChallenge, codeVerifierNonce, clientId, oauthState } = session;
+        return {
+            sessionId, userId,
+            clientInformation, tokens, codeVerifier,
+            codeVerifierChallenge, codeVerifierNonce,
+            clientId, oauthState,
+        };
     }
 
     async clearCredentials(userId: string, sessionId: string): Promise<void> {
@@ -91,6 +101,8 @@ export class MemoryStorageBackend implements SessionStore {
             clientInformation: null,
             tokens: null,
             codeVerifier: null,
+            codeVerifierChallenge: null,
+            codeVerifierNonce: null,
             clientId: null,
             oauthState: null,
         });
@@ -118,7 +130,6 @@ export class MemoryStorageBackend implements SessionStore {
     async delete(userId: string, sessionId: string): Promise<void> {
         const sessionKey = this.getSessionKey(userId, sessionId);
         this.sessions.delete(sessionKey);
-        this.credentials.delete(sessionKey);
 
         const set = this.userIdSessions.get(userId);
         if (set) {
@@ -135,7 +146,6 @@ export class MemoryStorageBackend implements SessionStore {
 
     async clearAll(): Promise<void> {
         this.sessions.clear();
-        this.credentials.clear();
         this.userIdSessions.clear();
     }
 
@@ -144,7 +154,6 @@ export class MemoryStorageBackend implements SessionStore {
             if (!isSessionExpired(session)) continue;
 
             this.sessions.delete(key);
-            this.credentials.delete(key);
 
             const set = this.userIdSessions.get(session.userId);
             if (set) {

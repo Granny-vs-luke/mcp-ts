@@ -12,13 +12,11 @@ import { DORMANT_SESSION_EXPIRATION_MS, STATE_EXPIRATION_MS } from '../../src/sh
  */
 function createMockSupabaseClient() {
     let sessions: any[] = [];
-    let credentials: any[] = [];
     let simulateMissingTable = false;
 
     const mock = {
         /** Test-only helper to inspect internal state */
         _listSessions: () => sessions,
-        _listCredentials: () => credentials,
         get _simulateMissingTable() { return simulateMissingTable; },
         set _simulateMissingTable(v: boolean) { simulateMissingTable = v; },
 
@@ -26,14 +24,16 @@ function createMockSupabaseClient() {
             let action: 'insert' | 'upsert' | 'update' | 'select' | 'delete' | 'init_check' | null = null;
             let payload: any = null;
             const filters: Array<(item: any) => boolean> = [];
+            let selectedColumns: string | null = null;
             let selectAfterMutation = false;
-            const getRows = () => table === 'mcp_credentials' ? credentials : sessions;
+            const getRows = () => sessions;
             const setRows = (rows: any[]) => {
-                if (table === 'mcp_credentials') {
-                    credentials = rows;
-                } else {
-                    sessions = rows;
-                }
+                sessions = rows;
+            };
+
+            const stripCredentialColumns = (row: any) => {
+                const { client_information, tokens, code_verifier, code_verifier_challenge, code_verifier_nonce, client_id, oauth_state, ...rest } = row;
+                return rest;
             };
 
             const chain: any = {
@@ -42,6 +42,9 @@ function createMockSupabaseClient() {
                 update: (data: any) => { action = 'update'; payload = { ...data }; return chain; },
                 delete: () => { action = 'delete'; return chain; },
                 select: (_cols?: any) => {
+                    if (typeof _cols === 'string') {
+                        selectedColumns = _cols;
+                    }
                     // Specific check for init() validation: select('session_id').limit(0)
                     if (_cols === 'session_id' && payload === 'limit_zero_check') {
                         action = 'init_check';
@@ -75,7 +78,11 @@ function createMockSupabaseClient() {
                 maybeSingle: async () => {
                     let res = [...getRows()];
                     for (const f of filters) res = res.filter(f);
-                    return { data: res[0] ?? null, error: null };
+                    const row = res[0] ?? null;
+                    if (row && selectedColumns !== null && selectedColumns !== '*' && selectedColumns.startsWith('session_id')) {
+                        return { data: stripCredentialColumns(row), error: null };
+                    }
+                    return { data: row, error: null };
                 },
 
                 /**
@@ -90,9 +97,7 @@ function createMockSupabaseClient() {
 
                         if (action === 'insert') {
                             const rows = getRows();
-                            const duplicate = table === 'mcp_credentials'
-                                ? rows.some(s => s.user_id === payload.user_id && s.session_id === payload.session_id)
-                                : rows.some(s => s.session_id === payload.session_id);
+                            const duplicate = rows.some(s => s.session_id === payload.session_id);
                             if (duplicate) {
                                 return resolve({ data: null, error: { code: '23505', message: 'duplicate key violation' } });
                             }
@@ -129,7 +134,10 @@ function createMockSupabaseClient() {
                             return resolve({ data: [], error: null });
 
                         } else if (action === 'select') {
-                            const res = getRows().filter(s => filters.every(f => f(s)));
+                            let res = getRows().filter(s => filters.every(f => f(s)));
+                            if (selectedColumns !== null && selectedColumns !== '*' && selectedColumns.startsWith('session_id')) {
+                                res = res.map(r => stripCredentialColumns(r));
+                            }
                             return resolve({ data: res, error: null });
 
                         } else {
@@ -178,7 +186,7 @@ test.describe('SupabaseStorageBackend', () => {
             const id2 = storage.generateSessionId();
             expect(id1).not.toBe(id2);
             // 26-char pattern: sess_ + 21-char nanoid
-            expect(id1).toMatch(/^sess_[a-zA-Z0-9]{21}$/);
+            expect(id1).toMatch(/^sess_[a-zA-Z0-9_-]{21}$/);
         });
     });
 
@@ -219,7 +227,7 @@ test.describe('SupabaseStorageBackend', () => {
             expect(row.expires_at).toBeNull();
         });
 
-        test('keeps headers on sessions and credentials in mcp_credentials', async () => {
+        test('keeps headers on session and stores credentials via patch', async () => {
             const tokens = createMockTokens();
             const oauthState = {
                 nonce: 'nonce-1',
@@ -231,12 +239,12 @@ test.describe('SupabaseStorageBackend', () => {
             await storage.create(session);
             await storage.patchCredentials(session.userId, session.sessionId, { tokens, oauthState });
 
-            const row = mockSupabase._listSessions()[0];
-            const credentialsRow = mockSupabase._listCredentials()[0];
-            expect(row.tokens).toBeUndefined();
-            expect(row.headers).toEqual({ Authorization: 'Bearer xyz' });
-            expect(credentialsRow.tokens).toEqual(tokens);
-            expect(credentialsRow.oauth_state).toEqual(oauthState);
+            const retrieved = await storage.get(session.userId, session.sessionId);
+            const credentials = await storage.getCredentials(session.userId, session.sessionId);
+            expect((retrieved as any).tokens).toBeUndefined();
+            expect(retrieved?.headers).toEqual({ Authorization: 'Bearer xyz' });
+            expect(credentials?.tokens).toEqual(tokens);
+            expect(credentials?.oauthState).toEqual(oauthState);
         });
 
         test('throws on duplicate session (unique key violation)', async () => {
@@ -291,10 +299,8 @@ test.describe('SupabaseStorageBackend', () => {
 
             await storage.patchCredentials(session.userId, session.sessionId, { tokens: null });
 
-            const row = mockSupabase._listCredentials()[0];
             const credentials = await storage.getCredentials(session.userId, session.sessionId);
 
-            expect(row.tokens).toBeNull();
             expect(credentials?.tokens).toBeNull();
         });
 

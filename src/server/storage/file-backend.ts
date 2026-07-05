@@ -16,7 +16,6 @@ import {
 export class FileStorageBackend implements SessionStore {
     private filePath: string;
     private memoryCache: Map<string, Session> | null = null;
-    private credentialsCache: Map<string, SessionCredentials> | null = null;
     private initialized = false;
 
     /**
@@ -42,23 +41,16 @@ export class FileStorageBackend implements SessionStore {
             const json = JSON.parse(data);
 
             this.memoryCache = new Map();
-            this.credentialsCache = new Map();
             if (Array.isArray(json.sessions)) {
                 json.sessions.forEach((s: Session) => {
                     const session = normalizeStoredSession(s);
                     this.memoryCache!.set(this.getSessionKey(session.userId || 'unknown', session.sessionId), session);
                 });
             }
-            if (Array.isArray(json.credentials)) {
-                json.credentials.forEach((c: SessionCredentials) => {
-                    this.credentialsCache!.set(this.getSessionKey(c.userId, c.sessionId), c);
-                });
-            }
         } catch (error: any) {
             if (error.code === 'ENOENT') {
                 // File does not exist, initialize empty
                 this.memoryCache = new Map();
-                this.credentialsCache = new Map();
                 await this.flush();
             } else {
                 console.error('[FileStorage] Failed to load sessions:', error);
@@ -75,10 +67,9 @@ export class FileStorageBackend implements SessionStore {
     }
 
     private async flush(): Promise<void> {
-        if (!this.memoryCache || !this.credentialsCache) return;
+        if (!this.memoryCache) return;
         await fs.writeFile(this.filePath, JSON.stringify({
             sessions: Array.from(this.memoryCache.values()),
-            credentials: Array.from(this.credentialsCache.values()),
         }, null, 2), 'utf-8');
     }
 
@@ -124,12 +115,12 @@ export class FileStorageBackend implements SessionStore {
     async patchCredentials(userId: string, sessionId: string, data: Partial<SessionCredentials>): Promise<void> {
         await this.ensureInitialized();
         const sessionKey = this.getSessionKey(userId, sessionId);
-        if (!this.memoryCache!.has(sessionKey)) {
+        const current = this.memoryCache!.get(sessionKey);
+        if (!current) {
             throw new Error(`Session ${sessionId} not found`);
         }
 
-        const current = this.credentialsCache!.get(sessionKey) ?? { sessionId, userId };
-        this.credentialsCache!.set(sessionKey, { ...current, ...data, sessionId, userId });
+        this.memoryCache!.set(sessionKey, { ...current, ...data, sessionId, userId });
         await this.flush();
     }
 
@@ -137,16 +128,27 @@ export class FileStorageBackend implements SessionStore {
         await this.ensureInitialized();
         const sessionKey = this.getSessionKey(userId, sessionId);
         const session = this.memoryCache!.get(sessionKey) || null;
-        if (!session || !options?.includeCredentials) return session;
-        const creds = this.credentialsCache!.get(sessionKey) ?? { sessionId, userId };
-        return { ...session, credentials: creds };
+        if (!session) return null;
+        if (!options?.includeCredentials) {
+            const { clientInformation, tokens, codeVerifier, codeVerifierChallenge, codeVerifierNonce, clientId, oauthState, ...sessionOnly } = session;
+            return sessionOnly as Session;
+        }
+        return session;
     }
 
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
         await this.ensureInitialized();
         const sessionKey = this.getSessionKey(userId, sessionId);
-        if (!this.memoryCache!.has(sessionKey)) return null;
-        return this.credentialsCache!.get(sessionKey) ?? { sessionId, userId };
+        const session = this.memoryCache!.get(sessionKey);
+        if (!session) return null;
+
+        const { clientInformation, tokens, codeVerifier, codeVerifierChallenge, codeVerifierNonce, clientId, oauthState } = session;
+        return {
+            sessionId, userId,
+            clientInformation, tokens, codeVerifier,
+            codeVerifierChallenge, codeVerifierNonce,
+            clientId, oauthState,
+        };
     }
 
     async clearCredentials(userId: string, sessionId: string): Promise<void> {
@@ -154,6 +156,8 @@ export class FileStorageBackend implements SessionStore {
             clientInformation: null,
             tokens: null,
             codeVerifier: null,
+            codeVerifierChallenge: null,
+            codeVerifierNonce: null,
             clientId: null,
             oauthState: null,
         });
@@ -175,7 +179,6 @@ export class FileStorageBackend implements SessionStore {
         await this.ensureInitialized();
         const sessionKey = this.getSessionKey(userId, sessionId);
         const deleted = this.memoryCache!.delete(sessionKey);
-        this.credentialsCache!.delete(sessionKey);
         if (deleted) {
             await this.flush();
         }
@@ -189,7 +192,6 @@ export class FileStorageBackend implements SessionStore {
     async clearAll(): Promise<void> {
         await this.ensureInitialized();
         this.memoryCache!.clear();
-        this.credentialsCache!.clear();
         await this.flush();
     }
 
@@ -201,7 +203,6 @@ export class FileStorageBackend implements SessionStore {
             if (!isSessionExpired(session)) continue;
 
             this.memoryCache!.delete(key);
-            this.credentialsCache!.delete(key);
             changed = true;
         }
 

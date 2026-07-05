@@ -6,6 +6,7 @@ import { SqliteStorage } from './sqlite-backend.js';
 import { SupabaseStorageBackend } from './supabase-backend.js';
 import { NeonStorageBackend, type NeonStorageOptions } from './neon-backend.js';
 import type { SessionStore, Session, SessionMutationEvent, SessionMutationListener } from './types.js';
+import type { McpObservabilityEvent } from '../../shared/events.js';
 
 // Re-export types
 export * from './types.js';
@@ -281,6 +282,76 @@ export function onSessionMutation(listener: SessionMutationListener): () => void
 
 export function _resetSessionMutationListenersForTesting(): void {
     sessionMutationListeners.clear();
+}
+
+/**
+ * Wraps a SessionStore with a Proxy that emits an McpObservabilityEvent for every
+ * method call — reads (`db:read`) and writes (`db:write`) — including duration
+ * and any error. Useful for debugging connection flows end-to-end.
+ *
+ * Usage:
+ * ```ts
+ * import { sessions, withDbObservability } from '@mcp-ts/sdk/server/storage';
+ * const db = withDbObservability(sessions, (event) => console.log('[DB]', event));
+ * // Use `db` instead of `sessions` throughout the request
+ * ```
+ *
+ * @param store - The underlying SessionStore instance to wrap.
+ * @param emit  - Called synchronously after each store method completes
+ *                (or rejects) with a typed observability event.
+ * @returns A drop-in SessionStore replacement.
+ */
+export function withDbObservability(
+    store: SessionStore,
+    emit: (event: McpObservabilityEvent) => void,
+): SessionStore {
+    const readMethods = new Set<keyof SessionStore>([
+        'get', 'getCredentials', 'list', 'listIds', 'listAllIds',
+    ]);
+
+    return new Proxy(store, {
+        get(target, prop, receiver) {
+            const original = Reflect.get(target, prop, receiver);
+            if (typeof original !== 'function') return original;
+
+            return (...args: any[]) => {
+                const method = prop as string;
+                const isRead = readMethods.has(prop as keyof SessionStore);
+                const start = performance.now();
+
+                const emitEvent = (error?: string) => {
+                    emit({
+                        type: isRead ? 'db:read' : 'db:write',
+                        level: error ? 'error' : 'debug',
+                        message: `${method}(${args.map(a =>
+                            typeof a === 'string' ? a.slice(0, 24) : typeof a,
+                        ).join(', ')})`,
+                        sessionId: typeof args[1] === 'string' ? args[1] : undefined,
+                        payload: {
+                            method,
+                            argTypes: args.map(a => typeof a),
+                            durationMs: performance.now() - start,
+                            ...(error ? { error } : {}),
+                        },
+                        timestamp: Date.now(),
+                    });
+                };
+
+                try {
+                    const result = original.apply(target, args);
+                    if (result instanceof Promise) {
+                        return result.then(r => { emitEvent(); return r; })
+                            .catch(e => { emitEvent(String(e)); throw e; });
+                    }
+                    emitEvent();
+                    return result;
+                } catch (e) {
+                    emitEvent(String(e));
+                    throw e;
+                }
+            };
+        },
+    });
 }
 
 /**

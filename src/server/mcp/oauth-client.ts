@@ -30,7 +30,7 @@ import { StorageOAuthClientProvider, type AgentsOAuthProvider } from './storage-
 import { Emitter, type McpConnectionEvent, type McpObservabilityEvent, type McpConnectionState } from '../../shared/events.js';
 import { UnauthorizedError } from '../../shared/errors.js';
 import { sessions } from '../storage/index.js';
-import type { Session, SessionStatus } from '../storage/types.js';
+import type { Session, SessionStatus, SessionStore } from '../storage/types.js';
 import {
   MCP_CLIENT_NAME,
   MCP_CLIENT_VERSION,
@@ -87,6 +87,12 @@ export interface MCPOAuthClientOptions {
    * Saves one round-trip per reconnection.
    */
   hasSession?: boolean;
+  /**
+   * Custom session store override. When provided, all storage operations
+   * (get/create/update/delete) use this store instead of the default global.
+   * Used for wrapping with DB observability or other decorators.
+   */
+  sessionStore?: SessionStore;
 }
 
 /**
@@ -101,6 +107,7 @@ export class MCPClient {
   private config!: MCPOAuthClientOptions;
   private createdAt?: number;
   private _serverInfo: Implementation | undefined;
+  private _store!: SessionStore;
 
   /** Event emitters for connection lifecycle */
   private readonly _onConnectionEvent = new Emitter<McpConnectionEvent>();
@@ -118,6 +125,7 @@ export class MCPClient {
    */
   constructor(options: MCPOAuthClientOptions) {
     this.config = { ...options };
+    this._store = options.sessionStore ?? sessions;
 
     this.client = new Client(
       {
@@ -305,7 +313,7 @@ export class MCPClient {
     this.emitProgress('Loading session configuration...');
 
     if (!this.config.serverUrl || !this.config.callbackUrl || !this.config.serverId) {
-      const existingSession = await sessions.get(this.config.userId, this.config.sessionId);
+      const existingSession = await this._store.get(this.config.userId, this.config.sessionId);
       if (!existingSession) {
         throw new Error(`Session not found: ${this.config.sessionId}`);
       }
@@ -334,6 +342,7 @@ export class MCPClient {
       clientId: this.config.clientId,
       clientSecret: this.config.clientSecret,
       cachedTokens: this.config.cachedCredentials?.tokens,
+      sessionStore: this._store,
       onRedirect: (redirectUrl: string) => {
         if (this.config.serverId) {
           this._onConnectionEvent.fire({
@@ -353,7 +362,7 @@ export class MCPClient {
     // Create session row BEFORE persisting credentials (FK constraint on mcp_credentials)
     // When hasSession is set by the caller, the session is guaranteed
     // to exist — skip the redundant round-trip.
-    const existingSession = this.config.hasSession ? {} as Session : await sessions.get(this.config.userId, this.config.sessionId);
+    const existingSession = this.config.hasSession ? {} as Session : await this._store.get(this.config.userId, this.config.sessionId);
     if (!existingSession) {
       this.createdAt = Date.now();
       const updatedAt = this.createdAt;
@@ -366,7 +375,7 @@ export class MCPClient {
         timestamp: Date.now(),
         id: nanoid(),
       });
-      await sessions.create({
+      await this._store.create({
         ...this.session,
         updatedAt,
         status: 'pending',
@@ -391,7 +400,7 @@ export class MCPClient {
       return;
     }
 
-    await sessions.update(this.config.userId, this.config.sessionId, {
+    await this._store.update(this.config.userId, this.config.sessionId, {
       ...this.session,
       status,
     });
@@ -403,7 +412,7 @@ export class MCPClient {
    */
   private async deleteTransientSession(): Promise<void> {
     try {
-      await sessions.delete(this.config.userId, this.config.sessionId);
+      await this._store.delete(this.config.userId, this.config.sessionId);
     } catch {
       // Best effort only: preserve the original connection/auth error.
     }
@@ -609,9 +618,9 @@ export class MCPClient {
       // Remove transient sessions that failed before becoming restorable.
       // Existing active sessions may still hold usable credentials for reconnect.
       try {
-        const existingSession = await sessions.get(this.config.userId, this.config.sessionId);
+        const existingSession = await this._store.get(this.config.userId, this.config.sessionId);
         if (!existingSession || existingSession.status !== 'active') {
-          await sessions.delete(this.config.userId, this.config.sessionId);
+          await this._store.delete(this.config.userId, this.config.sessionId);
         }
       } catch {
         // Best effort only: preserve the original connection error.
@@ -1054,7 +1063,7 @@ export class MCPClient {
       await (this.oauthProvider as any).invalidateCredentials('all');
     }
 
-    await sessions.delete(this.config.userId, this.config.sessionId);
+    await this._store.delete(this.config.userId, this.config.sessionId);
     await this.disconnect();
   }
 
