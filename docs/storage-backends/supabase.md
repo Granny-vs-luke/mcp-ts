@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
         CHECK (status IN ('pending', 'active')),
     headers JSONB,
     auth_url TEXT,
+    enabled BOOLEAN DEFAULT true,
     tool_policy JSONB,
     client_information JSONB,
     tokens JSONB,
