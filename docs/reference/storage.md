@@ -64,10 +64,40 @@ await sessions.update('user-123', 'abc123', {
 });
 ```
 
-**`get(userId, sessionId): Promise<Session | null>`**
+**`get(userId, sessionId, options?): Promise<Session | null>`**
+
+Returns session data. Pass `{ includeCredentials: true }` to include OAuth credential fields.
 
 ```typescript
 const session = await sessions.get('user-123', 'abc123');
+const sessionWithCreds = await sessions.get('user-123', 'abc123', { includeCredentials: true });
+```
+
+**`getCredentials(userId, sessionId): Promise<SessionCredentials | null>`**
+
+Returns only credential fields (tokens, client info, code verifier, OAuth state).
+
+```typescript
+const creds = await sessions.getCredentials('user-123', 'abc123');
+console.log(creds?.tokens?.access_token);
+```
+
+**`patchCredentials(userId, sessionId, data): Promise<void>`**
+
+Updates credential fields on an existing session.
+
+```typescript
+await sessions.patchCredentials('user-123', 'abc123', {
+  tokens: { access_token: 'xyz', token_type: 'Bearer' },
+});
+```
+
+**`clearCredentials(userId, sessionId): Promise<void>`**
+
+Clears all credential fields while keeping session metadata intact.
+
+```typescript
+await sessions.clearCredentials('user-123', 'abc123');
 ```
 
 **`list(userId): Promise<Session[]>`**

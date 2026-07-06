@@ -87,7 +87,7 @@ If you already use a managed service/platform such as Smithery, Klavis Strata, C
 
 | Package | Description | Install |
 | :--- | :--- | :--- |
-| **[@mcp-ts/sdk](src)** | Core TypeScript/JavaScript SDK for client applications. | `npm i @mcp-ts/sdk` |
+| **[@mcp-ts/sdk](packages/sdk)** | Core TypeScript/JavaScript SDK for client applications. | `npm i @mcp-ts/sdk` |
 | **[@mcp-ts/tool-router](packages/tool-router)** | ToolRouter for dynamic tool discovery across many MCP servers. | `npm i @mcp-ts/tool-router` |
 | **[@mcp-ts/codemode](packages/code-mode)** | CodeMode: sandboxed program execution for tool calling. | `npm i @mcp-ts/codemode` |
 | **[mcpassistant-gateway](packages/local-gateway)** | Python bridge for local MCP support in remote apps. | `pip install mcpassistant-gateway` |
@@ -114,7 +114,7 @@ Most features are available out-of-the-box in the **TypeScript SDK**:
 
 ## 🧪 Examples
 
-Check out working examples demonstrating the MCP Apps extension and agent integrations in the [examples/agents](examples/agents) directory.
+Check out working examples demonstrating the MCP Apps extension and agent integrations in the [packages/sdk/examples/agents](packages/sdk/examples/agents) directory.
 
 > Examples MCP Apps referred from [modelcontextprotocol/ext-apps](https://github.com/modelcontextprotocol/ext-apps/tree/main/examples)
 
@@ -171,7 +171,7 @@ The SDK supports multiple storage backends out of the box:
 
 <a id="quick-start"></a>
 
-Working reference: [examples/next](examples/next)
+Working reference: [packages/sdk/examples/next](packages/sdk/examples/next)
 
 <details>
 <summary><strong>Server-Side (Next.js)</strong></summary>
@@ -569,7 +569,7 @@ For more details, refer to the documentation and follow the **installation guide
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to contribute.
+Contributions are welcome! Please read [CONTRIBUTING.md](packages/sdk/CONTRIBUTING.md) for guidelines on how to contribute.
 
 
 <br />

@@ -27,7 +27,7 @@ Use a pooled Neon connection string for serverless deployments when your app may
 
 ## Security
 
-Create a dedicated application role instead of using the Neon owner/admin role in production. The role only needs to connect to the database and read/write the `mcp_sessions` and `mcp_credentials` tables.
+Create a dedicated application role instead of using the Neon owner/admin role in production. The role only needs to connect to the database and read/write the `mcp_sessions` table.
 
 ```sql
 CREATE ROLE mcp_service_role LOGIN PASSWORD 'replace-with-a-strong-password';
@@ -35,7 +35,6 @@ CREATE ROLE mcp_service_role LOGIN PASSWORD 'replace-with-a-strong-password';
 GRANT CONNECT ON DATABASE neondb TO mcp_service_role;
 GRANT USAGE ON SCHEMA public TO mcp_service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.mcp_sessions TO mcp_service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.mcp_credentials TO mcp_service_role;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO mcp_service_role;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
@@ -54,22 +53,17 @@ The install migration includes an optional RLS block at the bottom. The base sch
 The optional block:
 
 - Revokes public access to `public.mcp_sessions`.
-- Revokes public access to `public.mcp_credentials`.
 - Grants read/write access to `mcp_service_role`.
-- Enables Row Level Security on both tables.
+- Enables Row Level Security on the sessions table.
 - Adds policies that allow the server-side `mcp_service_role` to perform storage operations.
 
 This optional block limits table access to the dedicated backend role. The Neon storage backend is intended for server-side use, and session access is scoped by `userId` in application queries.
 
 ## Schema
 
-The canonical Neon migration is available at `migrations/neon/20260513010000_install_mcp_sessions.sql`.
-Run it with an owner/admin role, then connect the application using the least-privilege role from the Security section.
+The canonical base migration is at `packages/sdk/migrations/neon/20260513010000_install_mcp_sessions.sql`. Run it with an owner/admin role, then connect the application using the least-privilege role from the Security section.
 
-Like Supabase, the Neon install migration separates durable connection metadata from runtime OAuth credentials:
-
-- `public.mcp_sessions` stores connection/session metadata
-- `public.mcp_credentials` stores runtime OAuth credentials and is linked by `(user_id, session_id)`
+Session connection metadata and OAuth runtime credentials live in a single `mcp_sessions` table:
 
 ### `public.mcp_sessions`
 
@@ -91,41 +85,21 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     headers JSONB,
     auth_url TEXT,
     tool_policy JSONB,
-    CONSTRAINT mcp_sessions_user_session_unique
-        UNIQUE (user_id, session_id)
-);
-```
-
-### `public.mcp_credentials`
-
-```sql
-CREATE TABLE IF NOT EXISTS public.mcp_credentials (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
     client_information JSONB,
     tokens JSONB,
     code_verifier TEXT,
     client_id TEXT,
     oauth_state JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT mcp_credentials_session_fk
-        FOREIGN KEY (user_id, session_id)
-        REFERENCES public.mcp_sessions(user_id, session_id)
-        ON DELETE CASCADE,
-    CONSTRAINT mcp_credentials_user_session_unique
+    CONSTRAINT mcp_sessions_user_session_unique
         UNIQUE (user_id, session_id)
 );
 ```
 
-### Indexes and update triggers
+### Indexes and update trigger
 
 ```sql
 CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user_id ON public.mcp_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_sessions_expires_at ON public.mcp_sessions(expires_at);
-CREATE INDEX IF NOT EXISTS idx_mcp_credentials_user_session
-ON public.mcp_credentials(user_id, session_id);
 
 CREATE OR REPLACE FUNCTION public.set_current_timestamp_updated_at()
 RETURNS TRIGGER AS $$
@@ -141,32 +115,17 @@ CREATE TRIGGER trg_mcp_sessions_updated_at
 BEFORE UPDATE ON public.mcp_sessions
 FOR EACH ROW
 EXECUTE FUNCTION public.set_current_timestamp_updated_at();
-
-DROP TRIGGER IF EXISTS trg_mcp_credentials_updated_at ON public.mcp_credentials;
-
-CREATE TRIGGER trg_mcp_credentials_updated_at
-BEFORE UPDATE ON public.mcp_credentials
-FOR EACH ROW
-EXECUTE FUNCTION public.set_current_timestamp_updated_at();
 ```
 
 ### Optional RLS block
 
-The install migration keeps the RLS section optional for Neon, but when enabled it covers both tables and grants full access to the dedicated backend role:
+The install migration keeps the RLS section optional for Neon, but when enabled it covers the sessions table and grants full access to the dedicated backend role:
 
 ```sql
 ALTER TABLE public.mcp_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.mcp_credentials ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY mcp_service_role_full_access
 ON public.mcp_sessions
-FOR ALL
-TO mcp_service_role
-USING (true)
-WITH CHECK (true);
-
-CREATE POLICY mcp_service_role_oauth_full_access
-ON public.mcp_credentials
 FOR ALL
 TO mcp_service_role
 USING (true)
@@ -205,7 +164,7 @@ const sessionList = await neonBackend.list('user-123');
 
 Expired pending sessions and dormant active sessions are removed when `sessions.cleanupExpired()` runs. Schedule that call from your application or platform cron if you want cleanup without database cron support.
 
-If your Neon project has `pg_cron` enabled, you can also run the optional migration at `migrations/neon/20260513020000_add_session_cleanup_cron.sql`. Neon requires endpoint-level `cron.database_name` configuration before `pg_cron` can be installed and used. After that setup, the migration schedules:
+If your Neon project has `pg_cron` enabled, you can also run the optional migration at `packages/sdk/migrations/neon/20260513020000_add_session_cleanup_cron.sql`. Neon requires endpoint-level `cron.database_name` configuration before `pg_cron` can be installed and used. After that setup, the migration schedules:
 
 - `mcp-cleanup-transient-sessions`: every 5 minutes, removes inactive expired sessions.
 - `mcp-cleanup-dormant-sessions`: daily at midnight UTC, removes active sessions untouched for 30+ days.

@@ -1,5 +1,5 @@
 import { ToolLoopAgent, InferAgentUIMessage, stepCountIs } from "ai";
-import { MultiSessionClient } from "@mcp-ts/sdk/server";
+import { MultiSessionClient, sessions, withDbObservability } from "@mcp-ts/sdk/server";
 import type { McpObservabilityEvent } from "@mcp-ts/sdk/shared";
 import { AIAdapter } from "@mcp-ts/sdk/adapters/ai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
@@ -17,41 +17,32 @@ If the user denies a tool call, acknowledge their decision and suggest alternati
 `;
 
 // ----------------------------------------------------------------------
-// 2. Client Management (Singleton per userId)
+// 2. Client Management (Fresh per request for serverless testing)
 // ----------------------------------------------------------------------
-const globalForMcp = globalThis as unknown as { mcpClientMap?: Map<string, MultiSessionClient> };
+function createMcpClient(userId: string): MultiSessionClient {
+  const store = withDbObservability(sessions, (event: McpObservabilityEvent) => {
+    console.log(`[DB][${event.type}] ${event.message} (${event.payload?.durationMs?.toFixed(1) ?? '?'}ms)`);
+  });
 
-function getMcpClient(userId: string): MultiSessionClient {
-  if (!globalForMcp.mcpClientMap) {
-    globalForMcp.mcpClientMap = new Map();
-  }
-
-  let client = globalForMcp.mcpClientMap.get(userId);
-  if (!client) {
-    client = new MultiSessionClient(userId, {
-      onSessionConnected: (_sessionId, mcpClient) => {
-        mcpClient.onObservabilityEvent((event: McpObservabilityEvent) => {
-          const prefix = `[MCP][${event.serverId ?? event.sessionId ?? '?'}]`;
-          switch (event.level) {
-            case 'error':
-              console.error(prefix, event.message, event.payload ?? '');
-              break;
-            case 'warn':
-              console.warn(prefix, event.message, event.payload ?? '');
-              break;
-            case 'debug':
-              console.debug(prefix, event.message, event.payload ?? '');
-              break;
-            default:
-              console.log(prefix, event.message, event.payload ?? '');
-          }
-        });
-      },
-    });
-    globalForMcp.mcpClientMap.set(userId, client);
-  }
-
-  return client;
+  return new MultiSessionClient(userId, {
+    sessionStore: store,
+    onObservabilityEvent: (event: McpObservabilityEvent) => {
+      const prefix = `[MCP][${event.serverId ?? event.sessionId ?? '?'}]`;
+      switch (event.level) {
+        case 'error':
+          console.error(prefix, event.message, event.payload ?? '');
+          break;
+        case 'warn':
+          console.warn(prefix, event.message, event.payload ?? '');
+          break;
+        case 'debug':
+          console.debug(prefix, event.message, event.payload ?? '');
+          break;
+        default:
+          console.log(prefix, event.message, event.payload ?? '');
+      }
+    },
+  });
 }
 
 // ----------------------------------------------------------------------
@@ -86,7 +77,7 @@ function requiresApproval(tool: any, args: any, router: any): boolean {
 // 4. Agent Initialization
 // ----------------------------------------------------------------------
 export async function createMcpAgent(userId: string = process.env.NEXT_PUBLIC_MCP_USER_ID!) {
-  const client = getMcpClient(userId);
+  const client = createMcpClient(userId);
 
   // Always call connect to synchronize with the database.
   // MultiSessionClient safely skips already-connected sessions.
