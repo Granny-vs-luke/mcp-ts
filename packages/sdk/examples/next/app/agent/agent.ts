@@ -1,5 +1,5 @@
 import { ToolLoopAgent, InferAgentUIMessage, stepCountIs } from "ai";
-import { MultiSessionClient, sessions, withDbObservability } from "@mcp-ts/sdk/server";
+import { MultiSessionClient } from "@mcp-ts/sdk/server";
 import type { McpObservabilityEvent } from "@mcp-ts/sdk/shared";
 import { AIAdapter } from "@mcp-ts/sdk/adapters/ai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
@@ -20,13 +20,10 @@ If the user denies a tool call, acknowledge their decision and suggest alternati
 // 2. Client Management (Fresh per request for serverless testing)
 // ----------------------------------------------------------------------
 function createMcpClient(userId: string): MultiSessionClient {
-  const store = withDbObservability(sessions, (event: McpObservabilityEvent) => {
-    console.log(`[DB][${event.type}] ${event.message} (${event.payload?.durationMs?.toFixed(1) ?? '?'}ms)`);
-  });
-
   return new MultiSessionClient(userId, {
-    sessionStore: store,
     onObservabilityEvent: (event: McpObservabilityEvent) => {
+      // One handler for everything — DB reads/writes, client lifecycle, per-session progress.
+      // Use event.type to filter: 'db:read' | 'db:write' | 'connect' | etc.
       const prefix = `[MCP][${event.serverId ?? event.sessionId ?? '?'}]`;
       switch (event.level) {
         case 'error':
