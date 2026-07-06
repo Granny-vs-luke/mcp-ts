@@ -65,7 +65,13 @@ interface Session {
   updatedAt?: number;
   expiresAt?: number | null;
   headers?: Record<string, string>;
+  authUrl?: string | null;
   toolPolicy?: ToolPolicy;
+  clientInformation?: OAuthClientInformationMixed | null;
+  tokens?: OAuthTokens | null;
+  codeVerifier?: string | null;
+  clientId?: string | null;
+  oauthState?: OAuthState | null;
 }
 
 ### Tool Policy Types
