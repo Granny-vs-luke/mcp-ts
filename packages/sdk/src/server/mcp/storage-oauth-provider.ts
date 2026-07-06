@@ -113,7 +113,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     private _store: SessionStore;
     private _authUrl: string | undefined;
     private _clientId: string | undefined;
-    private _codeVerifierRaw: string | undefined;
+    private _cachedCodeVerifier: string | undefined;
     private _hasCodeVerifier = false;
     private _cachedTokens: OAuthTokens | null | undefined;
     private onRedirectCallback?: (url: string) => void;
@@ -256,7 +256,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async state(): Promise<string> {
-        this._codeVerifierRaw = undefined;
+        this._cachedCodeVerifier = undefined;
         this._hasCodeVerifier = false;
         const nonce = nanoid(32);
         await this.patchCredentials({
@@ -324,13 +324,13 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         const codeChallenge = authUrl.searchParams.get("code_challenge");
         const state = authUrl.searchParams.get("state");
 
-        if (this._codeVerifierRaw && codeChallenge && state) {
-            const expectedChallenge = await createCodeChallenge(this._codeVerifierRaw);
+        if (this._cachedCodeVerifier && codeChallenge && state) {
+            const expectedChallenge = await createCodeChallenge(this._cachedCodeVerifier);
             if (expectedChallenge === codeChallenge) {
                 const parsed = parseOAuthState(state);
                 if (parsed) {
                     await this.patchCredentials({
-                        codeVerifier: this._codeVerifierRaw,
+                        codeVerifier: this._cachedCodeVerifier,
                     });
                 }
             }
@@ -357,7 +357,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
                 this._cachedTokens = undefined;
                 updates.tokens = null;
             } else if (scope === "verifier") {
-                this._codeVerifierRaw = undefined;
+                this._cachedCodeVerifier = undefined;
                 this._hasCodeVerifier = false;
                 updates.codeVerifier = null;
             }
@@ -370,13 +370,13 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
             return;
         }
 
-        this._codeVerifierRaw = verifier;
+        this._cachedCodeVerifier = verifier;
         this._hasCodeVerifier = true;
     }
 
     async codeVerifier(): Promise<string> {
-        if (this._codeVerifierRaw) {
-            return this._codeVerifierRaw;
+        if (this._cachedCodeVerifier) {
+            return this._cachedCodeVerifier;
         }
 
         // ALS context carries the raw verifier directly (set by the caller via
@@ -396,7 +396,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     }
 
     async deleteCodeVerifier(): Promise<void> {
-        this._codeVerifierRaw = undefined;
+        this._cachedCodeVerifier = undefined;
         this._hasCodeVerifier = false;
         await this.patchCredentials({
             codeVerifier: null,
