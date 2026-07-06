@@ -114,7 +114,7 @@ Most features are available out-of-the-box in the **TypeScript SDK**:
 
 ## 🧪 Examples
 
-Check out working examples demonstrating the MCP Apps extension and agent integrations in the [packages/sdk/examples/agents](packages/sdk/examples/agents) directory.
+Check out working examples demonstrating the MCP Apps extension and agent integrations in the [examples/agents](examples/agents) directory.
 
 > Examples MCP Apps referred from [modelcontextprotocol/ext-apps](https://github.com/modelcontextprotocol/ext-apps/tree/main/examples)
 
@@ -171,7 +171,7 @@ The SDK supports multiple storage backends out of the box:
 
 <a id="quick-start"></a>
 
-Working reference: [packages/sdk/examples/next](packages/sdk/examples/next)
+Working reference: [examples/next](examples/next)
 
 <details>
 <summary><strong>Server-Side (Next.js)</strong></summary>
