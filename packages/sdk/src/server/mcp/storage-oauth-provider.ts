@@ -267,7 +267,6 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
                 createdAt: Date.now(),
             },
             codeVerifier: null,
-            codeVerifierNonce: null,
         });
         return formatOAuthState(nonce, this.sessionId);
     }
@@ -332,8 +331,6 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
                 if (parsed) {
                     await this.patchCredentials({
                         codeVerifier: this._codeVerifierRaw,
-                        codeVerifierNonce: parsed.nonce,
-                        codeVerifierChallenge: null,
                     });
                 }
             }
@@ -363,8 +360,6 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
                 this._codeVerifierRaw = undefined;
                 this._hasCodeVerifier = false;
                 updates.codeVerifier = null;
-                updates.codeVerifierChallenge = null;
-                updates.codeVerifierNonce = null;
             }
             await this.patchCredentials(updates);
         }
@@ -375,8 +370,6 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
             return;
         }
 
-        const challenge = await createCodeChallenge(verifier);
-        await this.patchCredentials({ codeVerifierChallenge: challenge });
         this._codeVerifierRaw = verifier;
         this._hasCodeVerifier = true;
     }
@@ -407,8 +400,6 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         this._hasCodeVerifier = false;
         await this.patchCredentials({
             codeVerifier: null,
-            codeVerifierChallenge: null,
-            codeVerifierNonce: null,
         });
     }
 
