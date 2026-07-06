@@ -1,15 +1,16 @@
 /**
- * SSE (Server-Sent Events) Handler for MCP Connections
+ * SSE (Server-Sent Events) Handler for MCP Connections.
  *
- * Manages real-time bidirectional communication with MCP clients:
- * - SSE stream for server → client events (connection state, tools, logs)
- * - HTTP POST for client → server RPC requests
+ * Provides real-time bidirectional communication between browser clients and
+ * MCP servers via a single HTTP endpoint:
+ * - GET  → opens an SSE stream for server → client events
+ * - POST → delivers client → server RPC requests with direct HTTP response
  *
- * Key features:
- * - Direct HTTP response for RPC calls (bypasses SSE latency)
- * - Automatic session restoration and validation
- * - OAuth 2.1 authentication flow support
- * - Heartbeat to keep connections alive
+ * Built on {@link SSEConnectionManager} which handles the RPC dispatch logic,
+ * session lifecycle, OAuth 2.1 flows, tool-policy enforcement, and heartbeat
+ * keep-alive — all while remaining stateless across serverless invocations.
+ *
+ * @module sse-handler
  */
 
 import type { McpConnectionEvent, McpObservabilityEvent } from '../../shared/events.js';
@@ -38,20 +39,25 @@ import type {
   GetToolPolicyParams,
   GetToolPolicyResult,
 } from '../../shared/types.js';
-import { RpcErrorCodes } from '../../shared/errors.js';
-import { UnauthorizedError } from '../../shared/errors.js';
+import { RpcErrorCodes, UnauthorizedError } from '../../shared/errors.js';
 import { isConnectionEvent, isRpcResponseEvent } from '../../shared/event-routing.js';
 import { parseOAuthState } from '../../shared/utils.js';
 import { MCPClient } from '../mcp/oauth-client.js';
-import { sessions, generateServerId, type Session } from '../storage/index.js';
-import { createToolId, isToolAllowed, normalizeToolPolicyForUpdate, validateToolPolicyAgainstTools } from '../storage/tool-policy.js';
+import { sessions, generateServerId, withDbObservability, type Session, type SessionStore } from '../storage/index.js';
+import {
+  createToolId,
+  isToolAllowed,
+  normalizeToolPolicyForUpdate,
+  validateToolPolicyAgainstTools,
+} from '../storage/tool-policy.js';
 import { createToolPolicyGateway } from '../mcp/tool-policy-gateway.js';
 import { runWithCodeVerifierState } from '../mcp/storage-oauth-provider.js';
 
-// ============================================
-// Types & Interfaces
-// ============================================
+// ---------------------------------------------------------------------------
+// Public Types
+// ---------------------------------------------------------------------------
 
+/** OAuth client metadata surfaced during connection and authorization. */
 export interface ClientMetadata {
   clientName?: string;
   clientUri?: string;
@@ -59,376 +65,770 @@ export interface ClientMetadata {
   policyUri?: string;
 }
 
+/** Options passed to {@link createSSEHandler}. */
 export interface SSEHandlerOptions {
-  /** User/Client identifier */
+  /** Authenticated user / tenant identifier. */
   userId: string;
 
-  /** Optional callback for authentication/authorization */
+  /** Optional auth check — called per-request before any RPC dispatch. */
   onAuth?: (userId: string) => Promise<boolean>;
 
-  /** Heartbeat interval in milliseconds @default 30000 */
+  /** SSE heartbeat interval in milliseconds. @default 30000 */
   heartbeatInterval?: number;
 
-  /** Static OAuth client metadata defaults (for all connections) */
+  /** Static OAuth client metadata applied to all connections. */
   clientDefaults?: ClientMetadata;
 
-  /** Dynamic OAuth client metadata getter (per-request, useful for multi-tenant) */
+  /**
+   * Dynamic OAuth client metadata resolver, called once per connection.
+   * Overrides `clientDefaults`. Useful for multi-tenant scenarios where
+   * metadata varies by request (headers, subdomain, etc.).
+   */
   getClientMetadata?: (request?: unknown) => ClientMetadata | Promise<ClientMetadata>;
 }
 
-// ============================================
+// ---------------------------------------------------------------------------
 // Constants
-// ============================================
+// ---------------------------------------------------------------------------
 
-const DEFAULT_HEARTBEAT_INTERVAL = 30000;
+const DEFAULT_HEARTBEAT_MS = 30_000;
 
-function normalizeHeaders(headers?: Record<string, string>): Record<string, string> | undefined {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalizes a raw headers object: trims keys & string values,
+ * drops entries with empty key or value, returns `undefined` when nothing remains.
+ */
+function normalizeHeaders(
+  headers?: Record<string, string>,
+): Record<string, string> | undefined {
   if (!headers || typeof headers !== 'object') return undefined;
 
   const entries = Object.entries(headers)
-    .map(([key, value]) => [key.trim(), String(value).trim()] as const)
-    .filter(([key, value]) => key.length > 0 && value.length > 0);
+    .map(([k, v]) => [k.trim(), String(v).trim()] as const)
+    .filter(([k, v]) => k.length > 0 && v.length > 0);
 
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
-// ============================================
-// SSEConnectionManager Class
-// ============================================
+/**
+ * Formats a {@link McpConnectionEvent} `state_changed` payload for consistent
+ * `VALIDATING` → `DISCONNECTED` transitions emitted during session restore.
+ */
+function validatingStateEvent(
+  sessionId: string,
+  session: Session,
+): McpConnectionEvent {
+  return {
+    type: 'state_changed',
+    sessionId,
+    serverId: session.serverId ?? 'unknown',
+    serverName: session.serverName ?? 'Unknown',
+    serverUrl: session.serverUrl,
+    state: 'VALIDATING',
+    previousState: 'DISCONNECTED',
+    timestamp: Date.now(),
+  };
+}
 
 /**
- * Manages a single SSE connection and handles MCP operations.
- * Each instance corresponds to one connected browser client.
+ * Builds a `connection_error` event with the appropriate error type discriminator.
+ */
+function connectionErrorEvent(
+  sessionId: string,
+  serverId: string | undefined,
+  error: unknown,
+  errorType: 'connection' | 'validation' | 'auth',
+): McpConnectionEvent {
+  return {
+    type: 'error',
+    sessionId,
+    serverId: serverId ?? 'unknown',
+    error: error instanceof Error ? error.message : 'Connection failed',
+    errorType,
+    timestamp: Date.now(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// SSEConnectionManager
+// ---------------------------------------------------------------------------
+
+/**
+ * Manages a single browser-facing SSE connection and all MCP server sessions
+ * owned by the associated user.
+ *
+ * ## Responsibilities
+ * - RPC method dispatch (`connect`, `disconnect`, `callTool`, `listTools`, …)
+ * - Session lifecycle: create, restore, re-validate, OAuth completion
+ * - In-memory client cache (`Map<string, MCPClient>`) for active transports
+ * - SSE event emission for connection state, tool discovery, and errors
+ * - Periodic heartbeat to prevent proxy/CDN timeouts
+ * - Unified observability: RPC timing, DB operations, connection lifecycle
+ *
+ * Each instance is tied to one browser client. It is **not** a singleton —
+ * a new instance is created per incoming SSE connection.
  */
 export class SSEConnectionManager {
-  private readonly userId: string;
-  private readonly clients = new Map<string, MCPClient>();
-  private heartbeatTimer?: NodeJS.Timeout;
-  private isActive = true;
+  // -----------------------------------------------------------------------
+  // State
+  // -----------------------------------------------------------------------
 
+  private readonly userId: string;
+
+  /** Active MCP transports keyed by sessionId. */
+  private readonly clients = new Map<string, MCPClient>();
+
+  /** Instrumented session store — always wraps `sessions` with DB observability. */
+  private readonly observedStore: SessionStore;
+
+  private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  private active = true;
+
+  // -----------------------------------------------------------------------
+  // Constructor
+  // -----------------------------------------------------------------------
+
+  /**
+   * @param options  - Handler configuration (userId, auth, metadata, heartbeat, observability).
+   * @param sendEvent - Callback that writes a typed event onto the SSE stream.
+   */
   constructor(
     private readonly options: SSEHandlerOptions,
-    private readonly sendEvent: (event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse) => void
+    private readonly sendEvent: (
+      event: McpConnectionEvent | McpObservabilityEvent | McpRpcResponse,
+    ) => void,
   ) {
     this.userId = options.userId;
+    this.observedStore = withDbObservability(sessions, (event) => this.sendEvent(event));
     this.startHeartbeat();
   }
 
-  /**
-   * Get resolved client metadata (dynamic > static > defaults)
-   */
-  private async getResolvedClientMetadata(request?: any): Promise<ClientMetadata> {
-    // Priority: getClientMetadata() > clientDefaults > empty object
-    let metadata: ClientMetadata = {};
-
-    // Start with static defaults
-    if (this.options.clientDefaults) {
-      metadata = { ...this.options.clientDefaults };
-    }
-
-    // Override with dynamic metadata if provided
-    if (this.options.getClientMetadata) {
-      const dynamicMetadata = await this.options.getClientMetadata(request);
-      metadata = { ...metadata, ...dynamicMetadata };
-    }
-
-    return metadata;
-  }
+  // -----------------------------------------------------------------------
+  // Public API
+  // -----------------------------------------------------------------------
 
   /**
-   * Start heartbeat to keep connection alive
-   */
-  private startHeartbeat(): void {
-    const interval = this.options.heartbeatInterval ?? DEFAULT_HEARTBEAT_INTERVAL;
-    this.heartbeatTimer = setInterval(() => {
-      if (this.isActive) {
-        this.sendEvent({
-          level: 'debug',
-          message: 'heartbeat',
-          timestamp: Date.now(),
-        } as McpObservabilityEvent);
-      }
-    }, interval);
-  }
-
-  /**
-   * Handle incoming RPC requests
-   * Returns the RPC response directly for immediate HTTP response (bypassing SSE latency)
+   * Dispatches an incoming RPC request, emits timing observability,
+   * and returns the response.
+   *
+   * Emits `rpc:start` before dispatch and `rpc:end` on completion
+   * (success or error), each carrying the method name, sessionId, and
+   * duration. All events flow through the unified `onObservability`
+   * and the SSE stream.
+   *
+   * @param request - The deserialized RPC envelope.
+   * @returns The RPC response (success or error).
    */
   async handleRequest(request: McpRpcRequest): Promise<McpRpcResponse> {
+    const method = request.method;
+    const sessionId = (request.params as Record<string, unknown> | undefined)?.sessionId as string | undefined;
+    const t0 = performance.now();
+
+    this.sendEvent({
+      type: 'rpc:start',
+      level: 'debug',
+      message: method,
+      sessionId,
+      timestamp: Date.now(),
+    });
+
     try {
-      let result: SessionListResult | ConnectResult | DisconnectResult | GetSessionResult | FinishAuthResult | ListToolsRpcResult | SetToolPolicyResult | GetToolPolicyResult | ListPromptsResult | ListResourcesResult | unknown;
+      const result = await this.dispatchImpl(request);
 
-      switch (request.method) {
-        case 'listSessions':
-          result = await this.listSessions();
-          break;
+      this.sendEvent({
+        type: 'rpc:end',
+        level: 'debug',
+        message: method,
+        sessionId,
+        payload: { durationMs: performance.now() - t0 },
+        timestamp: Date.now(),
+      });
 
-        case 'connect':
-          result = await this.connect(request.params as ConnectParams);
-          break;
-
-        case 'reconnect':
-          result = await this.reconnect(request.params as ReconnectParams);
-          break;
-
-        case 'disconnect':
-          result = await this.disconnect(request.params as DisconnectParams);
-          break;
-
-        case 'listTools':
-          result = await this.listTools(request.params as SessionParams);
-          break;
-
-        case 'setToolPolicy':
-          result = await this.setToolPolicy(request.params as SetToolPolicyParams);
-          break;
-
-        case 'getToolPolicy':
-          result = await this.getToolPolicy(request.params as GetToolPolicyParams);
-          break;
-
-        case 'callTool':
-          result = await this.callTool(request.params as CallToolParams);
-          break;
-
-        case 'getSession':
-          result = await this.getSession(request.params as SessionParams);
-          break;
-
-        case 'finishAuth':
-          result = await this.finishAuth(request.params as FinishAuthParams);
-          break;
-
-        case 'listPrompts':
-          result = await this.listPrompts(request.params as SessionParams);
-          break;
-
-        case 'getPrompt':
-          result = await this.getPrompt(request.params as GetPromptParams);
-          break;
-
-        case 'listResources':
-          result = await this.listResources(request.params as SessionParams);
-          break;
-
-        case 'readResource':
-          result = await this.readResource(request.params as ReadResourceParams);
-          break;
-
-        default:
-          throw new Error(`Unknown method: ${request.method}`);
-      }
-
-      const response: McpRpcResponse = {
-        id: request.id,
-        result,
-      };
-
-      // Also send via SSE for backwards compatibility
+      const response: McpRpcResponse = { id: request.id, result };
       this.sendEvent(response);
-
       return response;
     } catch (error) {
-      const errorResponse: McpRpcResponse = {
+      this.sendEvent({
+        type: 'rpc:end',
+        level: 'error',
+        message: method,
+        sessionId,
+        payload: { durationMs: performance.now() - t0, error: String(error) },
+        timestamp: Date.now(),
+      });
+
+      const response: McpRpcResponse = {
         id: request.id,
         error: {
           code: RpcErrorCodes.EXECUTION_ERROR,
           message: error instanceof Error ? error.message : 'Unknown error',
         },
       };
-
-      // Also send via SSE for backwards compatibility
-      this.sendEvent(errorResponse);
-
-      return errorResponse;
+      this.sendEvent(response);
+      return response;
     }
   }
 
   /**
-   * Get all sessions for the current userId
+   * Tears down all active MCP transports and stops the heartbeat timer.
+   *
+   * Disconnects are issued in parallel across all sessions. After calling
+   * this method the manager instance should be discarded.
+   */
+  async dispose(): Promise<void> {
+    this.active = false;
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+
+    await Promise.all(
+      Array.from(this.clients.values()).map((c) => c.disconnect()),
+    );
+
+    this.clients.clear();
+  }
+
+  // -----------------------------------------------------------------------
+  // RPC Dispatch (raw — called by handleRequest which adds timing)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Routes an RPC method name to the appropriate private handler.
+   *
+   * @throws {Error} When the method name is unrecognized.
+   */
+  private async dispatchImpl(request: McpRpcRequest): Promise<unknown> {
+    switch (request.method) {
+      case 'listSessions':  return this.listSessions();
+      case 'connect':       return this.connect(request.params as ConnectParams);
+      case 'reconnect':     return this.reconnect(request.params as ReconnectParams);
+      case 'disconnect':    return this.disconnect(request.params as DisconnectParams);
+      case 'listTools':     return this.listTools(request.params as SessionParams);
+      case 'setToolPolicy': return this.setToolPolicy(request.params as SetToolPolicyParams);
+      case 'getToolPolicy': return this.getToolPolicy(request.params as GetToolPolicyParams);
+      case 'callTool':      return this.callTool(request.params as CallToolParams);
+      case 'getSession':    return this.getSession(request.params as SessionParams);
+      case 'finishAuth':    return this.finishAuth(request.params as FinishAuthParams);
+      case 'listPrompts':   return this.listPrompts(request.params as SessionParams);
+      case 'getPrompt':     return this.getPrompt(request.params as GetPromptParams);
+      case 'listResources':  return this.listResources(request.params as SessionParams);
+      case 'readResource':   return this.readResource(request.params as ReadResourceParams);
+      default:
+        throw new Error(`Unknown RPC method: ${request.method}`);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Session Query
+  // -----------------------------------------------------------------------
+
+  /**
+   * Lists all sessions owned by the current user.
+   *
+   * Returns a lightweight view — session metadata only, no credential fields.
    */
   private async listSessions(): Promise<SessionListResult> {
-    const sessionList = await sessions.list(this.userId);
-
+    const all = await sessions.list(this.userId);
     return {
-      sessions: sessionList.map((s) => ({
-        sessionId: s.sessionId,
-        serverId: s.serverId,
-        serverName: s.serverName,
-        serverUrl: s.serverUrl,
-        transport: s.transportType,
-        createdAt: s.createdAt,
-        updatedAt: s.updatedAt ?? s.createdAt,
-        status: s.status ?? 'pending',
-        toolPolicy: s.toolPolicy,
+      sessions: all.map((s) => ({
+        sessionId:  s.sessionId,
+        serverId:    s.serverId,
+        serverName:  s.serverName,
+        serverUrl:   s.serverUrl,
+        transport:   s.transportType,
+        createdAt:   s.createdAt,
+        updatedAt:   s.updatedAt ?? s.createdAt,
+        status:      s.status ?? 'pending',
+        toolPolicy:  s.toolPolicy,
       })),
     };
   }
 
   /**
-   * Connect to an MCP server
+   * Restores and validates a previously persisted session.
+   *
+   * Loads the full session row (including credentials) from storage, creates
+   * a new MCP transport, connects to the remote server, and emits the
+   * discovered (policy-filtered) tool list via SSE.
    */
-  private async connect(params: ConnectParams): Promise<ConnectResult> {
-    const { serverName, serverUrl, callbackUrl, transportType } = params;
-    const headers = normalizeHeaders(params.headers);
-
-    // Normalize serverId to max 12 chars to keep tool names under 64 chars (DeepSeek/OpenAI limits)
-    // Tool name format: tool_<serverId>_<toolName> - with 12 char serverId leaves 46 chars for tool name
-    const serverId = params.serverId && params.serverId.length <= 12
-      ? params.serverId
-      : generateServerId();
-
-    // Check for existing connections
-    const existingSessions = await sessions.list(this.userId);
-    const duplicate = existingSessions.find(s =>
-      s.serverId === serverId || s.serverUrl === serverUrl
-    );
-
-    if (duplicate) {
-      // If the existing session is still pending OAuth, treat connect as "resume auth"
-      // instead of failing with duplicate connection error.
-      if (duplicate.status === 'pending') {
-        await this.getSession({ sessionId: duplicate.sessionId });
-        return {
-          sessionId: duplicate.sessionId,
-          success: true,
-        };
-      }
-      throw new Error(`Connection already exists for server: ${duplicate.serverUrl || duplicate.serverId} (${duplicate.serverName})`);
-    }
-
-    // Generate session ID
-    const sessionId = await sessions.generateSessionId();
+  private async getSession(params: SessionParams): Promise<GetSessionResult> {
+    const session = await this.requireSession(params.sessionId);
+    this.sendEvent(validatingStateEvent(params.sessionId, session));
 
     try {
-      // Get resolved client metadata
-      const clientMetadata = await this.getResolvedClientMetadata();
+      const client = this.restoreClient(session);
+      this.attachClientEvents(client);
 
-      // Create MCP client
-      const client = new MCPClient({
-        userId: this.userId,
-        sessionId,
-        serverId,
-        serverName,
-        serverUrl,
-        callbackUrl,
-        transportType,
-        headers,
-        ...clientMetadata, // Spread client metadata (clientName, clientUri, logoUri, policyUri)
-      });
-
-      // Note: Session will be created by MCPClient after successful connection
-      // This ensures sessions only exist for successful or OAuth-pending connections
-
-      // Store client
-      this.clients.set(sessionId, client);
-
-      // Subscribe to client events
-      client.onConnectionEvent((event) => {
-        this.emitConnectionEvent(event);
-      });
-
-      client.onObservabilityEvent((event) => {
-        this.sendEvent(event);
-      });
-
-      // Attempt connection
       await client.connect();
+      this.clients.set(params.sessionId, client);
 
-      // Fetch policy-filtered tools for agent-facing discovery
-      await this.listPolicyFilteredTools(sessionId);
-
-      return {
-        sessionId,
-        success: true,
-      };
+      const { result } = await this.listPolicyFilteredTools(params.sessionId);
+      return { success: true, toolCount: result.tools.length };
     } catch (error) {
-      if (error instanceof UnauthorizedError) {
-        // OAuth-required is a pending-auth state, not a failed connection.
-        this.clients.delete(sessionId);
-        return {
-          sessionId,
-          success: true,
-        };
-      }
-
-      this.emitConnectionEvent({
-        type: 'error',
-        sessionId,
-        serverId,
-        error: error instanceof Error ? error.message : 'Connection failed',
-        errorType: 'connection',
-        timestamp: Date.now(),
-      });
-
-      // Clean up client
-      this.clients.delete(sessionId);
-
+      this.sendEvent(connectionErrorEvent(params.sessionId, session.serverId, error, 'validation'));
       throw error;
     }
   }
 
+  // -----------------------------------------------------------------------
+  // Connection Lifecycle
+  // -----------------------------------------------------------------------
+
   /**
-   * Reconnect to an MCP server — tears down the active client transport/connection
-   * and creates a fresh connection while reusing the existing session credentials in a single RPC call.
+   * Initiates a connection to a new MCP server.
+   *
+   * If a session for the same `serverId` or `serverUrl` already exists and
+   * is still in a `pending` (OAuth) state, the existing session is resumed
+   * instead of creating a duplicate.
+   *
+   * `UnauthorizedError` is treated as a pending-auth state and returned as
+   * a successful result (the client will then redirect to the auth URL).
+   */
+  private async connect(params: ConnectParams): Promise<ConnectResult> {
+    const headers  = normalizeHeaders(params.headers);
+    const serverId = this.normalizeServerId(params.serverId);
+
+    const existing = await this.findExistingSession(serverId, params.serverUrl);
+    if (existing) {
+      if (existing.status === 'pending') {
+        return this.getSession({ sessionId: existing.sessionId }).then(() => ({
+          sessionId: existing.sessionId,
+          success: true,
+        }));
+      }
+      throw new Error(
+        `Connection already exists for server: ${existing.serverUrl ?? existing.serverId} (${existing.serverName})`,
+      );
+    }
+
+    const sessionId = await sessions.generateSessionId();
+    const metadata  = await this.getResolvedClientMetadata();
+
+    const client = new MCPClient({
+      userId:       this.userId,
+      sessionId,
+      serverId,
+      serverName:   params.serverName,
+      serverUrl:    params.serverUrl,
+      callbackUrl:  params.callbackUrl,
+      transportType: params.transportType,
+      headers,
+      sessionStore: this.observedStore,
+      ...metadata,
+    });
+
+    this.cacheClient(sessionId, client);
+    return this.connectAndDiscover(client, sessionId, serverId);
+  }
+
+  /**
+   * Reconnects to an MCP server by tearing down the active transport if one
+   * exists and instantiating a fresh connection, reusing the existing session
+   * (and its stored credentials / DCR client info) from the database.
    */
   private async reconnect(params: ReconnectParams): Promise<ConnectResult> {
-    const { serverId: rawServerId, serverName, serverUrl, callbackUrl, transportType } = params;
-    const headers = normalizeHeaders(params.headers);
+    const headers  = normalizeHeaders(params.headers);
+    const serverId = this.normalizeServerId(params.serverId);
 
-    // Normalize serverId the same way connect() does
-    const serverId = rawServerId && rawServerId.length <= 12
-      ? rawServerId
-      : generateServerId();
+    const existing = await this.findExistingSession(serverId, params.serverUrl);
+    const sessionId = existing ? existing.sessionId : await sessions.generateSessionId();
 
-    // Find existing session for the same server to reuse its session ID
-    const existingSessions = await sessions.list(this.userId);
-    const duplicate = existingSessions.find(s =>
-      s.serverId === serverId || s.serverUrl === serverUrl
-    );
-
-    // Reuse the duplicate sessionId if present, otherwise generate a new one
-    const sessionId = duplicate ? duplicate.sessionId : await sessions.generateSessionId();
-
-    if (duplicate) {
-      // Disconnect any active in-memory client transport without deleting the database session
-      const existingClient = this.clients.get(duplicate.sessionId);
-      if (existingClient) {
-        await existingClient.disconnect();
-        this.clients.delete(duplicate.sessionId);
+    if (existing) {
+      const staleClient = this.clients.get(existing.sessionId);
+      if (staleClient) {
+        await staleClient.disconnect();
+        this.clients.delete(existing.sessionId);
       }
     }
 
-    try {
-      const clientMetadata = await this.getResolvedClientMetadata();
+    const metadata = await this.getResolvedClientMetadata();
+    const client = new MCPClient({
+      userId:       this.userId,
+      sessionId,
+      serverId,
+      serverName:   params.serverName,
+      serverUrl:    params.serverUrl,
+      callbackUrl:  params.callbackUrl,
+      transportType: params.transportType,
+      headers,
+      sessionStore: this.observedStore,
+      ...metadata,
+    });
 
-      // Create a new client instantiating the reused session ID (which preserves DCR credentials and tokens)
+    this.cacheClient(sessionId, client);
+    return this.connectAndDiscover(client, sessionId, serverId);
+  }
+
+  /**
+   * Disconnects from an MCP server.
+   *
+   * If an active in-memory transport exists it delegates to `clearSession()`
+   * (which sends the server an HTTP DELETE per the Streamable spec). If no
+   * active transport is available (orphaned session from a failed OAuth flow),
+   * the session row is removed directly from storage.
+   */
+  private async disconnect(params: DisconnectParams): Promise<DisconnectResult> {
+    const client = this.clients.get(params.sessionId);
+    if (client) {
+      await client.clearSession();
+      this.clients.delete(params.sessionId);
+    } else {
+      await sessions.delete(this.userId, params.sessionId);
+    }
+    return { success: true };
+  }
+
+  // -----------------------------------------------------------------------
+  // OAuth
+  // -----------------------------------------------------------------------
+
+  /**
+   * Completes the OAuth 2.1 authorization code flow for a pending session.
+   *
+   * Loads the stored session (with credentials), creates a fresh `MCPClient`,
+   * and calls `finishAuth` inside a {@link runWithCodeVerifierState} context
+   * so the PKCE code verifier is available without a DB read.
+   *
+   * The session's stored `transportType` is intentionally **omitted** from the
+   * client config — this lets `MCPClient` auto-negotiate (try Streamable HTTP
+   * first, fall back to SSE), which is required for servers like Neon that
+   * only support SSE transport.
+   */
+  private async finishAuth(params: FinishAuthParams): Promise<FinishAuthResult> {
+    const parsed    = parseOAuthState(params.state);
+    const sessionId = parsed?.sessionId ?? params.state;
+    const session   = await this.requireSession(sessionId);
+
+    try {
+      const clientId     = session.clientId ?? undefined;
+      const clientSecret = (session.clientInformation as any)?.client_secret ?? undefined;
+
       const client = new MCPClient({
-        userId: this.userId,
+        userId:       this.userId,
         sessionId,
-        serverId,
-        serverName,
-        serverUrl,
-        callbackUrl,
-        transportType,
-        headers,
-        ...clientMetadata,
+        serverId:     session.serverId,
+        serverName:   session.serverName,
+        serverUrl:    session.serverUrl,
+        callbackUrl:  session.callbackUrl,
+        headers:      session.headers,
+        clientId,
+        clientSecret,
+        hasSession:   true,
+        cachedCredentials: { tokens: session.tokens ?? undefined },
+        sessionStore: this.observedStore,
       });
+
+      this.attachClientEvents(client);
+
+      await runWithCodeVerifierState(session.codeVerifier ?? '', 'S256', () =>
+        client.finishAuth(params.code, params.state),
+      );
 
       this.clients.set(sessionId, client);
 
-      client.onConnectionEvent((event) => {
-        this.emitConnectionEvent(event);
-      });
+      const { result } = await this.listPolicyFilteredTools(sessionId);
+      return { success: true, toolCount: result.tools.length };
+    } catch (error) {
+      this.sendEvent(connectionErrorEvent(sessionId, session.serverId, error, 'auth'));
+      throw error;
+    }
+  }
 
-      client.onObservabilityEvent((event) => {
-        this.sendEvent(event);
-      });
+  // -----------------------------------------------------------------------
+  // Tool Discovery & Policy
+  // -----------------------------------------------------------------------
 
+  /**
+   * Fetches the complete tool list from the remote MCP server and emits a
+   * `tools_discovered` SSE event with two lists:
+   *
+   * - `tools`     — policy-filtered (what agents are allowed to call)
+   * - `allTools`  — complete, unfiltered (used by the management UI)
+   *
+   * Only a single network round-trip is made: `fetchTools()` populates the
+   * in-memory cache, then `gateway.listTools()` reuses that cache.
+   *
+   * @param sessionId - The session to discover tools for.
+   * @returns The session record and the filtered tool result.
+   * @throws {Error} If the session does not exist in storage.
+   */
+  private async listPolicyFilteredTools(
+    sessionId: string,
+  ): Promise<{ session: Session; result: ListToolsRpcResult }> {
+    const session = await this.requireSession(sessionId);
+    const client  = await this.getOrCreateClient(sessionId);
+
+    const allTools = await client.fetchTools().catch(() => ({ tools: [] as any[] }));
+    const gateway  = createToolPolicyGateway(this.userId, sessionId, client);
+    const result   = await gateway.listTools();
+
+    this.sendEvent({
+      type:       'tools_discovered',
+      sessionId,
+      serverId:   session.serverId ?? 'unknown',
+      toolCount:  result.tools.length,
+      tools:      result.tools,
+      allTools:   allTools.tools,
+      timestamp:  Date.now(),
+    });
+
+    return { session, result };
+  }
+
+  /**
+   * Returns the policy-filtered tool list for a session.
+   *
+   * Delegates to {@link listPolicyFilteredTools}, which also emits a
+   * `tools_discovered` SSE event to keep the client state current.
+   */
+  private async listTools(params: SessionParams): Promise<ListToolsRpcResult> {
+    const { result } = await this.listPolicyFilteredTools(params.sessionId);
+    return { tools: result.tools };
+  }
+
+  /**
+   * Returns all raw tools annotated with their effective policy state
+   * for display in the management UI.
+   */
+  private async getToolPolicy(
+    params: GetToolPolicyParams,
+  ): Promise<GetToolPolicyResult> {
+    const session = await this.requireSession(params.sessionId);
+    const client  = await this.getOrCreateClient(params.sessionId);
+    const allTools = await client.fetchTools();
+
+    const policy = session.toolPolicy ?? {
+      mode: 'all' as const,
+      toolIds: [],
+      updatedAt: session.updatedAt ?? session.createdAt,
+    };
+
+    const serverId = session.serverId ?? 'unknown';
+    const tools = allTools.tools.map((t) => ({
+      ...t,
+      toolId:  createToolId(serverId, t.name),
+      allowed: isToolAllowed(policy, t.name, session.serverId),
+    }));
+
+    return {
+      toolPolicy:        policy,
+      tools,
+      toolCount:         tools.length,
+      allowedToolCount:  tools.filter((t) => t.allowed).length,
+    };
+  }
+
+  /**
+   * Persists a new tool access policy and broadcasts the updated filtered
+   * tool list via a `tools_discovered` SSE event.
+   *
+   * @throws {Error} If the session does not exist or the policy references
+   *                 tool IDs that don't match any known tool.
+   */
+  private async setToolPolicy(
+    params: SetToolPolicyParams,
+  ): Promise<SetToolPolicyResult> {
+    const session = await this.requireSession(params.sessionId);
+    const client  = await this.getOrCreateClient(params.sessionId);
+    const allTools = await client.fetchTools();
+
+    const policy = normalizeToolPolicyForUpdate(params.toolPolicy);
+    validateToolPolicyAgainstTools(policy, allTools.tools, session.serverId);
+    await sessions.update(this.userId, params.sessionId, { toolPolicy: policy });
+
+    const filtered = createToolPolicyGateway(
+      this.userId, params.sessionId, client,
+    ).filterTools({ ...session, toolPolicy: policy }, allTools.tools);
+
+    this.sendEvent({
+      type:       'tools_discovered',
+      sessionId:   params.sessionId,
+      serverId:    session.serverId ?? 'unknown',
+      toolCount:   filtered.length,
+      tools:       filtered,
+      allTools:    allTools.tools,
+      timestamp:   Date.now(),
+    });
+
+    return { success: true, toolPolicy: policy, tools: filtered, toolCount: filtered.length };
+  }
+
+  // -----------------------------------------------------------------------
+  // Tool Execution
+  // -----------------------------------------------------------------------
+
+  /**
+   * Proxies a tool invocation to the remote MCP server.
+   *
+   * Resolves (or creates) the transport for the given session, runs the call
+   * through the tool-policy gateway, and injects `sessionId` into the result
+   * metadata so the client can route the response without scanning all sessions.
+   */
+  private async callTool(params: CallToolParams): Promise<CallToolResult> {
+    const client = await this.getOrCreateClient(params.sessionId);
+    const result = await createToolPolicyGateway(
+      this.userId, params.sessionId, client,
+    ).callTool(params.toolName, params.toolArgs);
+
+    return { ...result, _meta: { ...(result._meta ?? {}), sessionId: params.sessionId } };
+  }
+
+  // -----------------------------------------------------------------------
+  // Prompts
+  // -----------------------------------------------------------------------
+
+  /** Lists all prompts exposed by the remote MCP server. */
+  private async listPrompts(params: SessionParams): Promise<ListPromptsResult> {
+    const client = await this.getOrCreateClient(params.sessionId);
+    const result = await client.listPrompts();
+    return { prompts: result.prompts };
+  }
+
+  /** Retrieves a specific prompt by name with optional arguments. */
+  private async getPrompt(params: GetPromptParams): Promise<unknown> {
+    const client = await this.getOrCreateClient(params.sessionId);
+    return client.getPrompt(params.name, params.args);
+  }
+
+  // -----------------------------------------------------------------------
+  // Resources
+  // -----------------------------------------------------------------------
+
+  /** Lists all resources exposed by the remote MCP server. */
+  private async listResources(params: SessionParams): Promise<ListResourcesResult> {
+    const client = await this.getOrCreateClient(params.sessionId);
+    const result = await client.listResources();
+    return { resources: result.resources };
+  }
+
+  /** Reads a specific resource identified by URI. */
+  private async readResource(params: ReadResourceParams): Promise<unknown> {
+    const client = await this.getOrCreateClient(params.sessionId);
+    return client.readResource(params.uri);
+  }
+
+  // -----------------------------------------------------------------------
+  // Internal Helpers
+  // -----------------------------------------------------------------------
+
+  /** Resolves client metadata: `getClientMetadata()` → `clientDefaults` → `{}`. */
+  private async getResolvedClientMetadata(request?: unknown): Promise<ClientMetadata> {
+    let metadata: ClientMetadata = this.options.clientDefaults
+      ? { ...this.options.clientDefaults }
+      : {};
+
+    if (this.options.getClientMetadata) {
+      metadata = { ...metadata, ...(await this.options.getClientMetadata(request)) };
+    }
+    return metadata;
+  }
+
+  /** Ensures the given session exists in storage and throws otherwise. */
+  private async requireSession(sessionId: string): Promise<Session> {
+    const session = await sessions.get(this.userId, sessionId, { includeCredentials: true });
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    return session;
+  }
+
+  /** Finds an existing session matching the given serverId or serverUrl. */
+  private async findExistingSession(
+    serverId: string,
+    serverUrl: string,
+  ): Promise<Session | undefined> {
+    const all = await sessions.list(this.userId);
+    return all.find((s) => s.serverId === serverId || s.serverUrl === serverUrl);
+  }
+
+  /** Normalizes a serverId to max 12 chars (DeepSeek/OpenAI 64-char tool-name limit). */
+  private normalizeServerId(raw?: string): string {
+    return raw && raw.length <= 12 ? raw : generateServerId();
+  }
+
+  /**
+   * Returns the cached in-memory transport for `sessionId`, or creates one
+   * from the persisted session row (with credentials) and connects it.
+   */
+  private async getOrCreateClient(sessionId: string): Promise<MCPClient> {
+    const existing = this.clients.get(sessionId);
+    if (existing) return existing;
+
+    const session = await this.requireSession(sessionId);
+    const client  = this.restoreClient(session);
+
+    this.attachClientEvents(client);
+
+    await client.connect();
+    this.clients.set(sessionId, client);
+    return client;
+  }
+
+  /**
+   * Builds an `MCPClient` from a stored session row.
+   *
+   * Extracts `clientId` and `clientSecret` from the session's credential
+   * fields and passes `hasSession: true` + `cachedCredentials` so the client
+   * can skip redundant existence checks and credential reads.
+   */
+  private restoreClient(session: Session): MCPClient {
+    const clientId     = session.clientId ?? undefined;
+    const clientSecret = (session.clientInformation as any)?.client_secret ?? undefined;
+
+    return new MCPClient({
+      userId:       this.userId,
+      sessionId:     session.sessionId,
+      serverId:      session.serverId,
+      serverName:    session.serverName,
+      serverUrl:     session.serverUrl,
+      callbackUrl:   session.callbackUrl,
+      transportType: session.transportType,
+      headers:       session.headers,
+      clientId,
+      clientSecret,
+      hasSession:    true,
+      cachedCredentials: { tokens: session.tokens ?? undefined },
+      sessionStore:  this.observedStore,
+    });
+  }
+
+  /**
+   * Wires connection and observability events from the client into the
+   * unified observability channel. Connection events go to `sendEvent`
+   * (SSE stream); observability events go to `emitObs` (user callback
+   * + SSE stream).
+   */
+  private attachClientEvents(client: MCPClient): void {
+    client.onConnectionEvent((e) => this.sendEvent(e));
+    client.onObservabilityEvent((e) => this.sendEvent(e));
+  }
+
+  /**
+   * Registers the client in the in-memory cache and attaches its event
+   * listeners to the unified observability channel.
+   */
+  private cacheClient(sessionId: string, client: MCPClient): void {
+    this.attachClientEvents(client);
+    this.clients.set(sessionId, client);
+  }
+
+  /**
+   * Attempts a `client.connect()` and, on success, discovers tools.
+   *
+   * If the server responds with `UnauthorizedError`, the session is
+   * treated as pending OAuth — a successful result is returned with
+   * the sessionId so the browser client can redirect to the auth URL.
+   *
+   * For any other error an `error` connection event is emitted and the
+   * client is removed from the in-memory cache before re-throwing.
+   */
+  private async connectAndDiscover(
+    client: MCPClient,
+    sessionId: string,
+    serverId: string,
+  ): Promise<ConnectResult> {
+    try {
       await client.connect();
       await this.listPolicyFilteredTools(sessionId);
-
       return { sessionId, success: true };
     } catch (error) {
       if (error instanceof UnauthorizedError) {
@@ -436,448 +836,56 @@ export class SSEConnectionManager {
         return { sessionId, success: true };
       }
 
-      this.emitConnectionEvent({
-        type: 'error',
-        sessionId,
-        serverId,
-        error: error instanceof Error ? error.message : 'Connection failed',
-        errorType: 'connection',
-        timestamp: Date.now(),
-      });
-
+      this.sendEvent(connectionErrorEvent(sessionId, serverId, error, 'connection'));
       this.clients.delete(sessionId);
       throw error;
     }
   }
 
-  /**
-   * Disconnect from an MCP server
-   */
-  private async disconnect(params: DisconnectParams): Promise<DisconnectResult> {
-    const { sessionId } = params;
-    const client = this.clients.get(sessionId);
-
-    if (client) {
-      // clearSession() handles DELETE + local cleanup internally.
-      await client.clearSession();
-      this.clients.delete(sessionId);
-    } else {
-      // Handle orphaned sessions (e.g., OAuth flow failed before client was stored)
-      // Directly remove from storage since there's no active client
-      await sessions.delete(this.userId, sessionId);
-    }
-
-    return { success: true };
-  }
-
-  /**
-   * Get an existing client or create and connect a new one for the session.
-   */
-  private async getOrCreateClient(sessionId: string): Promise<MCPClient> {
-    const existing = this.clients.get(sessionId);
-    if (existing) {
-      return existing;
-    }
-
-    const session = await sessions.get(this.userId, sessionId, { includeCredentials: true });
-    if (!session) {
-      throw new Error('Session not found');
-    }
-
-    const clientId = session.clientId ?? undefined;
-    const clientSecret = (session.clientInformation as any)?.client_secret ?? undefined;
-
-    const client = new MCPClient({
-      userId: this.userId,
-      sessionId,
-      serverId: session.serverId,
-      serverName: session.serverName,
-      serverUrl: session.serverUrl,
-      callbackUrl: session.callbackUrl,
-      transportType: session.transportType,
-      headers: session.headers,
-      clientId,
-      clientSecret,
-      hasSession: true,
-      cachedCredentials: { tokens: session.tokens ?? undefined },
-    });
-
-    // Subscribe to events before connecting
-    client.onConnectionEvent((event) => this.emitConnectionEvent(event));
-    client.onObservabilityEvent((event) => this.sendEvent(event));
-
-    await client.connect();
-    this.clients.set(sessionId, client);
-
-    return client;
-  }
-
-  /**
-   * Fetches all tools from the remote MCP server and emits a `tools_discovered` event.
-   *
-   * Two lists are always published together:
-   * - `tools`    — policy-filtered list that agents are allowed to call.
-   * - `allTools` — the complete, unfiltered list used by the management UI so
-   *                that blocked tools still appear as checkboxes in the dialog.
-   *
-   * `fetchTools()` is called first (populates the in-memory cache), then
-   * `gateway.listTools()` re-uses that cache internally — so only one remote
-   * network round-trip is made regardless of how many callers follow.
-   *
-   * @param sessionId - The session whose tools should be discovered.
-   * @returns The session record and the policy-filtered tool list.
-   * @throws {Error} When the session does not exist in the store.
-   */
-  private async listPolicyFilteredTools(sessionId: string): Promise<{ session: Session; result: ListToolsRpcResult }> {
-    const session = await sessions.get(this.userId, sessionId);
-    if (!session) {
-      throw new Error('Session not found');
-    }
-
-    const client = await this.getOrCreateClient(sessionId);
-    const allTools = await client.fetchTools().catch(() => ({ tools: [] }));
-    const gateway = createToolPolicyGateway(this.userId, sessionId, client);
-    const result = await gateway.listTools();
-
-    this.emitConnectionEvent({
-      type: 'tools_discovered',
-      sessionId,
-      serverId: session.serverId ?? 'unknown',
-      toolCount: result.tools.length,
-      tools: result.tools,
-      allTools: allTools.tools,
-      timestamp: Date.now(),
-    });
-
-    return { session, result };
-  }
-
-  /**
-   * Returns the policy-filtered tool list for a session (agent-facing).
-   * Internally re-uses `listPolicyFilteredTools` which also emits a
-   * `tools_discovered` SSE event to keep client state up to date.
-   */
-  private async listTools(params: SessionParams): Promise<ListToolsRpcResult> {
-    const { sessionId } = params;
-    const { result } = await this.listPolicyFilteredTools(sessionId);
-    return { tools: result.tools };
-  }
-
-  /**
-   * Get all raw tools with effective access state for management UI.
-   */
-  private async getToolPolicy(params: GetToolPolicyParams): Promise<GetToolPolicyResult> {
-    const { sessionId } = params;
-    const session = await sessions.get(this.userId, sessionId);
-    if (!session) {
-      throw new Error('Session not found');
-    }
-
-    const client = await this.getOrCreateClient(sessionId);
-    const allTools = await client.fetchTools();
-    const toolPolicy = session.toolPolicy ?? {
-      mode: 'all' as const,
-      toolIds: [],
-      updatedAt: session.updatedAt ?? session.createdAt,
-    };
-    const serverId = session.serverId ?? 'unknown';
-    const tools = allTools.tools.map((tool) => ({
-      ...tool,
-      toolId: createToolId(serverId, tool.name),
-      allowed: isToolAllowed(toolPolicy, tool.name, session.serverId),
-    }));
-
-    return {
-      toolPolicy,
-      tools,
-      toolCount: tools.length,
-      allowedToolCount: tools.filter((tool) => tool.allowed).length,
-    };
-  }
-
-  /**
-   * Persists a new tool access policy for a session and broadcasts the updated
-   * filtered tool list to all connected browser clients via a `tools_discovered` event.
-   *
-   * Both `tools` (policy-filtered) and `allTools` (complete list) are emitted
-   * so the management UI can immediately reflect the new checkbox states without
-   * an additional round-trip to the server.
-   *
-   * @param params - Session ID and the new `{ mode, toolIds }` policy to apply.
-   * @throws {Error} When the session does not exist or the policy references unknown tool IDs.
-   */
-  private async setToolPolicy(params: SetToolPolicyParams): Promise<SetToolPolicyResult> {
-    const { sessionId } = params;
-    const session = await sessions.get(this.userId, sessionId);
-    if (!session) {
-      throw new Error('Session not found');
-    }
-
-    const client = await this.getOrCreateClient(sessionId);
-    const allTools = await client.fetchTools();
-    const toolPolicy = normalizeToolPolicyForUpdate(params.toolPolicy);
-    validateToolPolicyAgainstTools(toolPolicy, allTools.tools, session.serverId);
-
-    await sessions.update(this.userId, sessionId, { toolPolicy });
-
-    const filteredTools = createToolPolicyGateway(this.userId, sessionId, client).filterTools({ ...session, toolPolicy }, allTools.tools);
-    this.emitConnectionEvent({
-      type: 'tools_discovered',
-      sessionId,
-      serverId: session.serverId ?? 'unknown',
-      toolCount: filteredTools.length,
-      tools: filteredTools,
-      allTools: allTools.tools,
-      timestamp: Date.now(),
-    });
-
-    return {
-      success: true,
-      toolPolicy,
-      tools: filteredTools,
-      toolCount: filteredTools.length,
-    };
-  }
-
-  /**
-   * Proxies a tool invocation to the remote MCP server.
-   * Resolves the client for the given session and delegates to the tool router.
-   */
-  private async callTool(params: CallToolParams): Promise<CallToolResult> {
-    const { sessionId, toolName, toolArgs } = params;
-    const client = await this.getOrCreateClient(sessionId);
-    const result = await createToolPolicyGateway(this.userId, sessionId, client).callTool(toolName, toolArgs);
-
-    // Inject sessionId into meta so client knows who handled it
-    // This allows AppHost to auto-launch without scanning all sessions
-    const meta = result._meta || {};
-
-    return {
-      ...result,
-      _meta: {
-        ...meta,
-        sessionId,
+  /** Starts the periodic heartbeat timer. */
+  private startHeartbeat(): void {
+    const ms = this.options.heartbeatInterval ?? DEFAULT_HEARTBEAT_MS;
+    this.heartbeatTimer = setInterval(() => {
+      if (this.active) {
+        this.sendEvent({ level: 'debug', message: 'heartbeat', timestamp: Date.now() });
       }
-    };
-  }
-
-  /**
-   * Restore and validate an existing session
-   */
-  private async getSession(params: SessionParams): Promise<GetSessionResult> {
-    const { sessionId } = params;
-
-    const session = await sessions.get(this.userId, sessionId, { includeCredentials: true });
-    if (!session) {
-      throw new Error('Session not found');
-    }
-
-    this.emitConnectionEvent({
-      type: 'state_changed',
-      sessionId,
-      serverId: session.serverId ?? 'unknown',
-      serverName: session.serverName ?? 'Unknown',
-      serverUrl: session.serverUrl,
-      state: 'VALIDATING',
-      previousState: 'DISCONNECTED',
-      timestamp: Date.now(),
-    });
-
-    try {
-      const clientMetadata = await this.getResolvedClientMetadata();
-
-      const clientId = session.clientId ?? undefined;
-      const clientSecret = (session.clientInformation as any)?.client_secret ?? undefined;
-
-      const client = new MCPClient({
-        userId: this.userId,
-        sessionId,
-        serverId: session.serverId,
-        serverName: session.serverName,
-        serverUrl: session.serverUrl,
-        callbackUrl: session.callbackUrl,
-        transportType: session.transportType,
-        headers: session.headers,
-        clientId,
-        clientSecret,
-        hasSession: true,
-        cachedCredentials: { tokens: session.tokens ?? undefined },
-        ...clientMetadata,
-      });
-
-      client.onConnectionEvent((event) => this.emitConnectionEvent(event));
-      client.onObservabilityEvent((event) => this.sendEvent(event));
-
-      await client.connect();
-      this.clients.set(sessionId, client);
-
-      const { result: tools } = await this.listPolicyFilteredTools(sessionId);
-
-      return { success: true, toolCount: tools.tools.length };
-    } catch (error) {
-      this.emitConnectionEvent({
-        type: 'error',
-        sessionId,
-        serverId: session.serverId ?? 'unknown',
-        error: error instanceof Error ? error.message : 'Validation failed',
-        errorType: 'validation',
-        timestamp: Date.now(),
-      });
-
-      throw error;
-    }
-  }
-
-  /**
-   * Complete OAuth authorization flow
-   */
-  private async finishAuth(params: FinishAuthParams): Promise<FinishAuthResult> {
-    const { code } = params;
-    const oauthState = params.state;
-    const parsedState = parseOAuthState(oauthState);
-    const sessionId = parsedState?.sessionId || oauthState;
-
-    const session = await sessions.get(this.userId, sessionId, { includeCredentials: true });
-    if (!session) {
-      throw new Error('Session not found');
-    }
-
-    try {
-      const clientId = session.clientId ?? undefined;
-      const clientSecret = (session.clientInformation as any)?.client_secret ?? undefined;
-
-      const client = new MCPClient({
-        userId: this.userId,
-        sessionId,
-        serverId: session.serverId,
-        serverName: session.serverName,
-        serverUrl: session.serverUrl,
-        callbackUrl: session.callbackUrl,
-        // NOTE: transportType is intentionally omitted here.
-        // The session's stored transportType is a placeholder ('streamable-http')
-        // set before transport negotiation. Omitting it lets MCPClient auto-negotiate
-        // (try streamable_http → SSE fallback), which is critical for servers like
-        // Neon that only support SSE transport.
-        headers: session.headers,
-        clientId,
-        clientSecret,
-        hasSession: true,
-        cachedCredentials: { tokens: session.tokens ?? undefined },
-      });
-
-      client.onConnectionEvent((event) => this.emitConnectionEvent(event));
-
-      // Run inside code verifier context so codeVerifier() can return
-      // the raw verifier without a DB read.
-      await runWithCodeVerifierState(session.codeVerifier ?? '', 'S256', async () => {
-        await client.finishAuth(code, oauthState);
-      });
-      this.clients.set(sessionId, client);
-
-      const { result: tools } = await this.listPolicyFilteredTools(sessionId);
-
-      return { success: true, toolCount: tools.tools.length };
-    } catch (error) {
-      this.emitConnectionEvent({
-        type: 'error',
-        sessionId,
-        serverId: session.serverId ?? 'unknown',
-        error: error instanceof Error ? error.message : 'OAuth completion failed',
-        errorType: 'auth',
-        timestamp: Date.now(),
-      });
-
-      throw error;
-    }
-  }
-
-  /**
-   * List prompts from a session
-   */
-  private async listPrompts(params: SessionParams): Promise<ListPromptsResult> {
-    const { sessionId } = params;
-    const client = await this.getOrCreateClient(sessionId);
-    const result = await client.listPrompts();
-    return { prompts: result.prompts };
-  }
-
-  /**
-   * Get a specific prompt
-   */
-  private async getPrompt(params: GetPromptParams): Promise<unknown> {
-    const { sessionId, name, args } = params;
-    const client = await this.getOrCreateClient(sessionId);
-    return await client.getPrompt(name, args);
-  }
-
-  /**
-   * List resources from a session
-   */
-  private async listResources(params: SessionParams): Promise<ListResourcesResult> {
-    const { sessionId } = params;
-    const client = await this.getOrCreateClient(sessionId);
-    const result = await client.listResources();
-    return { resources: result.resources };
-  }
-
-  /**
-   * Read a specific resource
-   */
-  private async readResource(params: ReadResourceParams): Promise<unknown> {
-    const { sessionId, uri } = params;
-    const client = await this.getOrCreateClient(sessionId);
-    return client.readResource(uri);
-  }
-
-  /**
-   * Emit connection event
-   */
-  private emitConnectionEvent(event: McpConnectionEvent): void {
-    this.sendEvent(event);
-  }
-
-  /**
-   * Cleanup and close all connections
-   */
-  async dispose(): Promise<void> {
-    this.isActive = false;
-
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-    }
-
-    // Send HTTP DELETE to each Streamable HTTP server before closing, per spec.
-    // Run in parallel so shutdown is not serialised across many sessions.
-    await Promise.all(
-      Array.from(this.clients.values()).map((client) => client.disconnect())
-    );
-
-    this.clients.clear();
+    }, ms);
   }
 }
 
-// ============================================
+// ---------------------------------------------------------------------------
 // SSE Handler Factory
-// ============================================
+// ---------------------------------------------------------------------------
 
 /**
- * Create an SSE endpoint handler compatible with Node.js HTTP frameworks.
- * Handles both SSE streaming (GET) and RPC requests (POST).
+ * Creates a Node.js-compatible HTTP handler that serves an SSE stream (GET)
+ * and accepts RPC calls (POST) for a single browser client.
+ *
+ * @example
+ * ```ts
+ * import { createSSEHandler } from '@mcp-ts/sdk/server';
+ *
+ * const handler = createSSEHandler({ userId: 'user-123' });
+ * // Mount `handler` on both GET and POST for your HTTP framework.
+ * ```
+ *
+ * @param options - Handler configuration (userId, optional auth check, metadata).
+ * @returns An async function `(req, res) => void` suitable as an HTTP handler.
  */
 export function createSSEHandler(options: SSEHandlerOptions) {
-  return async (req: { method?: string; on: Function }, res: { writeHead: Function; write: Function }) => {
-    // Set SSE headers
+  return async (
+    req: { method?: string; on: (event: string, cb: (...args: any[]) => void) => void },
+    res: { writeHead: (status: number, headers: Record<string, string>) => void; write: (chunk: string) => void },
+  ) => {
     res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
+      'Content-Type':              'text/event-stream',
+      'Cache-Control':             'no-cache',
+      'Connection':                'keep-alive',
       'Access-Control-Allow-Origin': '*',
     });
 
-    // Send initial connection acknowledgment
     writeSSEEvent(res, 'connected', { timestamp: Date.now() });
 
-    // Create connection manager with event routing
     const manager = new SSEConnectionManager(options, (event) => {
       if (isRpcResponseEvent(event)) {
         writeSSEEvent(res, 'rpc-response', event);
@@ -888,41 +896,36 @@ export function createSSEHandler(options: SSEHandlerOptions) {
       }
     });
 
-    // Cleanup on client disconnect
     req.on('close', () => manager.dispose());
 
-    // Handle RPC requests via POST
     if (req.method === 'POST') {
       let body = '';
-      req.on('data', (chunk: Buffer) => {
-        body += chunk.toString();
-      });
+      req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
       req.on('end', async () => {
         try {
-          const request: McpRpcRequest = JSON.parse(body);
-          await manager.handleRequest(request);
+          await manager.handleRequest(JSON.parse(body) as McpRpcRequest);
         } catch {
-          // Request parsing/handling errors are sent via SSE error events
+          // Parsing / handling errors surface through SSE error events
         }
       });
     }
   };
 }
 
-// ============================================
-// Utilities
-// ============================================
+// ---------------------------------------------------------------------------
+// SSE Utilities
+// ---------------------------------------------------------------------------
 
 /**
- * Write an SSE event to the response stream
+ * Writes a single SSE event frame onto the response stream.
+ *
+ * Format: `event: <type>\ndata: <json>\n\n`
  */
-function writeSSEEvent(res: { write: Function }, event: string, data: unknown): void {
+function writeSSEEvent(
+  res: { write: (chunk: string) => void },
+  event: string,
+  data: unknown,
+): void {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
-
-
-
-
-
-

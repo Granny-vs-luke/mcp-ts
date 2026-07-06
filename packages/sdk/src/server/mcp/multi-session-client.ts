@@ -1,5 +1,5 @@
 import { MCPClient } from './oauth-client.js';
-import { sessions, type Session, type SessionStore } from '../storage/index.js';
+import { sessions, withDbObservability, type Session, type SessionStore } from '../storage/index.js';
 import type { ToolClient, ToolClientProvider } from '../../shared/types.js';
 import { createToolPolicyGateway } from './tool-policy-gateway.js';
 
@@ -97,7 +97,7 @@ export class MultiSessionClient implements ToolClientProvider {
     private connectionPromises = new Map<string, Promise<void>>();
     private userId: string;
     private options: Required<Pick<MultiSessionOptions, 'timeout' | 'maxRetries' | 'retryDelay'>> &
-        Pick<MultiSessionOptions, 'sessionProvider' | 'onSessionConnected' | 'onSessionEvicted' | 'onSessionFailed'>;
+        Pick<MultiSessionOptions, 'sessionProvider' | 'onObservabilityEvent' | 'onSessionConnected' | 'onSessionEvicted' | 'onSessionFailed'>;
 
     /**
      * @param userId - Unique identifier for the user (e.g. user ID or email).
@@ -111,12 +111,12 @@ export class MultiSessionClient implements ToolClientProvider {
             retryDelay: DEFAULT_RETRY_DELAY_MS,
             ...options,
         };
-        // Remap to avoid TS excess-property check on the spread target
-        this._observabilityHandler = options.onObservabilityEvent;
-        this._store = options.sessionStore ?? sessions;
+
+        this._store = options.onObservabilityEvent
+            ? withDbObservability(options.sessionStore ?? sessions, options.onObservabilityEvent)
+            : (options.sessionStore ?? sessions);
     }
 
-    private _observabilityHandler?: McpObservabilityEventHandler;
     private _store: SessionStore;
 
     // -----------------------------------------------------------------------
@@ -134,12 +134,6 @@ export class MultiSessionClient implements ToolClientProvider {
         const sessions = await this.fetchActiveSessions();
         const activeSessionIds = new Set(sessions.map(s => s.sessionId));
 
-        // Evict clients whose sessions no longer appear in the active list.
-        // Without this, a stale MCPClient with a live SDK transport would
-        // stay in the clients array after its session was deleted externally
-        // (e.g. via the SSE handler's clearSession()), causing OAuth refreshes
-        // to fail with a FK violation when they try to patchCredentials()
-        // against the now-deleted session.
         for (const client of this.clients) {
             if (!activeSessionIds.has(client.getSessionId())) {
                 this.options.onSessionEvicted?.(client.getSessionId());
@@ -313,8 +307,8 @@ export class MultiSessionClient implements ToolClientProvider {
                 });
 
                 // Attach observability listener BEFORE connect to capture all lifecycle events
-                if (this._observabilityHandler) {
-                    client.onObservabilityEvent(this._observabilityHandler);
+                if (this.options.onObservabilityEvent) {
+                    client.onObservabilityEvent(this.options.onObservabilityEvent);
                 }
 
                 const timeoutMs = this.options.timeout;
