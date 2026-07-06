@@ -38,6 +38,8 @@ import type {
   SetToolPolicyResult,
   GetToolPolicyParams,
   GetToolPolicyResult,
+  UpdateSessionParams,
+  UpdateSessionResult,
 } from '../../shared/types.js';
 import { RpcErrorCodes, UnauthorizedError } from '../../shared/errors.js';
 import { isConnectionEvent, isRpcResponseEvent } from '../../shared/event-routing.js';
@@ -307,6 +309,7 @@ export class SSEConnectionManager {
       case 'listTools':     return this.listTools(request.params as SessionParams);
       case 'setToolPolicy': return this.setToolPolicy(request.params as SetToolPolicyParams);
       case 'getToolPolicy': return this.getToolPolicy(request.params as GetToolPolicyParams);
+      case 'updateSession': return this.updateSession(request.params as UpdateSessionParams);
       case 'callTool':      return this.callTool(request.params as CallToolParams);
       case 'getSession':    return this.getSession(request.params as SessionParams);
       case 'finishAuth':    return this.finishAuth(request.params as FinishAuthParams);
@@ -341,6 +344,7 @@ export class SSEConnectionManager {
         updatedAt:   s.updatedAt ?? s.createdAt,
         status:      s.status ?? 'pending',
         toolPolicy:  s.toolPolicy,
+        enabled:     s.enabled ?? true,
       })),
     };
   }
@@ -654,6 +658,23 @@ export class SSEConnectionManager {
     return { success: true, toolPolicy: policy, tools: filtered, toolCount: filtered.length };
   }
 
+  /**
+   * Enables or disables a session for agent tool discovery.
+   *
+   * Disabled sessions retain their OAuth tokens and connection metadata
+   * but are hidden from `MultiSessionClient.connect()` and blocked from
+   * RPC tool access. Re-enabling does not require re-authentication.
+   *
+   * @param params - `{ sessionId, enabled: boolean }`
+   * @returns `{ success: true }`
+   * @throws {Error} If the session does not exist.
+   */
+  private async updateSession(params: UpdateSessionParams): Promise<UpdateSessionResult> {
+    await this.requireSession(params.sessionId);
+    await sessions.update(this.userId, params.sessionId, { enabled: params.enabled });
+    return { success: true };
+  }
+
   // -----------------------------------------------------------------------
   // Tool Execution
   // -----------------------------------------------------------------------
@@ -754,6 +775,10 @@ export class SSEConnectionManager {
     if (existing) return existing;
 
     const session = await this.requireSession(sessionId);
+
+    if (session.enabled === false) {
+      throw new Error('Session is disabled — re-enable it via updateSession to access tools');
+    }
     const client  = this.restoreClient(session);
 
     this.attachClientEvents(client);

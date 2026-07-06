@@ -27,6 +27,7 @@ import type {
   ListResourcesResult,
   SetToolPolicyResult,
   GetToolPolicyResult,
+  UpdateSessionResult,
   ToolPolicy,
 } from '../../shared/types.js';
 
@@ -115,6 +116,10 @@ export class SSEClient {
 
   async getToolPolicy(sessionId: string): Promise<GetToolPolicyResult> {
     return this.sendRequest<GetToolPolicyResult>('getToolPolicy', { sessionId });
+  }
+
+  async updateSession(sessionId: string, enabled: boolean): Promise<UpdateSessionResult> {
+    return this.sendRequest<UpdateSessionResult>('updateSession', { sessionId, enabled });
   }
 
   async listTools(sessionId: string): Promise<ListToolsRpcResult> {

@@ -46,6 +46,8 @@ export interface Session {
      */
     status?: SessionStatus;
     toolPolicy?: ToolPolicy;
+    /** When false, the session is excluded from agent tool discovery and RPC access. Defaults to true. */
+    enabled?: boolean;
     clientInformation?: OAuthClientInformationMixed | null;
     tokens?: OAuthTokens | null;
     codeVerifier?: string | null;

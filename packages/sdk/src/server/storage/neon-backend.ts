@@ -36,6 +36,7 @@ type NeonSessionRow = {
     code_verifier?: unknown;
     client_id?: string | null;
     oauth_state?: unknown;
+    enabled?: boolean;
 };
 
 export class NeonStorageBackend implements SessionStore {
@@ -101,6 +102,7 @@ export class NeonStorageBackend implements SessionStore {
             codeVerifier: decryptObject(row.code_verifier),
             clientId: row.client_id ?? undefined,
             oauthState: row.oauth_state as Session['oauthState'],
+            enabled: row.enabled ?? true,
         };
     }
 
@@ -179,7 +181,8 @@ export class NeonStorageBackend implements SessionStore {
             'status' in data ||
             'headers' in data ||
             'authUrl' in data ||
-            'toolPolicy' in data
+            'toolPolicy' in data ||
+            'enabled' in data
         );
 
         if (shouldUpdateSession) {
@@ -206,6 +209,10 @@ export class NeonStorageBackend implements SessionStore {
                 const policyUpdatedAt = updatedSession.updatedAt ?? Date.now();
                 const toolPolicy = normalizeToolPolicy(updatedSession.toolPolicy, policyUpdatedAt) ?? { mode: 'all' as const, toolIds: [], updatedAt: policyUpdatedAt };
                 addSet('tool_policy', toolPolicy);
+            }
+
+            if ('enabled' in data) {
+                addSet('enabled', updatedSession.enabled);
             }
 
             setClauses.push('updated_at = now()');
@@ -271,7 +278,7 @@ export class NeonStorageBackend implements SessionStore {
         try {
             const selection = options?.includeCredentials
                 ? '*'
-                : 'session_id, user_id, server_id, server_name, server_url, transport_type, callback_url, created_at, updated_at, expires_at, headers, auth_url, status, tool_policy';
+                : 'session_id, user_id, server_id, server_name, server_url, transport_type, callback_url, created_at, updated_at, expires_at, headers, auth_url, status, tool_policy, enabled';
 
             const rows = await this.sql.query(
                 `SELECT ${selection} FROM ${this.tableName} WHERE user_id = $1 AND session_id = $2`,

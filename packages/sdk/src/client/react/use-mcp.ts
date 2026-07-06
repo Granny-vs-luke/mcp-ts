@@ -199,6 +199,9 @@ export interface McpClient {
    */
   getToolAccess: (sessionId: string) => Promise<GetToolPolicyResult>;
 
+  /** Enable or disable a session for agent tool discovery. Tokens are preserved — no re-auth needed when re-enabling. */
+  updateSession: (sessionId: string, enabled: boolean) => Promise<{ success: boolean }>;
+
   /**
    * List available prompts for a session
    */
@@ -619,6 +622,23 @@ export function useMcp(options: UseMcpOptions): McpClient {
     }
     return result;
   }, []);
+  const updateSession = useCallback(async (
+    sessionId: string,
+    enabled: boolean,
+  ): Promise<{ success: boolean }> => {
+    if (!clientRef.current) {
+      throw new Error('SSE client not initialized');
+    }
+    const result = await clientRef.current.updateSession(sessionId, enabled);
+    if (isMountedRef.current) {
+      setConnections((prev: McpConnection[]) => prev.map((connection) =>
+        connection.sessionId === sessionId
+          ? { ...connection, enabled, updatedAt: new Date() }
+          : connection
+      ));
+    }
+    return result;
+  }, []);
   /**
    * Get all tools with effective access state for a session
    */
@@ -724,6 +744,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
       listTools,
       updateToolPolicy,
       getToolAccess,
+      updateSession,
       listPrompts,
       getPrompt,
       listResources,
@@ -750,6 +771,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
       listTools,
       updateToolPolicy,
       getToolAccess,
+      updateSession,
       listPrompts,
       getPrompt,
       listResources,

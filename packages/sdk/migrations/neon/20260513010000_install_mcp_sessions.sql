@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
         CHECK (status IN ('pending', 'active')),
     headers JSONB,
     auth_url TEXT,
-    -- tool_policy JSONB -- optional, see docs/tool-policy
+    enabled BOOLEAN DEFAULT true,
+    tool_policy JSONB, -- optional, see docs/tool-policy
     -- Runtime OAuth credentials (stored in-session, no separate credentials table)
     client_information JSONB,
     tokens JSONB,

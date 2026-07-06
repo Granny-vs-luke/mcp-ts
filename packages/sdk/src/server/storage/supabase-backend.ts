@@ -57,6 +57,7 @@ export class SupabaseStorageBackend implements SessionStore {
             codeVerifier: decryptObject(row.code_verifier),
             clientId: row.client_id,
             oauthState: row.oauth_state,
+            enabled: row.enabled ?? true,
         };
     }
 
@@ -132,6 +133,7 @@ export class SupabaseStorageBackend implements SessionStore {
         if ('headers' in data) updateData.headers = encryptObject(data.headers);
         if ('authUrl' in data) updateData.auth_url = data.authUrl ?? null;
         if ('toolPolicy' in data) updateData.tool_policy = normalizeToolPolicy(data.toolPolicy);
+        if ('enabled' in data) updateData.enabled = data.enabled;
 
         const shouldUpdateSession = Object.keys(updateData).some((key) => key !== 'updated_at');
 
@@ -194,7 +196,7 @@ export class SupabaseStorageBackend implements SessionStore {
     async get(userId: string, sessionId: string, options?: GetOptions): Promise<SessionResult | null> {
         const selection = options?.includeCredentials
             ? '*'
-            : 'session_id, user_id, server_id, server_name, server_url, transport_type, callback_url, created_at, updated_at, expires_at, headers, auth_url, status, tool_policy';
+            : 'session_id, user_id, server_id, server_name, server_url, transport_type, callback_url, created_at, updated_at, expires_at, headers, auth_url, status, tool_policy, enabled';
 
         const { data, error } = await this.supabase
             .from('mcp_sessions')

@@ -218,7 +218,8 @@ export class MultiSessionClient implements ToolClientProvider {
             s.serverId &&
             s.serverUrl &&
             s.callbackUrl &&
-            s.status === 'active'
+            s.status === 'active' &&
+            s.enabled !== false
         );
     }
 
