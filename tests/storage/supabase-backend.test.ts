@@ -32,7 +32,7 @@ function createMockSupabaseClient() {
             };
 
             const stripCredentialColumns = (row: any) => {
-                const { client_information, tokens, code_verifier, code_verifier_challenge, code_verifier_nonce, client_id, oauth_state, ...rest } = row;
+                const { client_information, tokens, code_verifier, client_id, oauth_state, ...rest } = row;
                 return rest;
             };
 

@@ -23,8 +23,6 @@ type NeonRow = {
     client_information?: unknown;
     tokens?: unknown;
     code_verifier?: unknown;
-    code_verifier_challenge?: unknown;
-    code_verifier_nonce?: unknown;
     client_id?: string | null;
     oauth_state?: unknown;
 };
@@ -115,8 +113,6 @@ function createMockNeonSql() {
                 const columnPatterns = [
                     { col: 'client_information', key: 'client_information' },
                     { col: 'tokens', key: 'tokens' },
-                    { col: 'code_verifier_challenge', key: 'code_verifier_challenge' },
-                    { col: 'code_verifier_nonce', key: 'code_verifier_nonce' },
                     { col: 'code_verifier', key: 'code_verifier' },
                     { col: 'client_id', key: 'client_id' },
                     { col: 'oauth_state', key: 'oauth_state' },
@@ -188,8 +184,6 @@ function createMockNeonSql() {
             if (!row) return [];
             const result: Record<string, unknown> = {};
             if (normalized.includes('client_information')) result.client_information = row.client_information;
-            if (normalized.includes('code_verifier_challenge')) result.code_verifier_challenge = row.code_verifier_challenge;
-            if (normalized.includes('code_verifier_nonce')) result.code_verifier_nonce = row.code_verifier_nonce;
             if (normalized.includes(', tokens')) result.tokens = row.tokens;
             if (normalized.includes('code_verifier,') || normalized.includes('code_verifier ')) result.code_verifier = row.code_verifier;
             if (normalized.includes('client_id')) result.client_id = row.client_id;

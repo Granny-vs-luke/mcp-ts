@@ -20,8 +20,6 @@ CREATE TABLE IF NOT EXISTS public.mcp_sessions (
     client_information JSONB,
     tokens JSONB,
     code_verifier TEXT,
-    code_verifier_challenge TEXT,
-    code_verifier_nonce TEXT,
     client_id TEXT,
     oauth_state JSONB,
     CONSTRAINT mcp_sessions_user_session_unique
