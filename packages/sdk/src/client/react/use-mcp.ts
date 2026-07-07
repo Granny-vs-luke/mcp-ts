@@ -17,6 +17,7 @@ import type {
   ListToolsRpcResult,
   ListPromptsResult,
   ListResourcesResult,
+  ListResourceTemplatesResult,
   SessionInfo,
   ToolPolicy,
   SetToolPolicyResult,
@@ -216,6 +217,11 @@ export interface McpClient {
    * List available resources for a session
    */
   listResources: (sessionId: string) => Promise<ListResourcesResult>;
+
+  /**
+   * List available resource templates
+   */
+  listResourceTemplates: (sessionId: string) => Promise<ListResourceTemplatesResult>;
 
   /**
    * Read a specific resource
@@ -686,6 +692,17 @@ export function useMcp(options: UseMcpOptions): McpClient {
   }, []);
 
   /**
+   * List resource templates
+   */
+  const listResourceTemplates = useCallback(async (sessionId: string): Promise<ListResourceTemplatesResult> => {
+    if (!clientRef.current) {
+      throw new Error('SSE client not initialized');
+    }
+
+    return await clientRef.current.listResourceTemplates(sessionId);
+  }, []);
+
+  /**
    * Read a specific resource
    */
   const readResource = useCallback(async (sessionId: string, uri: string): Promise<unknown> => {
@@ -748,6 +765,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
       listPrompts,
       getPrompt,
       listResources,
+      listResourceTemplates,
       readResource,
       sseClient,
     }),
@@ -775,6 +793,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
       listPrompts,
       getPrompt,
       listResources,
+      listResourceTemplates,
       readResource,
       sseClient,
     ]

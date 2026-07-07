@@ -21,6 +21,9 @@ import {
   ListResourcesRequest,
   ListResourcesResult,
   ListResourcesResultSchema,
+  ListResourceTemplatesRequest,
+  ListResourceTemplatesResult,
+  ListResourceTemplatesResultSchema,
   ReadResourceRequest,
   ReadResourceResult,
   ReadResourceResultSchema,
@@ -984,9 +987,39 @@ export class MCPClient {
   }
 
   /**
-   * Reads a specific resource
-   * @param uri - URI of the resource to read
-   * @returns Resource content
+   * Lists all available resource templates from the connected MCP server
+   * @returns List of available resource templates
+   * @throws {Error} When client is not connected
+   */
+  async listResourceTemplates(): Promise<ListResourceTemplatesResult> {
+    this.emitStateChange('DISCOVERING');
+
+    try {
+      const request: ListResourceTemplatesRequest = {
+        method: 'resources/templates/list',
+        params: {},
+      };
+
+      const result = await this.withRetry(() =>
+        this.client!.request(request, ListResourceTemplatesResultSchema)
+      );
+
+      this.emitStateChange('READY');
+      this.emitProgress(`Discovered ${result.resourceTemplates.length} resource templates`);
+
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to list resource templates';
+      this.emitError(errorMessage, 'validation');
+      this.emitStateChange('FAILED');
+      throw error;
+    }
+  }
+
+  /**
+   * Reads a specific resource from the connected MCP server
+   * @param uri - The URI of the resource to read
+   * @returns The resource content
    * @throws {Error} When client is not connected
    */
   async readResource(uri: string): Promise<ReadResourceResult> {

@@ -33,6 +33,7 @@ import type {
   ListToolsRpcResult,
   ListPromptsResult,
   ListResourcesResult,
+  ListResourceTemplatesResult,
   CallToolResult,
   SetToolPolicyParams,
   SetToolPolicyResult,
@@ -315,8 +316,9 @@ export class SSEConnectionManager {
       case 'finishAuth':    return this.finishAuth(request.params as FinishAuthParams);
       case 'listPrompts':   return this.listPrompts(request.params as SessionParams);
       case 'getPrompt':     return this.getPrompt(request.params as GetPromptParams);
-      case 'listResources':  return this.listResources(request.params as SessionParams);
-      case 'readResource':   return this.readResource(request.params as ReadResourceParams);
+      case 'listResources':       return this.listResources(request.params as SessionParams);
+      case 'listResourceTemplates': return this.listResourceTemplates(request.params as SessionParams);
+      case 'readResource':        return this.readResource(request.params as ReadResourceParams);
       default:
         throw new Error(`Unknown RPC method: ${request.method}`);
     }
@@ -721,6 +723,13 @@ export class SSEConnectionManager {
     const client = await this.getOrCreateClient(params.sessionId);
     const result = await client.listResources();
     return { resources: result.resources };
+  }
+
+  /** Lists all resource templates exposed by the remote MCP server. */
+  private async listResourceTemplates(params: SessionParams): Promise<ListResourceTemplatesResult> {
+    const client = await this.getOrCreateClient(params.sessionId);
+    const result = await client.listResourceTemplates();
+    return { resourceTemplates: result.resourceTemplates };
   }
 
   /** Reads a specific resource identified by URI. */

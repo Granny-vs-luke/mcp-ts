@@ -342,5 +342,115 @@ test.describe('SSEConnectionManager connect duplicate handling', () => {
       manager.dispose();
     }
   });
+
+  test('dispatches listResourceTemplates to MCPClient', async () => {
+    const storage = new MemoryStorageBackend();
+    _setStorageInstanceForTesting(storage);
+
+    await storage.create({
+      sessionId: 'lrt-session',
+      userId: 'user-lrt',
+      serverId: 'srv-lrt',
+      serverName: 'Server LRT',
+      serverUrl: 'https://example.com/mcp-lrt',
+      callbackUrl: 'https://app.local/oauth/callback',
+      transportType: 'streamable-http',
+      createdAt: Date.now(),
+      status: 'active',
+    });
+
+    const manager = new SSEConnectionManager(
+      { userId: 'user-lrt' },
+      () => { }
+    );
+
+    const originalConnect = (MCPClient.prototype as any).connect;
+    const originalListResourceTemplates = (MCPClient.prototype as any).listResourceTemplates;
+
+    (MCPClient.prototype as any).connect = async function () { };
+
+    (MCPClient.prototype as any).listResourceTemplates = async function () {
+      return {
+        resourceTemplates: [
+          {
+            uriTemplate: 'file:///{path}',
+            name: 'File Resource',
+            description: 'Access files on the server',
+            mimeType: 'text/plain',
+          },
+        ],
+      };
+    };
+
+    try {
+      const response = await manager.handleRequest({
+        id: 'lrt-1',
+        method: 'listResourceTemplates',
+        params: { sessionId: 'lrt-session' },
+      } as any);
+
+      expect((response as any).error).toBeUndefined();
+      expect((response as any).result).toEqual({
+        resourceTemplates: [
+          {
+            uriTemplate: 'file:///{path}',
+            name: 'File Resource',
+            description: 'Access files on the server',
+            mimeType: 'text/plain',
+          },
+        ],
+      });
+    } finally {
+      (MCPClient.prototype as any).connect = originalConnect;
+      (MCPClient.prototype as any).listResourceTemplates = originalListResourceTemplates;
+      manager.dispose();
+    }
+  });
+
+  test('handles listResourceTemplates with empty result from server', async () => {
+    const storage = new MemoryStorageBackend();
+    _setStorageInstanceForTesting(storage);
+
+    await storage.create({
+      sessionId: 'lrt-empty',
+      userId: 'user-lrt-empty',
+      serverId: 'srv-lrt-empty',
+      serverName: 'Server LRT Empty',
+      serverUrl: 'https://example.com/mcp-lrt-empty',
+      callbackUrl: 'https://app.local/oauth/callback',
+      transportType: 'streamable-http',
+      createdAt: Date.now(),
+      status: 'active',
+    });
+
+    const manager = new SSEConnectionManager(
+      { userId: 'user-lrt-empty' },
+      () => { }
+    );
+
+    const originalConnect = (MCPClient.prototype as any).connect;
+    const originalListResourceTemplates = (MCPClient.prototype as any).listResourceTemplates;
+
+    (MCPClient.prototype as any).connect = async function () { };
+
+    (MCPClient.prototype as any).listResourceTemplates = async function () {
+      return { resourceTemplates: [] };
+    };
+
+    try {
+      const response = await manager.handleRequest({
+        id: 'lrt-2',
+        method: 'listResourceTemplates',
+        params: { sessionId: 'lrt-empty' },
+      } as any);
+
+      expect((response as any).error).toBeUndefined();
+      expect((response as any).result).toEqual({ resourceTemplates: [] });
+    } finally {
+      (MCPClient.prototype as any).connect = originalConnect;
+      (MCPClient.prototype as any).listResourceTemplates = originalListResourceTemplates;
+      manager.dispose();
+    }
+  });
 });
 

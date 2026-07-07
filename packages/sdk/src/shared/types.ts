@@ -192,6 +192,7 @@ export type McpRpcMethod =
   | 'getPrompt'
   | 'listResources'
   | 'readResource'
+  | 'listResourceTemplates'
   | 'setToolPolicy'
   | 'getToolPolicy'
   | 'updateSession';
@@ -367,6 +368,15 @@ export interface ListPromptsResult {
 export interface ListResourcesResult {
   resources: Array<{
     uri: string;
+    name: string;
+    description?: string;
+    mimeType?: string;
+  }>;
+}
+
+export interface ListResourceTemplatesResult {
+  resourceTemplates: Array<{
+    uriTemplate: string;
     name: string;
     description?: string;
     mimeType?: string;

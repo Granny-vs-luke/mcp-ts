@@ -25,6 +25,7 @@ import type {
   ListToolsRpcResult,
   ListPromptsResult,
   ListResourcesResult,
+  ListResourceTemplatesResult,
   SetToolPolicyResult,
   GetToolPolicyResult,
   UpdateSessionResult,
@@ -154,6 +155,10 @@ export class SSEClient {
 
   async listResources(sessionId: string): Promise<ListResourcesResult> {
     return this.sendRequest<ListResourcesResult>('listResources', { sessionId });
+  }
+
+  async listResourceTemplates(sessionId: string): Promise<ListResourceTemplatesResult> {
+    return this.sendRequest<ListResourceTemplatesResult>('listResourceTemplates', { sessionId });
   }
 
   async readResource(sessionId: string, uri: string): Promise<unknown> {
