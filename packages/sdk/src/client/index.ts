@@ -1,5 +1,5 @@
 /**
- * MCP Redis Client Package
+ * MCP TS Client Package
  * Browser/React client-side exports for MCP connection management
  */
 

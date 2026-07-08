@@ -245,8 +245,8 @@ addEventListener('state_changed', (event) => {
   console.log('State changed:', event);
 });
 
-addEventListener('tools_discovered', (event) => {
-  console.log('Tools discovered:', event.tools);
+addEventListener('capabilities_discovered', (event) => {
+  console.log('Capabilities discovered:', event.tools, event.prompts, event.resources);
 });
 ```
 

@@ -1,6 +1,6 @@
 /**
- * MCP Redis Server Package
- * Node.js server-side exports for MCP connection management with Redis
+ * MCP TS Server Package
+ * Node.js server-side exports for MCP connection management
  */
 
 /** Core MCP client and session management */

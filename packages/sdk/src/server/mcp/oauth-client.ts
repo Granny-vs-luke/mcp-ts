@@ -6,27 +6,24 @@ import {
   UnauthorizedError as SDKUnauthorizedError,
 } from '@modelcontextprotocol/sdk/client/auth.js';
 import {
-  ListToolsRequest,
+  McpError,
   ListToolsResult,
-  ListToolsResultSchema,
   CallToolRequest,
   CallToolResult,
   CallToolResultSchema,
-  ListPromptsRequest,
   ListPromptsResult,
-  ListPromptsResultSchema,
   GetPromptRequest,
   GetPromptResult,
   GetPromptResultSchema,
-  ListResourcesRequest,
   ListResourcesResult,
-  ListResourcesResultSchema,
-  ListResourceTemplatesRequest,
   ListResourceTemplatesResult,
-  ListResourceTemplatesResultSchema,
   ReadResourceRequest,
   ReadResourceResult,
   ReadResourceResultSchema,
+  type Tool,
+  type Prompt,
+  type Resource,
+  type ResourceTemplate,
   type Implementation,
 } from '@modelcontextprotocol/sdk/types.js';
 import { StorageOAuthClientProvider, type AgentsOAuthProvider } from './storage-oauth-provider.js';
@@ -120,6 +117,15 @@ export class MCPClient {
   public readonly onObservabilityEvent = this._onObservabilityEvent.event;
 
   private currentState: McpConnectionState = 'DISCONNECTED';
+
+  private _capabilityErrorHandler<T>(empty: T, _methodName?: string): (error: unknown) => T {
+    return (error: unknown): T => {
+      if (error instanceof McpError && error.code === -32601) {
+        return empty;
+      }
+      throw error;
+    };
+  }
 
   /**
    * Creates a new MCP client instance
@@ -495,7 +501,7 @@ export class MCPClient {
    * Connects to the MCP server.
    *
    * Automatically validates and refreshes OAuth tokens if needed.
-   * Saves the session to Redis on first successful connection.
+   * Saves the session on first successful connection.
    *
    * The in-memory tools cache (`cachedTools`) is cleared at the start of every
    * call so that a reconnection always fetches a fresh tool list from the remote
@@ -636,7 +642,7 @@ export class MCPClient {
   /**
    * Completes OAuth authorization flow by exchanging authorization code for tokens
    * Creates new authenticated client and transport, then establishes connection
-   * Saves active session to Redis after successful authentication
+   * Saves active session after successful authentication
    * @param authCode - Authorization code received from OAuth callback
    */
 
@@ -780,7 +786,7 @@ export class MCPClient {
    * reconnect always retrieves a fresh list, and also in `dispose()` to release
    * the memory when the client is no longer needed.
    */
-  private cachedTools: ListToolsResult | null = null;
+  private cachedTools: Tool[] | null = null;
 
   /**
    * Lists all available tools from the connected MCP server without emitting
@@ -791,23 +797,71 @@ export class MCPClient {
    * Gateways use this to apply a tool-access policy before publishing the
    * filtered list to agents or UI state.
    *
-   * @returns The full `ListToolsResult` from the remote server.
+   * @returns The full list of tools from the remote server (cached after first call).
    * @throws {Error} When the client is not connected or the request times out.
    */
-  async fetchTools(): Promise<ListToolsResult> {
+  async fetchTools(): Promise<Tool[]> {
     if (this.cachedTools) {
       return this.cachedTools;
     }
-    const request: ListToolsRequest = {
-      method: 'tools/list',
-      params: {},
-    };
 
-    const result = await this.withRetry(() =>
-      this.client!.request(request, ListToolsResultSchema)
-    );
-    this.cachedTools = result;
-    return result;
+    let toolsAgg: Tool[] = [];
+    let toolsResult: ListToolsResult = { tools: [] };
+    do {
+      toolsResult = await this.withRetry(() =>
+        this.client!.listTools({ cursor: toolsResult.nextCursor }).catch(
+          this._capabilityErrorHandler({ tools: [] }, 'tools/list')
+        )
+      );
+      toolsAgg = toolsAgg.concat(toolsResult.tools);
+    } while (toolsResult.nextCursor);
+
+    this.cachedTools = toolsAgg;
+    return toolsAgg;
+  }
+
+  async fetchPrompts(): Promise<Prompt[]> {
+    let promptsAgg: Prompt[] = [];
+    let promptsResult: ListPromptsResult = { prompts: [] };
+    do {
+      promptsResult = await this.withRetry(() =>
+        this.client!.listPrompts({ cursor: promptsResult.nextCursor }).catch(
+          this._capabilityErrorHandler({ prompts: [] }, 'prompts/list')
+        )
+      );
+      promptsAgg = promptsAgg.concat(promptsResult.prompts);
+    } while (promptsResult.nextCursor);
+    return promptsAgg;
+  }
+
+  async fetchResources(): Promise<Resource[]> {
+    let resourcesAgg: Resource[] = [];
+    let resourcesResult: ListResourcesResult = { resources: [] };
+    do {
+      resourcesResult = await this.withRetry(() =>
+        this.client!.listResources({ cursor: resourcesResult.nextCursor }).catch(
+          this._capabilityErrorHandler({ resources: [] }, 'resources/list')
+        )
+      );
+      resourcesAgg = resourcesAgg.concat(resourcesResult.resources);
+    } while (resourcesResult.nextCursor);
+    return resourcesAgg;
+  }
+
+  async fetchResourceTemplates(): Promise<ResourceTemplate[]> {
+    let templatesAgg: ResourceTemplate[] = [];
+    let templatesResult: ListResourceTemplatesResult = {
+      resourceTemplates: [],
+    };
+    do {
+      templatesResult = await this.withRetry(() =>
+        this.client!.listResourceTemplates({ cursor: templatesResult.nextCursor }).catch(
+          this._capabilityErrorHandler({ resourceTemplates: [] }, 'resources/templates/list')
+        )
+      );
+      templatesAgg = templatesAgg.concat(templatesResult.resourceTemplates);
+    } while (templatesResult.nextCursor);
+    return templatesAgg;
   }
 
   /**
@@ -819,23 +873,12 @@ export class MCPClient {
     this.emitStateChange('DISCOVERING');
 
     try {
-      const result = await this.fetchTools();
-
-      if (this.config.serverId) {
-        this._onConnectionEvent.fire({
-          type: 'tools_discovered',
-          sessionId: this.config.sessionId,
-          serverId: this.config.serverId,
-          toolCount: result.tools.length,
-          tools: result.tools,
-          timestamp: Date.now(),
-        });
-      }
+      const tools = await this.fetchTools();
 
       this.emitStateChange('READY');
-      this.emitProgress(`Discovered ${result.tools.length} tools`);
+      this.emitProgress(`Discovered ${tools.length} tools`);
 
-      return result;
+      return { tools };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to list tools';
       this.emitError(errorMessage, 'validation');
@@ -907,25 +950,18 @@ export class MCPClient {
   /**
    * Lists all available prompts from the connected MCP server
    * @returns List of available prompts
-   * @throws {Error} When client is not connected
+   * @throws Error when client is not connected
    */
   async listPrompts(): Promise<ListPromptsResult> {
     this.emitStateChange('DISCOVERING');
 
     try {
-      const request: ListPromptsRequest = {
-        method: 'prompts/list',
-        params: {},
-      };
-
-      const result = await this.withRetry(() =>
-        this.client!.request(request, ListPromptsResultSchema)
-      );
+      const prompts = await this.fetchPrompts();
 
       this.emitStateChange('READY');
-      this.emitProgress(`Discovered ${result.prompts.length} prompts`);
+      this.emitProgress(`Discovered ${prompts.length} prompts`);
 
-      return result;
+      return { prompts };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to list prompts';
       this.emitError(errorMessage, 'validation');
@@ -959,25 +995,18 @@ export class MCPClient {
   /**
    * Lists all available resources from the connected MCP server
    * @returns List of available resources
-   * @throws {Error} When client is not connected
+   * @throws Error when client is not connected
    */
   async listResources(): Promise<ListResourcesResult> {
     this.emitStateChange('DISCOVERING');
 
     try {
-      const request: ListResourcesRequest = {
-        method: 'resources/list',
-        params: {},
-      };
-
-      const result = await this.withRetry(() =>
-        this.client!.request(request, ListResourcesResultSchema)
-      );
+      const resources = await this.fetchResources();
 
       this.emitStateChange('READY');
-      this.emitProgress(`Discovered ${result.resources.length} resources`);
+      this.emitProgress(`Discovered ${resources.length} resources`);
 
-      return result;
+      return { resources };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to list resources';
       this.emitError(errorMessage, 'validation');
@@ -989,31 +1018,63 @@ export class MCPClient {
   /**
    * Lists all available resource templates from the connected MCP server
    * @returns List of available resource templates
-   * @throws {Error} When client is not connected
+   * @throws Error when client is not connected
    */
   async listResourceTemplates(): Promise<ListResourceTemplatesResult> {
     this.emitStateChange('DISCOVERING');
 
     try {
-      const request: ListResourceTemplatesRequest = {
-        method: 'resources/templates/list',
-        params: {},
-      };
-
-      const result = await this.withRetry(() =>
-        this.client!.request(request, ListResourceTemplatesResultSchema)
-      );
+      const templates = await this.fetchResourceTemplates();
 
       this.emitStateChange('READY');
-      this.emitProgress(`Discovered ${result.resourceTemplates.length} resource templates`);
+      this.emitProgress(`Discovered ${templates.length} resource templates`);
 
-      return result;
+      return { resourceTemplates: templates };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to list resource templates';
       this.emitError(errorMessage, 'validation');
       this.emitStateChange('FAILED');
       throw error;
     }
+  }
+
+  /**
+   * Discovers all server capabilities (tools, prompts, resources, resource templates)
+   * in a single batch operation.
+   *
+   * Uses the server's `initialize` response to only fetch advertised capabilities.
+   * For resumed sessions (no cached capabilities), probes all endpoints.
+   * Handles `-32601` (Method not found) gracefully per-endpoint — missing
+   * capabilities return empty arrays instead of throwing.
+   *
+   * Does NOT emit state transitions — the caller is responsible for managing
+   * DISCOVERING → READY/FAILED state.
+   *
+   * @returns All discovered capabilities
+   */
+  async discoverCapabilities(): Promise<{
+    tools: Tool[];
+    prompts: Prompt[];
+    resources: Resource[];
+    resourceTemplates: ResourceTemplate[];
+  }> {
+    const caps = this.client.getServerCapabilities();
+    const shouldProbe = !caps;
+
+    const [tools, prompts, resources, resourceTemplates] = await Promise.all([
+      this.fetchTools(),
+      (caps?.prompts || shouldProbe)
+        ? this.fetchPrompts()
+        : Promise.resolve([] as Prompt[]),
+      (caps?.resources || shouldProbe)
+        ? this.fetchResources()
+        : Promise.resolve([] as Resource[]),
+      (caps?.resources || shouldProbe)
+        ? this.fetchResourceTemplates()
+        : Promise.resolve([] as ResourceTemplate[]),
+    ]);
+
+    return { tools, prompts, resources, resourceTemplates };
   }
 
   /**
@@ -1061,7 +1122,7 @@ export class MCPClient {
   }
 
   /**
-   * Reconnects to MCP server using existing OAuth provider from Redis
+   * Reconnects to MCP server using existing OAuth provider from session store
    * Used for session restoration in serverless environments
    * Creates new client and transport without re-initializing OAuth provider
    * @throws {Error} When OAuth provider is not initialized
@@ -1073,7 +1134,7 @@ export class MCPClient {
   }
 
   /**
-   * Completely removes the session from Redis including all OAuth data
+   * Completely removes the session including all OAuth data
    * Invalidates credentials and disconnects the client
    */
   async clearSession(): Promise<void> {
@@ -1110,7 +1171,7 @@ export class MCPClient {
 
   /**
    * Disconnects from the MCP server and cleans up resources.
-   * Does not remove session from Redis — use clearSession() for that.
+   * Does not remove session — use clearSession() for that.
    *
    * For Streamable HTTP sessions, sends an HTTP DELETE to the MCP endpoint
    * before closing, as recommended by the MCP Streamable HTTP spec

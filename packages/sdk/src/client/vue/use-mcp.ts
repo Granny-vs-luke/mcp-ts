@@ -85,6 +85,9 @@ export interface McpConnection {
     state: McpConnectionState;
     tools: ToolInfo[];
     allTools?: ToolInfo[];
+    prompts?: any[];
+    resources?: any[];
+    resourceTemplates?: any[];
     authUrl?: string;
     error?: string;
     createdAt?: Date;
@@ -292,10 +295,19 @@ export function useMcp(options: UseMcpOptions): McpClient {
                 break;
             }
 
-            case 'tools_discovered': {
+            case 'capabilities_discovered': {
                 const index = connections.value.findIndex((c) => c.sessionId === event.sessionId);
                 if (index !== -1) {
-                    connections.value[index] = { ...connections.value[index], tools: event.tools, allTools: (event as any).allTools, state: 'READY', updatedAt: new Date() };
+                    connections.value[index] = {
+                        ...connections.value[index],
+                        tools: event.tools,
+                        allTools: (event as any).allTools,
+                        prompts: (event as any).prompts,
+                        resources: (event as any).resources,
+                        resourceTemplates: (event as any).resourceTemplates,
+                        state: 'READY',
+                        updatedAt: new Date(),
+                    };
                 }
                 break;
             }

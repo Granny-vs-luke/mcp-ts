@@ -1,14 +1,12 @@
 /**
- * Tests for the `allTools` field added to the `tools_discovered` SSE event.
+ * Tests for the policy-filtered tool list in RPC responses.
  *
  * Changes covered:
- * - `listPolicyFilteredTools` emits `allTools` (full list) alongside the
- *   policy-filtered `tools` list in the `tools_discovered` event.
- * - `setToolPolicy` also emits `allTools` in the follow-up event so the
- *   management UI can immediately render correct checkboxes without an RPC.
+ * - `listTools` RPC returns policy-filtered tools directly.
+ * - `setToolPolicy` RPC returns updated filtered tools + allTools for UI.
  * - `allTools` contains ALL remote tools regardless of policy.
  * - `tools` contains only the policy-permitted subset.
- * - The two lists are emitted together in a single event (no second event).
+ * - `ToolPolicyGateway.listAllTools()` bypasses policy.
  */
 
 import { test, expect } from '@playwright/test';
@@ -46,7 +44,7 @@ function fakeClient(overrides: Record<string, unknown> = {}) {
     getServerId: () => 'fs-server',
     getServerName: () => 'Filesystem',
     getServerUrl: () => 'https://example.com/mcp',
-    fetchTools: async () => ({ tools: ALL_REMOTE_TOOLS }),
+    fetchTools: async () => ALL_REMOTE_TOOLS,
     listTools: async () => ({ tools: ALL_REMOTE_TOOLS }),
     callTool: async () => ({ content: [{ type: 'text', text: 'ok' }] }),
     disconnect: async () => {},
@@ -54,12 +52,12 @@ function fakeClient(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test.describe('tools_discovered event — allTools field', () => {
+test.describe('policy-filtered tool lists', () => {
   test.afterEach(() => {
     _setStorageInstanceForTesting(null);
   });
 
-  test('listTools RPC emits tools_discovered with allTools containing the full tool list', async () => {
+  test('listTools RPC returns policy-filtered tools (denied tool excluded)', async () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
     await storage.create(activeSession({
@@ -70,49 +68,37 @@ test.describe('tools_discovered event — allTools field', () => {
       },
     }) as any);
 
-    const emittedEvents: any[] = [];
     const manager = new SSEConnectionManager(
       { userId: 'alltools-user' },
-      (event) => emittedEvents.push(event),
+      () => {},
     );
     (manager as any).clients.set('alltools-session', fakeClient());
 
-    await manager.handleRequest({
+    const result = await manager.handleRequest({
       id: 'list',
       method: 'listTools',
       params: { sessionId: 'alltools-session' },
     } as any);
 
-    const discovery = emittedEvents.find((e) => e.type === 'tools_discovered');
-    expect(discovery).toBeDefined();
-
-    // `tools` must be the policy-filtered list (delete_file blocked)
-    expect(discovery.tools.map((t: any) => t.name)).toEqual(['read_file', 'write_file']);
-
-    // `allTools` must contain ALL three tools regardless of policy
-    expect(discovery.allTools).toBeDefined();
-    expect(discovery.allTools.map((t: any) => t.name)).toEqual(
-      ['read_file', 'write_file', 'delete_file']
-    );
+    expect(result.tools.map((t: any) => t.name)).toEqual(['read_file', 'write_file']);
 
     await manager.dispose();
   });
 
-  test('setToolPolicy emits tools_discovered with allTools after policy update', async () => {
+  test('setToolPolicy RPC returns filtered tools after policy update', async () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
     // Start with no policy (all tools allowed)
     await storage.create(activeSession() as any);
 
-    const emittedEvents: any[] = [];
     const manager = new SSEConnectionManager(
       { userId: 'alltools-user' },
-      (event) => emittedEvents.push(event),
+      () => {},
     );
     (manager as any).clients.set('alltools-session', fakeClient());
 
     // Update policy to only allow read_file
-    await manager.handleRequest({
+    const result = await manager.handleRequest({
       id: 'set-policy',
       method: 'setToolPolicy',
       params: {
@@ -121,53 +107,38 @@ test.describe('tools_discovered event — allTools field', () => {
       },
     } as any);
 
-    const discovery = emittedEvents.find((e) => e.type === 'tools_discovered');
-    expect(discovery).toBeDefined();
+    expect(result.success).toBe(true);
+    expect(result.tools.map((t: any) => t.name)).toEqual(['read_file']);
 
-    // `tools` must only contain allowed tools
-    expect(discovery.tools.map((t: any) => t.name)).toEqual(['read_file']);
+    await manager.dispose();
+  });
 
-    // `allTools` must still contain all three (for the UI to render blocked tools)
-    expect(discovery.allTools).toBeDefined();
-    expect(discovery.allTools.map((t: any) => t.name)).toEqual(
+  test('listTools returns all tools when policy mode is "all"', async () => {
+    const storage = new MemoryStorageBackend();
+    _setStorageInstanceForTesting(storage);
+    // No policy — all tools allowed
+    await storage.create(activeSession() as any);
+
+    const manager = new SSEConnectionManager(
+      { userId: 'alltools-user' },
+      () => {},
+    );
+    (manager as any).clients.set('alltools-session', fakeClient());
+
+    const result = await manager.handleRequest({
+      id: 'list-all',
+      method: 'listTools',
+      params: { sessionId: 'alltools-session' },
+    } as any);
+
+    expect(result.tools.map((t: any) => t.name)).toEqual(
       ['read_file', 'write_file', 'delete_file']
     );
 
     await manager.dispose();
   });
 
-  test('tools and allTools are the same when policy mode is "all"', async () => {
-    const storage = new MemoryStorageBackend();
-    _setStorageInstanceForTesting(storage);
-    // No policy — all tools allowed
-    await storage.create(activeSession() as any);
-
-    const emittedEvents: any[] = [];
-    const manager = new SSEConnectionManager(
-      { userId: 'alltools-user' },
-      (event) => emittedEvents.push(event),
-    );
-    (manager as any).clients.set('alltools-session', fakeClient());
-
-    await manager.handleRequest({
-      id: 'list-all',
-      method: 'listTools',
-      params: { sessionId: 'alltools-session' },
-    } as any);
-
-    const discovery = emittedEvents.find((e) => e.type === 'tools_discovered');
-    expect(discovery).toBeDefined();
-
-    const toolNames = discovery.tools.map((t: any) => t.name);
-    const allToolNames = discovery.allTools.map((t: any) => t.name);
-
-    expect(toolNames).toEqual(['read_file', 'write_file', 'delete_file']);
-    expect(allToolNames).toEqual(toolNames);
-
-    await manager.dispose();
-  });
-
-  test('only one tools_discovered event is emitted per listTools call', async () => {
+  test('capabilities_discovered event includes all capabilities', async () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
     await storage.create(activeSession() as any);
@@ -177,16 +148,27 @@ test.describe('tools_discovered event — allTools field', () => {
       { userId: 'alltools-user' },
       (event) => emittedEvents.push(event),
     );
-    (manager as any).clients.set('alltools-session', fakeClient());
 
-    await manager.handleRequest({
-      id: 'list-once',
-      method: 'listTools',
-      params: { sessionId: 'alltools-session' },
-    } as any);
+    const client = fakeClient() as any;
+    client.discoverCapabilities = async () => ({
+      tools: ALL_REMOTE_TOOLS,
+      prompts: [{ name: 'greet', arguments: [] }],
+      resources: [{ uri: 'file:///readme', name: 'README' }],
+      resourceTemplates: [{ uriTemplate: 'file:///{path}', name: 'File' }],
+    });
+    (manager as any).clients.set('alltools-session', client);
 
-    const discoveryEvents = emittedEvents.filter((e) => e.type === 'tools_discovered');
-    expect(discoveryEvents).toHaveLength(1);
+    await (manager as any).discoverAllCapabilities('alltools-session', 'fs-server');
+
+    const event = emittedEvents.find((e) => e.type === 'capabilities_discovered');
+    expect(event).toBeDefined();
+    expect(event.tools.map((t: any) => t.name)).toEqual(
+      ['read_file', 'write_file', 'delete_file']
+    );
+    expect(event.prompts).toHaveLength(1);
+    expect(event.resources).toHaveLength(1);
+    expect(event.resourceTemplates).toHaveLength(1);
+    expect(event.serverId).toBe('fs-server');
 
     await manager.dispose();
   });

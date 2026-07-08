@@ -26,7 +26,7 @@ type McpConnectionState =
 
 type McpConnectionEvent =
   | { type: 'state_changed'; sessionId: string; state: McpConnectionState; /* ... */ }
-  | { type: 'tools_discovered'; sessionId: string; tools: Tool[]; /* ... */ }
+  | { type: 'capabilities_discovered'; sessionId: string; serverId: string; tools: ToolInfo[]; allTools: ToolInfo[]; prompts: Prompt[]; resources: Resource[]; resourceTemplates: ResourceTemplate[]; timestamp: number; }
   | { type: 'auth_required'; sessionId: string; authUrl: string; /* ... */ }
   | { type: 'error'; sessionId: string; error: string; /* ... */ }
   | { type: 'disconnected'; sessionId: string; reason?: string; /* ... */ }

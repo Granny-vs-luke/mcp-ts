@@ -90,6 +90,10 @@ export interface McpConnection {
   transport?: string;
   state: McpConnectionState;
   tools: ToolInfo[];
+  allTools?: any[];
+  prompts?: any[];
+  resources?: any[];
+  resourceTemplates?: any[];
   authUrl?: string;
   error?: string;
   createdAt?: Date;
@@ -362,17 +366,6 @@ export function useMcp(options: UseMcpOptions): McpClient {
           }
         }
 
-        case 'tools_discovered': {
-          // Preload UI resources for instant loading when tools are discovered
-          if (clientRef.current && event.tools?.length) {
-            clientRef.current.preloadToolUiResources(event.sessionId, event.tools);
-          }
-
-          return prev.map((c: McpConnection) =>
-            c.sessionId === event.sessionId ? { ...c, tools: event.tools, allTools: (event as any).allTools, state: 'READY', updatedAt: new Date() } : c
-          );
-        }
-
         case 'auth_required': {
           const url = (event.authUrl || '').trim();
           if (!url) {
@@ -406,6 +399,27 @@ export function useMcp(options: UseMcpOptions): McpClient {
         case 'error': {
           return prev.map((c: McpConnection) =>
             c.sessionId === event.sessionId ? { ...c, state: 'FAILED', error: event.error } : c
+          );
+        }
+
+        case 'capabilities_discovered': {
+          if (clientRef.current && event.tools?.length) {
+            clientRef.current.preloadToolUiResources(event.sessionId, event.tools);
+          }
+
+          return prev.map((c: McpConnection) =>
+            c.sessionId === event.sessionId
+              ? {
+                  ...c,
+                  tools: event.tools,
+                  allTools: (event as any).allTools,
+                  prompts: (event as any).prompts,
+                  resources: (event as any).resources,
+                  resourceTemplates: (event as any).resourceTemplates,
+                  state: 'READY' as const,
+                  updatedAt: new Date(),
+                }
+              : c
           );
         }
 

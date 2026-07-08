@@ -10,7 +10,7 @@ import { assertToolAllowed, filterToolsByPolicy } from '../storage/tool-policy.j
  * methods so the gateway can fetch unfiltered results and apply policy on top.
  */
 type RawToolClient = ToolClient & {
-    fetchTools(): Promise<{ tools: Tool[] }>;
+    fetchTools(): Promise<Tool[]>;
     listTools(): Promise<{ tools: Tool[] }>;
     callTool(name: string, args: Record<string, unknown>): Promise<CallToolResult>;
     getServerInfo?(): Implementation | undefined;
@@ -90,13 +90,10 @@ export class ToolPolicyGateway implements ToolClient {
      */
     async listTools(): Promise<ListToolsResult> {
         const session = await this.getSession();
-        const result = await this.client.fetchTools();
-        const tools = this.filterTools(session, result.tools);
+        const allTools = await this.client.fetchTools();
+        const tools = this.filterTools(session, allTools);
 
-        return {
-            ...result,
-            tools,
-        } as ListToolsResult;
+        return { tools } as ListToolsResult;
     }
 
     /**
@@ -109,7 +106,8 @@ export class ToolPolicyGateway implements ToolClient {
      * @returns The raw `ListToolsResult` from the remote server.
      */
     async listAllTools(): Promise<ListToolsResult> {
-        return await this.client.fetchTools() as ListToolsResult;
+        const tools = await this.client.fetchTools();
+        return { tools };
     }
 
     /**

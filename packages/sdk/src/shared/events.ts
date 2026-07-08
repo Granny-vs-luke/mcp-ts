@@ -93,15 +93,6 @@ export type McpConnectionEvent =
     timestamp: number;
   }
   | {
-    type: 'tools_discovered';
-    sessionId: string;
-    serverId: string;
-    toolCount: number;
-    tools: any[];
-    allTools?: any[];
-    timestamp: number;
-  }
-  | {
     type: 'auth_required';
     sessionId: string;
     serverId: string;
@@ -127,6 +118,17 @@ export type McpConnectionEvent =
     sessionId: string;
     serverId: string;
     message: string;
+    timestamp: number;
+  }
+  | {
+    type: 'capabilities_discovered';
+    sessionId: string;
+    serverId: string;
+    tools: any[];
+    allTools?: any[];
+    prompts: any[];
+    resources: any[];
+    resourceTemplates: any[];
     timestamp: number;
   };
 

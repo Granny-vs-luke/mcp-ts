@@ -1,5 +1,5 @@
 /**
- * MCP Redis Client Package - Vue.js
+ * MCP TS Client Package - Vue.js
  * Vue.js client-side exports for MCP connection management
  */
 

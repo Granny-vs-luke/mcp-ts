@@ -16,7 +16,7 @@ export function isConnectionEvent(
 
   switch (event.type) {
     case 'state_changed':
-    case 'tools_discovered':
+    case 'capabilities_discovered':
     case 'auth_required':
     case 'error':
     case 'disconnected':

@@ -21,7 +21,7 @@ import { formatOAuthState, parseOAuthState } from '../../shared/utils.js';
 
 /**
  * Context stored in AsyncLocalStorage for callback-time code verifier resolution.
- * Stores the raw verifier and method directly, matching Cloudflare's DurableObjectOAuthClientProvider.
+ * Stores the raw verifier and method directly.
  * This avoids a DB read in codeVerifier() — the verifier is loaded once by the caller
  * (from session.credentials after get({includeCredentials: true})) and propagated through ALS.
  */

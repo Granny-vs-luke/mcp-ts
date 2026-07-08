@@ -1,5 +1,5 @@
 /**
- * MCP Redis Shared Package
+ * MCP TS Shared Package
  * Shared types and utilities for both server and client
  */
 

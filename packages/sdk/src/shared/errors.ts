@@ -1,5 +1,5 @@
 /**
- * Standardized error classes for MCP Redis library
+ * Standardized error classes for MCP TS library
  * Provides consistent error handling across the codebase
  */
 

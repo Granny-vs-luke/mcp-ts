@@ -183,6 +183,7 @@ export class SSEConnectionManager {
 
   /** Active MCP transports keyed by sessionId. */
   private readonly clients = new Map<string, MCPClient>();
+  private readonly pendingClients = new Map<string, Promise<MCPClient>>();
 
   /** Instrumented session store — always wraps `sessions` with DB observability. */
   private readonly observedStore: SessionStore;
@@ -369,8 +370,8 @@ export class SSEConnectionManager {
       await client.connect();
       this.clients.set(params.sessionId, client);
 
-      const { result } = await this.listPolicyFilteredTools(params.sessionId);
-      return { success: true, toolCount: result.tools.length };
+      const { toolCount } = await this.discoverAllCapabilities(params.sessionId, session.serverId ?? 'unknown');
+      return { success: true, toolCount };
     } catch (error) {
       this.sendEvent(connectionErrorEvent(params.sessionId, session.serverId, error, 'validation'));
       throw error;
@@ -533,8 +534,8 @@ export class SSEConnectionManager {
 
       this.clients.set(sessionId, client);
 
-      const { result } = await this.listPolicyFilteredTools(sessionId);
-      return { success: true, toolCount: result.tools.length };
+      const { toolCount } = await this.discoverAllCapabilities(sessionId, session.serverId ?? 'unknown');
+      return { success: true, toolCount };
     } catch (error) {
       this.sendEvent(connectionErrorEvent(sessionId, session.serverId, error, 'auth'));
       throw error;
@@ -544,54 +545,6 @@ export class SSEConnectionManager {
   // -----------------------------------------------------------------------
   // Tool Discovery & Policy
   // -----------------------------------------------------------------------
-
-  /**
-   * Fetches the complete tool list from the remote MCP server and emits a
-   * `tools_discovered` SSE event with two lists:
-   *
-   * - `tools`     — policy-filtered (what agents are allowed to call)
-   * - `allTools`  — complete, unfiltered (used by the management UI)
-   *
-   * Only a single network round-trip is made: `fetchTools()` populates the
-   * in-memory cache, then `gateway.listTools()` reuses that cache.
-   *
-   * @param sessionId - The session to discover tools for.
-   * @returns The session record and the filtered tool result.
-   * @throws {Error} If the session does not exist in storage.
-   */
-  private async listPolicyFilteredTools(
-    sessionId: string,
-  ): Promise<{ session: Session; result: ListToolsRpcResult }> {
-    const session = await this.requireSession(sessionId);
-    const client  = await this.getOrCreateClient(sessionId);
-
-    const allTools = await client.fetchTools().catch(() => ({ tools: [] as any[] }));
-    const gateway  = createToolPolicyGateway(this.userId, sessionId, client);
-    const result   = await gateway.listTools();
-
-    this.sendEvent({
-      type:       'tools_discovered',
-      sessionId,
-      serverId:   session.serverId ?? 'unknown',
-      toolCount:  result.tools.length,
-      tools:      result.tools,
-      allTools:   allTools.tools,
-      timestamp:  Date.now(),
-    });
-
-    return { session, result };
-  }
-
-  /**
-   * Returns the policy-filtered tool list for a session.
-   *
-   * Delegates to {@link listPolicyFilteredTools}, which also emits a
-   * `tools_discovered` SSE event to keep the client state current.
-   */
-  private async listTools(params: SessionParams): Promise<ListToolsRpcResult> {
-    const { result } = await this.listPolicyFilteredTools(params.sessionId);
-    return { tools: result.tools };
-  }
 
   /**
    * Returns all raw tools annotated with their effective policy state
@@ -611,7 +564,7 @@ export class SSEConnectionManager {
     };
 
     const serverId = session.serverId ?? 'unknown';
-    const tools = allTools.tools.map((t) => ({
+    const tools = allTools.map((t) => ({
       ...t,
       toolId:  createToolId(serverId, t.name),
       allowed: isToolAllowed(policy, t.name, session.serverId),
@@ -626,8 +579,18 @@ export class SSEConnectionManager {
   }
 
   /**
-   * Persists a new tool access policy and broadcasts the updated filtered
-   * tool list via a `tools_discovered` SSE event.
+   * Returns the policy-filtered tool list for a session.
+   */
+  private async listTools(params: SessionParams): Promise<ListToolsRpcResult> {
+    const client = await this.getOrCreateClient(params.sessionId);
+    const gateway = createToolPolicyGateway(this.userId, params.sessionId, client);
+    const result = await gateway.listTools();
+    return { tools: result.tools };
+  }
+
+  /**
+   * Persists a new tool access policy and returns the updated filtered
+   * tool list in the RPC response.
    *
    * @throws {Error} If the session does not exist or the policy references
    *                 tool IDs that don't match any known tool.
@@ -640,22 +603,12 @@ export class SSEConnectionManager {
     const allTools = await client.fetchTools();
 
     const policy = normalizeToolPolicyForUpdate(params.toolPolicy);
-    validateToolPolicyAgainstTools(policy, allTools.tools, session.serverId);
+    validateToolPolicyAgainstTools(policy, allTools, session.serverId);
     await sessions.update(this.userId, params.sessionId, { toolPolicy: policy });
 
     const filtered = createToolPolicyGateway(
       this.userId, params.sessionId, client,
-    ).filterTools({ ...session, toolPolicy: policy }, allTools.tools);
-
-    this.sendEvent({
-      type:       'tools_discovered',
-      sessionId:   params.sessionId,
-      serverId:    session.serverId ?? 'unknown',
-      toolCount:   filtered.length,
-      tools:       filtered,
-      allTools:    allTools.tools,
-      timestamp:   Date.now(),
-    });
+    ).filterTools({ ...session, toolPolicy: policy }, allTools);
 
     return { success: true, toolPolicy: policy, tools: filtered, toolCount: filtered.length };
   }
@@ -783,6 +736,22 @@ export class SSEConnectionManager {
     const existing = this.clients.get(sessionId);
     if (existing) return existing;
 
+    const pending = this.pendingClients.get(sessionId);
+    if (pending) return pending;
+
+    const promise = this.createClient(sessionId);
+    this.pendingClients.set(sessionId, promise);
+
+    try {
+      const client = await promise;
+      this.clients.set(sessionId, client);
+      return client;
+    } finally {
+      this.pendingClients.delete(sessionId);
+    }
+  }
+
+  private async createClient(sessionId: string): Promise<MCPClient> {
     const session = await this.requireSession(sessionId);
 
     if (session.enabled === false) {
@@ -793,7 +762,6 @@ export class SSEConnectionManager {
     this.attachClientEvents(client);
 
     await client.connect();
-    this.clients.set(sessionId, client);
     return client;
   }
 
@@ -862,7 +830,7 @@ export class SSEConnectionManager {
   ): Promise<ConnectResult> {
     try {
       await client.connect();
-      await this.listPolicyFilteredTools(sessionId);
+      await this.discoverAllCapabilities(sessionId, serverId);
       return { sessionId, success: true };
     } catch (error) {
       if (error instanceof UnauthorizedError) {
@@ -874,6 +842,40 @@ export class SSEConnectionManager {
       this.clients.delete(sessionId);
       throw error;
     }
+  }
+
+  /**
+   * Discovers all capabilities (tools, prompts, resources, resource templates)
+   * from the remote MCP server and emits a single `capabilities_discovered` event.
+   *
+   * Tools are passed through the tool-policy gateway so the emitted list
+   * respects the session's allow/deny policy.
+   */
+  private async discoverAllCapabilities(
+    sessionId: string,
+    serverId: string,
+  ): Promise<{ toolCount: number }> {
+    const client = this.clients.get(sessionId);
+    if (!client) return { toolCount: 0 };
+
+    const rawCaps = await client.discoverCapabilities();
+
+    const gateway = createToolPolicyGateway(this.userId, sessionId, client);
+    const filteredResult = await gateway.listTools();
+
+    this.sendEvent({
+      type: 'capabilities_discovered',
+      sessionId,
+      serverId,
+      tools: filteredResult.tools,
+      allTools: rawCaps.tools,
+      prompts: rawCaps.prompts,
+      resources: rawCaps.resources,
+      resourceTemplates: rawCaps.resourceTemplates,
+      timestamp: Date.now(),
+    });
+
+    return { toolCount: filteredResult.tools.length };
   }
 
   /** Starts the periodic heartbeat timer. */

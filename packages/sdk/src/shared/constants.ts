@@ -1,5 +1,5 @@
 /**
- * Centralized constants for MCP Redis library
+ * Centralized constants for MCP TS library
  * Eliminates magic numbers and enables consistent configuration
  */
 
@@ -21,7 +21,7 @@ export const DEFAULT_CLIENT_URI = 'https://mcp-assistant.in';
 export const DEFAULT_LOGO_URI = 'https://mcp-assistant.in/logo.svg';
 export const DEFAULT_POLICY_URI = 'https://mcp-assistant.in/privacy';
 export const SOFTWARE_ID = '@mcp-ts';
-export const SOFTWARE_VERSION = '2.3.4';
+export const SOFTWARE_VERSION = '2.6.2';
 
 // MCP Client Configuration
 export const MCP_CLIENT_NAME = 'mcp-ts-oauth-client';

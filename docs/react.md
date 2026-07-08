@@ -201,8 +201,8 @@ const { connections } = useMcp({
         console.log('State:', event.state);
         break;
 
-      case 'tools_discovered':
-        console.log('Tools:', event.tools);
+      case 'capabilities_discovered':
+        console.log('Tools, prompts, resources:', event.tools, event.prompts, event.resources);
         break;
 
       case 'auth_required':
