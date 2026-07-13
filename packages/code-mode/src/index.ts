@@ -1,5 +1,7 @@
 // Runtime
 export { createCodeModeRuntime, IsolatedVmCodeModeRuntime } from "./runtime/runtime.js";
+// Error types and classification
+export { CodemodeError, classifyError } from "./runtime/errors.js";
 
 // Servers
 export { mcpServer, mcpServers, normalizeMcpToolResult } from "./sources/index.js";
@@ -9,6 +11,7 @@ export { createCodemodeAITools } from "./adapters/ai-sdk.js";
 // Types
 export type {
   CodeModeError,
+  CodeModeErrorCode,
   CodeModeLimits,
   CodeModeLogEntry,
   CodeModeResult,

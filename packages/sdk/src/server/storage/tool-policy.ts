@@ -136,7 +136,8 @@ export function isToolAllowed(policy: ToolPolicy | undefined, toolName: string, 
  */
 export function assertToolAllowed(policy: ToolPolicy | undefined, toolName: string, serverId?: string): void {
     if (isToolAllowed(policy, toolName, serverId)) return;
-    throw new Error(`Tool "${toolName}" is not allowed for this MCP session`);
+    const mode = policy?.mode === "denylist" ? "denylist" : policy?.mode === "allowlist" ? "allowlist" : "policy";
+    throw new Error(`Tool "${toolName}" was blocked by your MCP tool access policy (${mode}).`);
 }
 
 /**

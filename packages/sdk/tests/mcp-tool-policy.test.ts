@@ -104,7 +104,7 @@ test.describe('MCP session tool policy', () => {
     }) as any);
 
     await expect(gateway.callTool('create_issue', {})).rejects.toThrow(
-      'Tool "create_issue" is not allowed for this MCP session'
+      'Tool "create_issue" was blocked by your MCP tool access policy'
     );
     expect(downstreamCalls).toBe(0);
   });
@@ -197,7 +197,7 @@ test.describe('MCP session tool policy', () => {
     } as any);
 
     expect((response as any).result).toBeUndefined();
-    expect((response as any).error?.message).toBe('Tool "create_issue" is not allowed for this MCP session');
+    expect((response as any).error?.message).toBe('Tool "create_issue" was blocked by your MCP tool access policy (denylist).');
     expect(downstreamCalls).toBe(0);
 
     await manager.dispose();

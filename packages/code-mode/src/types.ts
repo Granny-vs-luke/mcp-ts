@@ -83,13 +83,19 @@ export interface CodeModeToolCall {
   error?: string;
 }
 
+export const CodeModeErrorCode = {
+  TIMEOUT: "TIMEOUT",
+  TOOL_NOT_FOUND: "TOOL_NOT_FOUND",
+  TOOL_EXECUTION_FAILED: "TOOL_EXECUTION_FAILED",
+  RESULT_TOO_LARGE: "RESULT_TOO_LARGE",
+  POLICY_DENIED: "POLICY_DENIED",
+  SANDBOX_ERROR: "SANDBOX_ERROR",
+} as const;
+
+export type CodeModeErrorCode = (typeof CodeModeErrorCode)[keyof typeof CodeModeErrorCode];
+
 export interface CodeModeError {
-  code:
-    | "SANDBOX_ERROR"
-    | "TIMEOUT"
-    | "TOOL_NOT_FOUND"
-    | "TOOL_EXECUTION_FAILED"
-    | "RESULT_TOO_LARGE";
+  code: CodeModeErrorCode;
   message: string;
 }
 

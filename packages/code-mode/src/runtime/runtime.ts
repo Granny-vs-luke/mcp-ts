@@ -9,7 +9,7 @@ import type {
   ToolSearchResult,
   ToolServer,
 } from "../types.js";
-import { classifyError } from "./errors.js";
+import { CodemodeError, classifyError } from "./errors.js";
 import { estimateJsonBytes, resolveLimits } from "./limits.js";
 import {
   indexServers,
@@ -167,7 +167,20 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
 
       try {
         const tool = resolveTool(this.indexedTools, toolName, serverId);
+
         if (!tool) {
+          const server = this.servers.get(normalizeServerId(serverId));
+          if (server) {
+            const result = await server.callTool(toolName, JSON.parse(argsJson));
+            if (isRecord(result) && result.isError === true) {
+              const errText = extractToolErrorText(result) || "MCP tool returned an error";
+              call.ok = false;
+              call.error = errText;
+              return JSON.stringify({ success: false, error: errText });
+            }
+            call.ok = true;
+            return JSON.stringify({ success: true, result });
+          }
           throw new Error(`Tool "${toolName}" was not found on server "${serverId}".`);
         }
 
@@ -328,7 +341,7 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
       // Set up timeout race
       const timeoutPromise = new Promise<string>((_, rej) => {
         timeoutHandle = setTimeout(
-          () => rej(new Error(`Script execution timeout after ${limits.timeoutMs}ms`)),
+          () => rej(CodemodeError.timeout(`Script execution timeout after ${limits.timeoutMs}ms`)),
           limits.timeoutMs,
         );
       });
@@ -343,7 +356,7 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
       const value = JSON.parse(resultJson).__result;
 
       if (estimateJsonBytes(value) > limits.maxResultBytes) {
-        throw new Error(`Result too large: maxResultBytes ${limits.maxResultBytes} exceeded.`);
+        throw CodemodeError.resultTooLarge(`Result too large: maxResultBytes ${limits.maxResultBytes} exceeded.`);
       }
 
       return {
