@@ -79,35 +79,28 @@ export class ToolPolicyGateway implements ToolClient {
     }
 
     /**
-     * Returns the **policy-filtered** list of tools that the current session
-     * is allowed to call.
+     * Returns the list of tools for the current session.
+     *
+     * By default, this returns the **complete, unfiltered** list of tools from
+     * the remote server, bypassing any tool-access policy. Pass
+     * `{ filtered: true }` to apply the session's `toolPolicy` and **exclude**
+     * tools that the policy denies.
      *
      * Internally calls `client.fetchTools()` (which is cache-backed) so no
      * extra network round-trip is incurred when called after `fetchTools()`.
      *
-     * @returns A `ListToolsResult` containing only the permitted tools.
-     * @throws {Error} When the session does not exist in the store.
+     * @param options.filtered - When `true`, apply the policy filter.
+     *                           Defaults to `false`.
+     * @returns A `ListToolsResult` containing the matching tools.
      */
-    async listTools(): Promise<ListToolsResult> {
-        const session = await this.getSession();
-        const allTools = await this.client.fetchTools();
-        const tools = this.filterTools(session, allTools);
-
-        return { tools } as ListToolsResult;
-    }
-
-    /**
-     * Returns the **complete, unfiltered** list of tools from the remote server,
-     * bypassing any tool-access policy.
-     *
-     * Used by the management UI to show all available tools (including blocked
-     * ones) so users can toggle individual tool access in the dialog.
-     *
-     * @returns The raw `ListToolsResult` from the remote server.
-     */
-    async listAllTools(): Promise<ListToolsResult> {
+    async listTools(options?: { filtered?: boolean }): Promise<ListToolsResult> {
+        if (options?.filtered) {
+            const session = await this.getSession();
+            const allTools = await this.client.fetchTools();
+            return { tools: this.filterTools(session, allTools) } as ListToolsResult;
+        }
         const tools = await this.client.fetchTools();
-        return { tools };
+        return { tools } as ListToolsResult;
     }
 
     /**

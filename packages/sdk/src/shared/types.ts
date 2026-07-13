@@ -17,7 +17,7 @@ import { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
  */
 export interface ToolClient {
   isConnected(): boolean;
-  listTools(): Promise<{ tools: Tool[] }>;
+  listTools(options?: { filtered?: boolean }): Promise<{ tools: Tool[] }>;
   callTool(name: string, args: Record<string, unknown>): Promise<any>;
   getServerId?(): string | undefined;
   getServerName?(): string | undefined;

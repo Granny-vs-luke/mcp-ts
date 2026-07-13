@@ -6,7 +6,7 @@
  * - `setToolPolicy` RPC returns updated filtered tools + allTools for UI.
  * - `allTools` contains ALL remote tools regardless of policy.
  * - `tools` contains only the policy-permitted subset.
- * - `ToolPolicyGateway.listAllTools()` bypasses policy.
+ * - `ToolPolicyGateway.listTools({ filtered: false })` bypasses policy.
  */
 
 import { test, expect } from '@playwright/test';
@@ -173,7 +173,7 @@ test.describe('policy-filtered tool lists', () => {
     await manager.dispose();
   });
 
-  test('ToolPolicyGateway listAllTools bypasses policy and returns full tool list', async () => {
+  test('ToolPolicyGateway listTools returns unfiltered by default, filtered with option', async () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
     await storage.create(activeSession({
@@ -187,12 +187,12 @@ test.describe('policy-filtered tool lists', () => {
     const { createToolPolicyGateway } = await import('../src/server/mcp/tool-policy-gateway');
     const gateway = createToolPolicyGateway('alltools-user', 'alltools-session', fakeClient() as any);
 
-    const filtered = await gateway.listTools();
-    expect(filtered.tools.map((t) => t.name)).toEqual(['read_file']); // policy applied
-
-    const all = await gateway.listAllTools();
+    const all = await gateway.listTools();
     expect(all.tools.map((t) => t.name)).toEqual(
-      ['read_file', 'write_file', 'delete_file'] // no policy applied
+      ['read_file', 'write_file', 'delete_file'] // no policy applied by default
     );
+
+    const filtered = await gateway.listTools({ filtered: true });
+    expect(filtered.tools.map((t) => t.name)).toEqual(['read_file']); // policy applied
   });
 });

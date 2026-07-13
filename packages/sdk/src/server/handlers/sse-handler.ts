@@ -584,7 +584,7 @@ export class SSEConnectionManager {
   private async listTools(params: SessionParams): Promise<ListToolsRpcResult> {
     const client = await this.getOrCreateClient(params.sessionId);
     const gateway = createToolPolicyGateway(this.userId, params.sessionId, client);
-    const result = await gateway.listTools();
+    const result = await gateway.listTools({ filtered: true });
     return { tools: result.tools };
   }
 
