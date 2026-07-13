@@ -142,13 +142,10 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
       argsJson: string,
     ): Promise<string> => {
       if (totalToolCalls >= limits.maxToolCalls) {
-        return JSON.stringify({ success: false, error: `maxToolCalls ${limits.maxToolCalls} exceeded.` });
+        return JSON.stringify({ success: true, result: { error: `maxToolCalls ${limits.maxToolCalls} exceeded.`, isError: true } });
       }
       if (activeToolCalls >= limits.maxConcurrentToolCalls) {
-        return JSON.stringify({
-          success: false,
-          error: `maxConcurrentToolCalls ${limits.maxConcurrentToolCalls} exceeded.`,
-        });
+        return JSON.stringify({ success: true, result: { error: `maxConcurrentToolCalls ${limits.maxConcurrentToolCalls} exceeded.`, isError: true } });
       }
 
       activeToolCalls += 1;
@@ -158,7 +155,7 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
         id: `call_${totalToolCalls}`,
         serverId,
         toolName,
-        args: JSON.parse(argsJson),
+        args: null as unknown as Record<string, unknown>,
         startedAt: callStartedAt,
         durationMs: 0,
         ok: false,
@@ -166,30 +163,18 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
       toolCalls.push(call);
 
       try {
-        const tool = resolveTool(this.indexedTools, toolName, serverId);
+        const args = JSON.parse(argsJson);
+        call.args = args;
 
-        if (!tool) {
-          const server = this.servers.get(normalizeServerId(serverId));
-          if (server) {
-            const result = await server.callTool(toolName, JSON.parse(argsJson));
-            if (isRecord(result) && result.isError === true) {
-              const errText = extractToolErrorText(result) || "MCP tool returned an error";
-              call.ok = false;
-              call.error = errText;
-              return JSON.stringify({ success: false, error: errText });
-            }
-            call.ok = true;
-            return JSON.stringify({ success: true, result });
-          }
-          throw new Error(`Tool "${toolName}" was not found on server "${serverId}".`);
-        }
-
-        const server = this.servers.get(tool.serverId);
+        let server = this.servers.get(normalizeServerId(serverId));
         if (!server) {
-          throw new Error(`Server "${tool.serverId}" is no longer registered.`);
+          const tool = resolveTool(this.indexedTools, toolName, serverId);
+          if (!tool) throw new Error(`Tool "${toolName}" was not found on server "${serverId}".`);
+          server = this.servers.get(tool.serverId);
+          if (!server) throw new Error(`Server "${tool.serverId}" is no longer registered.`);
         }
 
-        const result = await server.callTool(toolName, JSON.parse(argsJson));
+        const result = await server.callTool(toolName, args);
         if (isRecord(result) && result.isError === true) {
           call.ok = false;
           call.error = extractToolErrorText(result) || "MCP tool returned an error";
@@ -198,9 +183,9 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
         }
         return JSON.stringify({ success: true, result });
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        call.error = errorMsg;
-        return JSON.stringify({ success: false, error: errorMsg });
+        call.ok = false;
+        call.error = error instanceof Error ? error.message : String(error);
+        return JSON.stringify({ success: true, result: { error: call.error, isError: true } });
       } finally {
         call.durationMs = Date.now() - callStartedAt;
         activeToolCalls -= 1;
@@ -227,12 +212,12 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
     ): Promise<string> => {
       const tool = resolveTool(this.indexedTools, toolName, serverId);
       if (!tool) {
-        return JSON.stringify({ success: false, error: `Tool "${toolName}" was not found on server "${serverId}".` });
+        return JSON.stringify({ success: true, result: { error: `Tool "${toolName}" was not found on server "${serverId}".`, isError: true } });
       }
 
       const server = this.servers.get(tool.serverId);
       if (!server) {
-        return JSON.stringify({ success: false, error: `Server "${tool.serverId}" is no longer registered.` });
+        return JSON.stringify({ success: true, result: { error: `Server "${tool.serverId}" is no longer registered.`, isError: true } });
       }
 
       try {
@@ -242,7 +227,7 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
         return JSON.stringify({ success: true, result });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        return JSON.stringify({ success: false, error: errorMsg });
+        return JSON.stringify({ success: true, result: { error: errorMsg, isError: true } });
       }
     };
 
