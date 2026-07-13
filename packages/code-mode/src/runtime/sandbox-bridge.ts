@@ -172,6 +172,12 @@ export function generateNamespaceBridgeCode(
     `);
   }
 
+  // servers map: also expose via keyed access (servers["id"].tool()) for dynamic lookups
+  parts.push("globalThis.servers = globalThis.servers || {};");
+  for (const ns of namespaces) {
+    parts.push(`globalThis.servers[${JSON.stringify(ns)}] = globalThis.${ns};`);
+  }
+
   return parts.join("\n");
 }
 

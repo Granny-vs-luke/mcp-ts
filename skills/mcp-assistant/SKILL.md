@@ -67,17 +67,117 @@ Do not guess parameter names for downstream MCP tools. Inspect the schema first.
 
 Execute downstream MCP tool calls inside MCP Assistant's secure remote workbench.
 
-Use this to call one or more selected MCP tools after inspecting their schemas. Prefer batching or chaining multiple dependent tool calls inside one `codemode_run` when it avoids unnecessary agent-visible intermediate results.
+**Prefer batching all calls into a single script** — each call spins up a new sandbox, so batching reduces overhead. See patterns below.
 
-Good uses:
+#### Prerequisites
+
+Before calling `codemode_run`:
+- Use `search_mcp_tools` then `get_mcp_tool_schema` to discover valid tool names, server IDs, and argument schemas.
+- **NEVER guess tool names or argument shapes** — inspect schemas first.
+- **NEVER hardcode data values** — load everything from tool responses.
+- **ALWAYS check `.ok`** before using a tool result.
+
+#### Plan your workflow first
+
+Map out your tool calls:
+
+1. **Independent calls** — no dependency on each other → batch with `Promise.all` in one script
+2. **Dependent calls** — call B needs result from call A → chain sequentially in one script
+3. **Exploratory calls** — next step depends on inspecting intermediate results → this is the case for separate `codemode_run` calls
+
+Structure the script to cover categories 1 and 2 in a single call. Reserve separate calls for category 3 only.
+
+#### ✅ Prefer: One script, multiple calls
+
+```typescript
+// Batch independent calls with Promise.all
+const [issues, prs] = await Promise.all([
+  server1.search_issues({ q: "bug" }),
+  server2.list_pull_requests({ state: "open" }),
+]);
+
+// Chain dependent calls with sequential awaits
+const user = await server3.get_user({ email: "user@co" });
+const msg = await server3.send_message({ channel: user.id, text: "Hi" });
+
+return { issueCount: issues.length, prCount: prs.length, message: msg };
+```
+
+#### ❌ Avoid: Multiple calls for independent steps (N+1 problem)
+
+```text
+1. codemode_run({ script: "server1.search_issues(...)" })
+2. codemode_run({ script: "server2.list_pull_requests(...)" })
+3. codemode_run({ script: "server3.get_user(...)" })
+4. codemode_run({ script: "server3.send_message(...)" })
+```
+
+Each extra call adds a sandbox cold-start and wastes context. Keep independent steps in one script.
+
+#### ✅ OK to call again: Exploratory / incremental workflows
+
+When the next action genuinely depends on inspecting what the first call returned, a second `codemode_run` call is fine:
+
+```typescript
+// Call 1: discover what's relevant
+const searchResults = await server1.search({ query });
+return searchResults.map(r => ({ id: r.id, title: r.title }));
+
+// Agent inspects results, picks a URL →
+// Call 2: fetch details for the chosen URL
+const page = await server1.get_contents({ ids: [chosenId] });
+return page;
+```
+
+#### Bulk operations
+
+When processing many items, batch with a concurrency limit to avoid overwhelming the server:
+
+```typescript
+const BATCH_SIZE = 5;
+const items = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const results = [];
+for (let i = 0; i < items.length; i += BATCH_SIZE) {
+  const batch = items.slice(i, i + BATCH_SIZE);
+  const batchResults = await Promise.all(
+    batch.map(id => server1.add_label({ issue_number: id, label: "bug" }))
+  );
+  results.push(...batchResults);
+}
+return { updated: results.filter(r => r.ok).length };
+```
+
+#### Defensive parsing
+
+Always check `.ok` before using a result, and provide safe fallbacks:
+
+```typescript
+const res = await server1.search_issues({ q: "bug" });
+if (!res.ok) {
+  return { error: `Search failed: ${res.error}` };
+}
+const items = res.items ?? [];
+return { count: items.length, first: items[0] ?? null };
+```
+
+#### Response handling
+
+`codemode_run` returns `{ success, value, error, toolCalls, durationMs }`. Each `toolCall` has `{ serverId, toolName, ok, error? }`.
+
+- **Small results** — process inline and return the final answer.
+- **Large data** — summarize, filter, or paginate before returning. The sandbox enforces a result size limit.
+
+#### Timeout
+
+Default timeout is 240 seconds (4 minutes). For long multi-step workflows, save progress by returning intermediate state between calls rather than trying to fit everything in one script.
+
+#### Good uses:
 
 - Search GitHub issues, fetch related PRs, summarize the result.
 - Query a database, filter rows, and return only the final answer.
 - Search Exa, rank results, and return the most relevant sources.
 - Create or update records across connected tools when the steps are clear.
 - Transform, sort, deduplicate, or aggregate tool results before returning them to the agent.
-
-Avoid using `codemode_run` for a long chain when the agent needs to inspect and decide after each step. In that case, run one stage, examine the result, then continue.
 
 
 ## Default Workflow
@@ -89,9 +189,15 @@ Avoid using `codemode_run` for a long chain when the agent needs to inspect and 
 5. Call `codemode_run` to execute the selected tool call.
 6. Return the final result to the user, not every intermediate object unless it is useful.
 
-## When To Batch Tool Calls
+## When To Batch vs When To Call Again (Avoid N+1)
 
-Batch multiple calls inside `codemode_run` when:
+**Prefer a single script with multiple tool calls** over repeated `codemode_run` calls. Each call starts a new sandbox with a cold start; batching reduces overhead and context waste.
+
+**Batch independent steps** into one script — see the `Promise.all` pattern above.
+
+**Call again when you benefit from inspecting intermediate results** between steps. The exploratory pattern above shows this: first call searches, you inspect results, then a second call acts on what was found.
+
+Batch when:
 
 - The task has three or more dependent tool calls.
 - Intermediate results only exist to feed later steps.
