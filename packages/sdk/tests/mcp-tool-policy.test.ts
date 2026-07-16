@@ -3,6 +3,7 @@ import { _setStorageInstanceForTesting } from '../src/server/storage';
 import { MemoryStorageBackend } from '../src/server/storage/memory-backend';
 import { createToolPolicyGateway } from '../src/server/mcp/tool-policy-gateway';
 import { SSEConnectionManager } from '../src/server/handlers/sse-handler';
+import { normalizeToolPolicy, normalizeToolPolicyForUpdate } from '../src/server/storage/tool-policy';
 
 function activeSession(overrides: Record<string, unknown> = {}) {
   return {
@@ -42,6 +43,144 @@ function rawClient(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+test.describe('normalizeToolPolicy', () => {
+  const NOW = 1780076500000;
+
+  test('returns undefined for null/undefined input', () => {
+    expect(normalizeToolPolicy(undefined, NOW)).toBeUndefined();
+    expect(normalizeToolPolicy(null, NOW)).toBeUndefined();
+  });
+
+  test('returns undefined for non-object input', () => {
+    expect(normalizeToolPolicy('string', NOW)).toBeUndefined();
+    expect(normalizeToolPolicy(42, NOW)).toBeUndefined();
+  });
+
+  test('preserves valid allowlist policy', () => {
+    expect(normalizeToolPolicy({
+      mode: 'allowlist',
+      toolIds: ['server::tool_a', 'server::tool_b'],
+      updatedAt: NOW,
+    }, NOW)).toEqual({
+      mode: 'allowlist',
+      toolIds: ['server::tool_a', 'server::tool_b'],
+      updatedAt: NOW,
+    });
+  });
+
+  test('preserves valid denylist policy', () => {
+    expect(normalizeToolPolicy({
+      mode: 'denylist',
+      toolIds: ['server::tool_a'],
+      updatedAt: NOW,
+    }, NOW)).toEqual({
+      mode: 'denylist',
+      toolIds: ['server::tool_a'],
+      updatedAt: NOW,
+    });
+  });
+
+  test('converts empty denylist to all', () => {
+    expect(normalizeToolPolicy({
+      mode: 'denylist',
+      toolIds: [],
+      updatedAt: NOW,
+    }, NOW)).toEqual({ mode: 'all', toolIds: [], updatedAt: NOW });
+  });
+
+  test('converts empty allowlist to all', () => {
+    expect(normalizeToolPolicy({
+      mode: 'allowlist',
+      toolIds: [],
+      updatedAt: NOW,
+    }, NOW)).toEqual({ mode: 'all', toolIds: [], updatedAt: NOW });
+  });
+
+  test('falls back to all for invalid mode', () => {
+    expect(normalizeToolPolicy({
+      mode: 'invalid',
+      toolIds: ['server::tool_a'],
+      updatedAt: NOW,
+    }, NOW)).toEqual({ mode: 'all', toolIds: [], updatedAt: NOW });
+  });
+
+  test('falls back to all for missing mode', () => {
+    expect(normalizeToolPolicy({
+      toolIds: ['server::tool_a'],
+      updatedAt: NOW,
+    }, NOW)).toEqual({ mode: 'all', toolIds: [], updatedAt: NOW });
+  });
+
+  test('deduplicates and cleans toolIds', () => {
+    expect(normalizeToolPolicy({
+      mode: 'denylist',
+      toolIds: ['a', 'b', 'a', '', 'c', '  '],
+      updatedAt: NOW,
+    }, NOW)).toEqual({
+      mode: 'denylist',
+      toolIds: ['a', 'b', 'c'],
+      updatedAt: NOW,
+    });
+  });
+
+  test('handles non-array toolIds', () => {
+    expect(normalizeToolPolicy({
+      mode: 'denylist',
+      toolIds: 'not-an-array',
+      updatedAt: NOW,
+    }, NOW)).toEqual({ mode: 'all', toolIds: [], updatedAt: NOW });
+  });
+
+  test('all mode always produces empty toolIds', () => {
+    expect(normalizeToolPolicy({
+      mode: 'all',
+      toolIds: ['server::tool_a', 'server::tool_b'],
+      updatedAt: NOW,
+    }, NOW)).toEqual({ mode: 'all', toolIds: [], updatedAt: NOW });
+  });
+
+  test('falls back updatedAt to now when missing', () => {
+    const before = Date.now();
+    const result = normalizeToolPolicy({ mode: 'all' });
+    const after = Date.now();
+    expect(result?.updatedAt).toBeGreaterThanOrEqual(before);
+    expect(result?.updatedAt).toBeLessThanOrEqual(after);
+  });
+
+  test('falls back updatedAt to now when invalid', () => {
+    const result = normalizeToolPolicy({ mode: 'all', updatedAt: 'invalid' as any });
+    expect(typeof result?.updatedAt).toBe('number');
+  });
+});
+
+test.describe('normalizeToolPolicyForUpdate', () => {
+  const NOW = 1780076500000;
+
+  test('returns fallback all policy for null input', () => {
+    expect(normalizeToolPolicyForUpdate(null, NOW)).toEqual({
+      mode: 'all', toolIds: [], updatedAt: NOW,
+    });
+  });
+
+  test('returns fallback all policy for undefined input', () => {
+    expect(normalizeToolPolicyForUpdate(undefined, NOW)).toEqual({
+      mode: 'all', toolIds: [], updatedAt: NOW,
+    });
+  });
+
+  test('delegates to normalizeToolPolicy for valid input', () => {
+    expect(normalizeToolPolicyForUpdate({
+      mode: 'denylist',
+      toolIds: ['server::tool_a'],
+      updatedAt: NOW,
+    }, NOW)).toEqual({
+      mode: 'denylist',
+      toolIds: ['server::tool_a'],
+      updatedAt: NOW,
+    });
+  });
+});
 
 test.describe('MCP session tool policy', () => {
   test.afterEach(() => {

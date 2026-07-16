@@ -55,6 +55,10 @@ function normalizeToolIds(input?: unknown): string[] {
  * - Invalid `mode` values fall back to `"all"` (no restrictions).
  * - Invalid `updatedAt` values fall back to `now`.
  * - `"all"` mode always produces an empty `toolIds` array regardless of input.
+ * - An empty `toolIds` array in `"denylist"` or `"allowlist"` mode is normalised
+ *   to `"all"` because clearing all selections in the UI implies no restriction
+ *   intent. An empty allowlist ("block everything") is still available through
+ *   the denylist path (all tools checked as denied).
  *
  * @param input - Raw policy data to normalise (from request body, DB, etc.).
  * @param now   - Unix timestamp used as the fallback for `updatedAt`. Defaults to `Date.now()`.
@@ -72,11 +76,13 @@ export function normalizeToolPolicy(input?: ToolPolicyInput, now = Date.now()): 
         ? input.updatedAt
         : now;
 
-    if (mode === 'all') {
+    const toolIds = normalizeToolIds(input.toolIds);
+
+    if (mode === 'all' || toolIds.length === 0) {
         return { mode: 'all', toolIds: [], updatedAt };
     }
 
-    return { mode, toolIds: normalizeToolIds(input.toolIds), updatedAt };
+    return { mode, toolIds, updatedAt };
 }
 
 /**

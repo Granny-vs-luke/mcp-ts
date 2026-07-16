@@ -17,29 +17,39 @@ If the user denies a tool call, acknowledge their decision and suggest alternati
 `;
 
 // ----------------------------------------------------------------------
-// 2. Client Management (Fresh per request for serverless testing)
+// 2. Client Management (cached per user for long-running servers)
 // ----------------------------------------------------------------------
-function createMcpClient(userId: string): MultiSessionClient {
-  return new MultiSessionClient(userId, {
-    onObservabilityEvent: (event: McpObservabilityEvent) => {
-      // One handler for everything — DB reads/writes, client lifecycle, per-session progress.
-      // Use event.type to filter: 'db:read' | 'db:write' | 'connect' | etc.
-      const prefix = `[MCP][${event.serverId ?? event.sessionId ?? '?'}]`;
-      switch (event.level) {
-        case 'error':
-          console.error(prefix, event.message, event.payload ?? '');
-          break;
-        case 'warn':
-          console.warn(prefix, event.message, event.payload ?? '');
-          break;
-        case 'debug':
-          console.debug(prefix, event.message, event.payload ?? '');
-          break;
-        default:
-          console.log(prefix, event.message, event.payload ?? '');
-      }
-    },
-  });
+// Reusing the `MultiSessionClient` instance across requests keeps live
+// transport connections alive — `connect()` skips already-connected
+// sessions, so this is safe to call on every request.
+const mcpClientCache = new Map<string, MultiSessionClient>();
+
+function getMcpClient(userId: string): MultiSessionClient {
+  let client = mcpClientCache.get(userId);
+  if (!client) {
+    client = new MultiSessionClient(userId, {
+      onObservabilityEvent: (event: McpObservabilityEvent) => {
+        // One handler for everything — DB reads/writes, client lifecycle, per-session progress.
+        // Use event.type to filter: 'db:read' | 'db:write' | 'connect' | etc.
+        const prefix = `[MCP][${event.serverId ?? event.sessionId ?? '?'}]`;
+        switch (event.level) {
+          case 'error':
+            console.error(prefix, event.message, event.payload ?? '');
+            break;
+          case 'warn':
+            console.warn(prefix, event.message, event.payload ?? '');
+            break;
+          case 'debug':
+            console.debug(prefix, event.message, event.payload ?? '');
+            break;
+          default:
+            console.log(prefix, event.message, event.payload ?? '');
+        }
+      },
+    });
+    mcpClientCache.set(userId, client);
+  }
+  return client;
 }
 
 // ----------------------------------------------------------------------
@@ -74,7 +84,7 @@ function requiresApproval(tool: any, args: any, router: any): boolean {
 // 4. Agent Initialization
 // ----------------------------------------------------------------------
 export async function createMcpAgent(userId: string = process.env.NEXT_PUBLIC_MCP_USER_ID!) {
-  const client = createMcpClient(userId);
+  const client = getMcpClient(userId);
 
   // Always call connect to synchronize with the database.
   // MultiSessionClient safely skips already-connected sessions.
