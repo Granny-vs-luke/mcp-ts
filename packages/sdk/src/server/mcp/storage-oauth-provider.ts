@@ -89,6 +89,14 @@ export interface StorageOAuthClientProviderOptions {
     policyUri?: string;
     clientId?: string;
     clientSecret?: string;
+    /**
+     * URL pointing to the client's OAuth metadata document (CIMD — Client ID Metadata Document).
+     * When set, the upstream SDK will use this URL as the client_id instead of
+     * falling back to Dynamic Client Registration (DCR).
+     * The server fetches the client metadata document from this URL on demand.
+     * Must be an HTTPS URL with a non-root pathname.
+     */
+    clientMetadataUrl?: string;
     cachedTokens?: OAuthTokens;
     sessionStore?: SessionStore;
     onRedirect?: (url: string) => void;
@@ -109,6 +117,7 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
     private readonly logoUri?: string;
     private readonly policyUri?: string;
     private readonly clientSecret?: string;
+    private readonly _clientMetadataUrl?: string;
 
     private _store: SessionStore;
     private _authUrl: string | undefined;
@@ -133,9 +142,14 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
         this.policyUri = options.policyUri;
         this._clientId = options.clientId;
         this.clientSecret = options.clientSecret;
+        this._clientMetadataUrl = options.clientMetadataUrl;
         this._cachedTokens = options.cachedTokens;
         this._store = options.sessionStore ?? sessions;
         this.onRedirectCallback = options.onRedirect;
+    }
+
+    get clientMetadataUrl(): string | undefined {
+        return this._clientMetadataUrl;
     }
 
     get clientMetadata(): OAuthClientMetadata {
@@ -248,6 +262,9 @@ export class StorageOAuthClientProvider implements AgentsOAuthProvider {
                     ...(this.clientSecret ? { client_secret: this.clientSecret } : {}),
                 },
             });
+        }
+        if (this._clientMetadataUrl) {
+            await this.patchCredentials({ clientMetadataUrl: this._clientMetadataUrl });
         }
     }
 

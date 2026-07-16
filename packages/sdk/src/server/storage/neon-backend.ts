@@ -35,6 +35,7 @@ type NeonSessionRow = {
     tokens?: unknown;
     code_verifier?: unknown;
     client_id?: string | null;
+    client_metadata_url?: string | null;
     oauth_state?: unknown;
     enabled?: boolean;
 };
@@ -101,6 +102,7 @@ export class NeonStorageBackend implements SessionStore {
             tokens: decryptObject(row.tokens),
             codeVerifier: decryptObject(row.code_verifier),
             clientId: row.client_id ?? undefined,
+            clientMetadataUrl: row.client_metadata_url ?? undefined,
             oauthState: row.oauth_state as Session['oauthState'],
             enabled: row.enabled ?? true,
         };
@@ -112,6 +114,7 @@ export class NeonStorageBackend implements SessionStore {
             'tokens' in data ||
             'codeVerifier' in data ||
             'clientId' in data ||
+            'clientMetadataUrl' in data ||
             'oauthState' in data
         );
     }
@@ -255,6 +258,9 @@ export class NeonStorageBackend implements SessionStore {
         if ('clientId' in data) {
             addSet('client_id', data.clientId ?? null);
         }
+        if ('clientMetadataUrl' in data) {
+            addSet('client_metadata_url', data.clientMetadataUrl ?? null);
+        }
         if ('oauthState' in data) {
             addSet('oauth_state', data.oauthState ?? null);
         }
@@ -296,7 +302,7 @@ export class NeonStorageBackend implements SessionStore {
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
         try {
             const rows = await this.sql.query(
-                `SELECT client_information, tokens, code_verifier, client_id, oauth_state
+                `                SELECT client_information, tokens, code_verifier, client_id, client_metadata_url, oauth_state
                  FROM ${this.tableName} WHERE user_id = $1 AND session_id = $2`,
                 [userId, sessionId]
             ) as NeonSessionRow[];
@@ -310,6 +316,7 @@ export class NeonStorageBackend implements SessionStore {
                 tokens: decryptObject(row.tokens),
                 codeVerifier: decryptObject(row.code_verifier),
                 clientId: row.client_id ?? undefined,
+                clientMetadataUrl: row.client_metadata_url ?? undefined,
                 oauthState: row.oauth_state as SessionCredentials['oauthState'],
             };
         } catch (error) {
@@ -335,7 +342,7 @@ export class NeonStorageBackend implements SessionStore {
         try {
             await this.sql.query(
                 `UPDATE ${this.tableName}
-                 SET client_information = null, tokens = null, code_verifier = null, client_id = null, oauth_state = null, updated_at = now()
+                 SET client_information = null, tokens = null, code_verifier = null, client_id = null, client_metadata_url = null, oauth_state = null, updated_at = now()
                  WHERE user_id = $1 AND session_id = $2`,
                 [userId, sessionId]
             );

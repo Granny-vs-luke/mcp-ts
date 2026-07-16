@@ -56,6 +56,7 @@ export class SupabaseStorageBackend implements SessionStore {
             tokens: decryptObject(row.tokens),
             codeVerifier: decryptObject(row.code_verifier),
             clientId: row.client_id,
+            clientMetadataUrl: row.client_metadata_url,
             oauthState: row.oauth_state,
             enabled: row.enabled ?? true,
         };
@@ -67,6 +68,7 @@ export class SupabaseStorageBackend implements SessionStore {
             'tokens' in data ||
             'codeVerifier' in data ||
             'clientId' in data ||
+            'clientMetadataUrl' in data ||
             'oauthState' in data
         );
     }
@@ -180,6 +182,7 @@ export class SupabaseStorageBackend implements SessionStore {
         if ('tokens' in data) updateData.tokens = data.tokens == null ? null : encryptObject(data.tokens);
         if ('codeVerifier' in data) updateData.code_verifier = data.codeVerifier == null ? null : encryptObject(data.codeVerifier);
         if ('clientId' in data) updateData.client_id = data.clientId ?? null;
+        if ('clientMetadataUrl' in data) updateData.client_metadata_url = data.clientMetadataUrl ?? null;
         if ('oauthState' in data) updateData.oauth_state = data.oauthState ?? null;
 
         const { error } = await this.supabase
@@ -218,7 +221,7 @@ export class SupabaseStorageBackend implements SessionStore {
     async getCredentials(userId: string, sessionId: string): Promise<SessionCredentials | null> {
         const { data, error } = await this.supabase
             .from('mcp_sessions')
-            .select('client_information, tokens, code_verifier, client_id, oauth_state')
+            .select('client_information, tokens, code_verifier, client_id, client_metadata_url, oauth_state')
             .eq('user_id', userId)
             .eq('session_id', sessionId)
             .maybeSingle();
@@ -237,6 +240,7 @@ export class SupabaseStorageBackend implements SessionStore {
             tokens: decryptObject(data.tokens),
             codeVerifier: decryptObject(data.code_verifier),
             clientId: data.client_id,
+            clientMetadataUrl: data.client_metadata_url,
             oauthState: data.oauth_state,
         };
     }
@@ -263,6 +267,7 @@ export class SupabaseStorageBackend implements SessionStore {
                 tokens: null,
                 code_verifier: null,
                 client_id: null,
+                client_metadata_url: null,
                 oauth_state: null,
                 updated_at: new Date().toISOString(),
             })

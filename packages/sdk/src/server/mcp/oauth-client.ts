@@ -68,6 +68,14 @@ export interface MCPOAuthClientOptions {
   transportType?: TransportType;
   clientId?: string;
   clientSecret?: string;
+  /**
+   * URL pointing to the client's OAuth metadata document (CIMD — Client ID Metadata Document).
+   * When set, the upstream SDK will use this URL as the client_id instead of
+   * falling back to Dynamic Client Registration (DCR).
+   * The server fetches the client metadata document from this URL on demand.
+   * Must be an HTTPS URL with a non-root pathname.
+   */
+  clientMetadataUrl?: string;
   headers?: Record<string, string>;
   /** OAuth Client Metadata (optional - user application info) */
   clientName?: string;
@@ -350,6 +358,7 @@ export class MCPClient {
       policyUri: this.config.policyUri,
       clientId: this.config.clientId,
       clientSecret: this.config.clientSecret,
+      clientMetadataUrl: this.config.clientMetadataUrl,
       cachedTokens: this.config.cachedCredentials?.tokens,
       sessionStore: this._store,
       onRedirect: (redirectUrl: string) => {

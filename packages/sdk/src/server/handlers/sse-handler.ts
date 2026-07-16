@@ -66,6 +66,8 @@ export interface ClientMetadata {
   clientUri?: string;
   logoUri?: string;
   policyUri?: string;
+  /** URL pointing to the client's OAuth metadata document (CIMD). */
+  clientMetadataUrl?: string;
 }
 
 /** Options passed to {@link createSSEHandler}. */
@@ -511,6 +513,7 @@ export class SSEConnectionManager {
       const clientId     = session.clientId ?? undefined;
       const clientSecret = (session.clientInformation as any)?.client_secret ?? undefined;
 
+      const clientMetadataUrl = session.clientMetadataUrl ?? undefined;
       const client = new MCPClient({
         userId:       this.userId,
         sessionId,
@@ -521,6 +524,7 @@ export class SSEConnectionManager {
         headers:      session.headers,
         clientId,
         clientSecret,
+        clientMetadataUrl,
         hasSession:   true,
         cachedCredentials: { tokens: session.tokens ?? undefined },
         sessionStore: this.observedStore,
@@ -777,19 +781,20 @@ export class SSEConnectionManager {
     const clientSecret = (session.clientInformation as any)?.client_secret ?? undefined;
 
     return new MCPClient({
-      userId:       this.userId,
-      sessionId:     session.sessionId,
-      serverId:      session.serverId,
-      serverName:    session.serverName,
-      serverUrl:     session.serverUrl,
-      callbackUrl:   session.callbackUrl,
-      transportType: session.transportType,
-      headers:       session.headers,
+      userId:             this.userId,
+      sessionId:          session.sessionId,
+      serverId:           session.serverId,
+      serverName:         session.serverName,
+      serverUrl:          session.serverUrl,
+      callbackUrl:        session.callbackUrl,
+      transportType:      session.transportType,
+      headers:            session.headers,
       clientId,
       clientSecret,
-      hasSession:    true,
+      clientMetadataUrl:  session.clientMetadataUrl ?? undefined,
+      hasSession:         true,
       cachedCredentials: { tokens: session.tokens ?? undefined },
-      sessionStore:  this.observedStore,
+      sessionStore:       this.observedStore,
     });
   }
 

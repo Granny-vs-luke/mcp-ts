@@ -130,7 +130,7 @@ export class FileStorageBackend implements SessionStore {
         const session = this.memoryCache!.get(sessionKey) || null;
         if (!session) return null;
         if (!options?.includeCredentials) {
-            const { clientInformation, tokens, codeVerifier, codeVerifierChallenge, codeVerifierNonce, clientId, oauthState, ...sessionOnly } = session;
+            const { clientInformation, tokens, codeVerifier, codeVerifierChallenge, codeVerifierNonce, clientId, clientMetadataUrl, oauthState, ...sessionOnly } = session;
             return sessionOnly as Session;
         }
         return session;
@@ -142,12 +142,12 @@ export class FileStorageBackend implements SessionStore {
         const session = this.memoryCache!.get(sessionKey);
         if (!session) return null;
 
-        const { clientInformation, tokens, codeVerifier, codeVerifierChallenge, codeVerifierNonce, clientId, oauthState } = session;
+        const { clientInformation, tokens, codeVerifier, codeVerifierChallenge, codeVerifierNonce, clientId, clientMetadataUrl, oauthState } = session;
         return {
             sessionId, userId,
             clientInformation, tokens, codeVerifier,
             codeVerifierChallenge, codeVerifierNonce,
-            clientId, oauthState,
+            clientId, clientMetadataUrl, oauthState,
         };
     }
 
@@ -159,6 +159,7 @@ export class FileStorageBackend implements SessionStore {
             codeVerifierChallenge: null,
             codeVerifierNonce: null,
             clientId: null,
+            clientMetadataUrl: null,
             oauthState: null,
         });
     }

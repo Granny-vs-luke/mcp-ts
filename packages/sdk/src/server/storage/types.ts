@@ -54,6 +54,7 @@ export interface Session {
     codeVerifierChallenge?: string | null;
     codeVerifierNonce?: string | null;
     clientId?: string | null;
+    clientMetadataUrl?: string | null;
     oauthState?: OAuthState | null;
 }
 
@@ -66,6 +67,7 @@ export interface SessionCredentials {
     codeVerifierChallenge?: string | null;
     codeVerifierNonce?: string | null;
     clientId?: string | null;
+    clientMetadataUrl?: string | null;
     oauthState?: OAuthState | null;
 }
 

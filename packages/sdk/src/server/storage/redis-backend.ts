@@ -164,7 +164,7 @@ export class RedisStorageBackend implements SessionStore {
 
             const session = normalizeStoredSession(JSON.parse(sessionDataStr) as Session);
             if (!options?.includeCredentials) {
-                const { clientInformation, tokens, codeVerifier, codeVerifierChallenge, codeVerifierNonce, clientId, oauthState, ...sessionOnly } = session;
+                const { clientInformation, tokens, codeVerifier, codeVerifierChallenge, codeVerifierNonce, clientId, clientMetadataUrl, oauthState, ...sessionOnly } = session;
                 return sessionOnly as Session;
             }
             return session;
@@ -178,12 +178,12 @@ export class RedisStorageBackend implements SessionStore {
         const session = await this.get(userId, sessionId, { includeCredentials: true });
         if (!session) return null;
 
-        const { clientInformation, tokens, codeVerifier, codeVerifierChallenge, codeVerifierNonce, clientId, oauthState } = session;
+        const { clientInformation, tokens, codeVerifier, codeVerifierChallenge, codeVerifierNonce, clientId, clientMetadataUrl, oauthState } = session;
         return {
             sessionId, userId,
             clientInformation, tokens, codeVerifier,
             codeVerifierChallenge, codeVerifierNonce,
-            clientId, oauthState,
+            clientId, clientMetadataUrl, oauthState,
         };
     }
 
@@ -195,6 +195,7 @@ export class RedisStorageBackend implements SessionStore {
             codeVerifierChallenge: null,
             codeVerifierNonce: null,
             clientId: null,
+            clientMetadataUrl: null,
             oauthState: null,
         });
     }
