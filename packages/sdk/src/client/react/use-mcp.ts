@@ -196,7 +196,7 @@ export interface McpClient {
    */
   updateToolPolicy: (
     sessionId: string,
-    toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[] }
+    toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[]; approval?: ToolPolicy['approval'] }
   ) => Promise<SetToolPolicyResult>;
 
   /**
@@ -621,7 +621,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
    */
   const updateToolPolicy = useCallback(async (
     sessionId: string,
-    toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[] }
+    toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[]; approval?: ToolPolicy['approval'] }
   ): Promise<SetToolPolicyResult> => {
     if (!clientRef.current) {
       throw new Error('SSE client not initialized');
@@ -813,6 +813,7 @@ export function useMcp(options: UseMcpOptions): McpClient {
     ]
   );
 }
+
 
 
 

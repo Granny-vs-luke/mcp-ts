@@ -110,7 +110,7 @@ export class SSEClient {
 
   async setToolPolicy(
     sessionId: string,
-    toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[] }
+    toolPolicy: Pick<ToolPolicy, 'mode'> & { toolIds?: string[]; approval?: ToolPolicy['approval'] }
   ): Promise<SetToolPolicyResult> {
     return this.sendRequest<SetToolPolicyResult>('setToolPolicy', { sessionId, toolPolicy });
   }
@@ -395,6 +395,7 @@ export class SSEClient {
     }
   }
 }
+
 
 
 

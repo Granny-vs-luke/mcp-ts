@@ -15,10 +15,17 @@ export interface OAuthState {
 export type SessionStatus = 'pending' | 'active';
 
 export type ToolPolicyMode = 'all' | 'allowlist' | 'denylist';
+export type ToolApprovalMode = 'never' | 'every_time';
+
+export interface ToolApprovalPolicy {
+  mode: ToolApprovalMode;
+  toolIds: string[];
+}
 
 export interface ToolPolicy {
     mode: ToolPolicyMode;
     toolIds: string[];
+    approval?: ToolApprovalPolicy;
     updatedAt: number;
 }
 

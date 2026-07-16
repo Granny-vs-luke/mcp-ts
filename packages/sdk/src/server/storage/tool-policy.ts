@@ -11,6 +11,7 @@ export type ToolPolicyInput = {
     mode?: unknown;
     toolIds?: unknown;
     updatedAt?: unknown;
+    approval?: unknown;
 } | null | undefined;
 
 /**
@@ -47,7 +48,17 @@ function normalizeToolIds(input?: unknown): string[] {
             .filter(Boolean)
     ));
 }
+function normalizeApprovalPolicy(input?: unknown): ToolPolicy['approval'] | undefined {
+    if (!input || typeof input !== 'object') return undefined;
 
+    const approval = input as { mode?: unknown; toolIds?: unknown };
+    if (approval.mode !== 'every_time') return undefined;
+
+    return {
+        mode: 'every_time',
+        toolIds: normalizeToolIds(approval.toolIds),
+    };
+}
 /**
  * Converts a raw, potentially untrusted `ToolPolicyInput` into a validated
  * `ToolPolicy` object, or `undefined` if the input is absent / malformed.
@@ -72,11 +83,13 @@ export function normalizeToolPolicy(input?: ToolPolicyInput, now = Date.now()): 
         ? input.updatedAt
         : now;
 
+    const approval = normalizeApprovalPolicy(input.approval);
+
     if (mode === 'all') {
-        return { mode: 'all', toolIds: [], updatedAt };
+        return { mode: 'all', toolIds: [], ...(approval ? { approval } : {}), updatedAt };
     }
 
-    return { mode, toolIds: normalizeToolIds(input.toolIds), updatedAt };
+    return { mode, toolIds: normalizeToolIds(input.toolIds), ...(approval ? { approval } : {}), updatedAt };
 }
 
 /**
@@ -190,3 +203,4 @@ export function validateToolPolicyAgainstTools(
         throw new Error(`Unknown tool id(s) for this MCP session: ${unknownIds.join(', ')}`);
     }
 }
+

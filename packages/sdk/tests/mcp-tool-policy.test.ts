@@ -25,12 +25,10 @@ function rawClient(overrides: Record<string, unknown> = {}) {
     getSessionId: () => 'policy-session',
     getServerId: () => 'github',
     getServerName: () => 'GitHub',
-    fetchTools: async () => ({
-      tools: [
-        { name: 'get_issue', description: 'Read issue' },
-        { name: 'create_issue', description: 'Write issue' },
-      ],
-    }),
+    fetchTools: async () => [
+      { name: 'get_issue', description: 'Read issue' },
+      { name: 'create_issue', description: 'Write issue' },
+    ],
     listTools: async () => ({
       tools: [
         { name: 'get_issue', description: 'Read issue' },
@@ -166,6 +164,44 @@ test.describe('MCP session tool policy', () => {
     await manager.dispose();
   });
 
+  test('SSE setToolPolicy preserves every-time approval policy', async () => {
+    const storage = new MemoryStorageBackend();
+    _setStorageInstanceForTesting(storage);
+    await storage.create(activeSession() as any);
+
+    const manager = new SSEConnectionManager({ userId: 'user-policy' }, () => {});
+    (manager as any).clients.set('policy-session', rawClient());
+
+    const update = await manager.handleRequest({
+      id: 'update-approval-policy',
+      method: 'setToolPolicy',
+      params: {
+        sessionId: 'policy-session',
+        toolPolicy: {
+          mode: 'all',
+          toolIds: [],
+          approval: {
+            mode: 'every_time',
+            toolIds: ['github::create_issue'],
+          },
+        },
+      },
+    } as any);
+
+    expect((update as any).error).toBeUndefined();
+    expect((update as any).result.toolPolicy).toEqual({
+      mode: 'all',
+      toolIds: [],
+      approval: {
+        mode: 'every_time',
+        toolIds: ['github::create_issue'],
+      },
+      updatedAt: expect.any(Number),
+    });
+
+    await manager.dispose();
+  });
+
   test('SSE callTool rejects blocked tools before downstream request', async () => {
     const storage = new MemoryStorageBackend();
     _setStorageInstanceForTesting(storage);
@@ -203,5 +239,8 @@ test.describe('MCP session tool policy', () => {
     await manager.dispose();
   });
 });
+
+
+
 
 
