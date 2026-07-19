@@ -184,8 +184,13 @@ export class QuickJsCodeModeRuntime extends BaseCodeModeRuntime {
       });
       timeoutPromise.catch(() => {});
 
-      // User code execution — the last expression is the return value
-      const userResult = await Promise.race([ctx.evalCodeAsync(code), timeoutPromise]);
+      // User code execution — wrap in IIFE only if code starts with `return` (Issue 2)
+      let codeToExecute = code;
+      if (code.trimStart().startsWith("return")) {
+        const codeBody = code.replace(/^\s*return\b\s*/, "");
+        codeToExecute = `(function() { return ${codeBody} })()`;
+      }
+      const userResult = await Promise.race([ctx.evalCodeAsync(codeToExecute), timeoutPromise]);
       if (userResult.error) {
         const errHandle = userResult.error;
         const errMsg = ctx.dump(errHandle);

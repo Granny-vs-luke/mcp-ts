@@ -169,12 +169,12 @@ function fakeMcpEnvelopeSource(serverId = "docs") {
   };
 }
 
-const QUIX_RUNTIME = 'quickjs';
+const QUICKJS_RUNTIME = 'quickjs';
 
 test("basic execution: 1 + 2 returns 3", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`1 + 2`);
 
@@ -185,7 +185,7 @@ test("basic execution: 1 + 2 returns 3", { skip: !hasQuickJs }, async () => {
 test("namespace bridge: github.get_issue(args) works without await", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { calls, source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     var issue = github.get_issue({ issue_number: 42 });
@@ -201,7 +201,7 @@ test("namespace bridge: github.get_issue(args) works without await", { skip: !ha
 test("callTool() escape hatch works without await", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { calls, source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     var issue = callTool("github", "get_issue", { issue_number: 7 });
@@ -216,7 +216,7 @@ test("callTool() escape hatch works without await", { skip: !hasQuickJs }, async
 test("input passthrough works", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     ({ doubled: input.value * 2 })
@@ -229,7 +229,7 @@ test("input passthrough works", { skip: !hasQuickJs }, async () => {
 test("console output is captured", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     console.log("hello");
@@ -249,7 +249,7 @@ test("console output is captured", { skip: !hasQuickJs }, async () => {
 test("tool calls are tracked in result", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     github.get_issue({ issue_number: 1 });
@@ -268,7 +268,7 @@ test("tool calls are tracked in result", { skip: !hasQuickJs }, async () => {
 test("searchTools() inside sandbox returns results", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     var tools = searchTools("issue");
@@ -284,7 +284,7 @@ test("searchTools() inside sandbox returns results", { skip: !hasQuickJs }, asyn
 test("__interfaces contains TypeScript definitions", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`__interfaces`);
 
@@ -298,7 +298,7 @@ test("__interfaces contains TypeScript definitions", { skip: !hasQuickJs }, asyn
 test("__getToolInterface() returns specific tool interface", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     var iface = __getToolInterface("github.get_issue");
@@ -314,7 +314,7 @@ test("multi-source: github.get_issue() vs exa.web_search()", { skip: !hasQuickJs
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const github = fakeSource();
   const exa = fakeExaSource();
-  const runtime = await createCodeModeRuntime({ servers: [github.source, exa.source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [github.source, exa.source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     var issue = github.get_issue({ issue_number: 1 });
@@ -332,7 +332,7 @@ test("multi-source: github.get_issue() vs exa.web_search()", { skip: !hasQuickJs
 test("error handling: isError tool does not crash sandbox", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeMcpEnvelopeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     try {
@@ -353,7 +353,7 @@ test("error handling: isError tool does not crash sandbox", { skip: !hasQuickJs 
 test("MCP envelopes are normalized to script-friendly values", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeMcpEnvelopeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     ({
@@ -390,7 +390,7 @@ test("MCP envelopes are normalized to script-friendly values", { skip: !hasQuick
 test("error envelope: single text content preserves isError", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeMcpEnvelopeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     var r = callTool("docs", "error_single_text", { query: "x" });
@@ -405,7 +405,7 @@ test("error envelope: single text content preserves isError", { skip: !hasQuickJ
 test("error envelope: JSON text content is parsed and isError preserved", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeMcpEnvelopeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     var r = callTool("docs", "error_json_text", { query: "x" });
@@ -423,7 +423,7 @@ test("error envelope: JSON text content is parsed and isError preserved", { skip
 test("error envelope: toolCalls[].ok is false with error message", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeMcpEnvelopeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     callTool("docs", "error_single_text", { query: "x" });
@@ -442,7 +442,7 @@ test("error envelope: toolCalls[].ok is false with error message", { skip: !hasQ
 test("error envelope: successful and failed calls are both tracked", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeMcpEnvelopeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run(`
     docs.plain_text_search({ query: "ok" });
@@ -458,10 +458,40 @@ test("error envelope: successful and failed calls are both tracked", { skip: !ha
   assert.equal(result.toolCalls[1].error, "resource not found");
 });
 
+test("auto-detect runtime when no runtime option specified", { skip: !hasQuickJs }, async () => {
+  const { createCodeModeRuntime } = await import("../dist/index.js");
+  const { source } = fakeSource();
+  const runtime = await createCodeModeRuntime({ servers: [source] });
+
+  const result = await runtime.run(`1 + 2`);
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.value, 3);
+});
+
+test("getToolSchema inside sandbox returns tool definition", { skip: !hasQuickJs }, async () => {
+  const { createCodeModeRuntime } = await import("../dist/index.js");
+  const { source } = fakeSource();
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
+
+  const result = await runtime.run(`
+    var schema = getToolSchema("github", "get_issue");
+    schema
+  `);
+
+  assert.equal(result.error, undefined);
+  assert.ok(result.value !== null && typeof result.value === "object");
+  assert.equal(result.value.toolName, "get_issue");
+  assert.equal(result.value.serverId, "github");
+  assert.ok(result.value.inputSchema !== undefined);
+  assert.equal(result.value.inputSchema.type, "object");
+  assert.ok(result.value.inputSchema.properties.issue_number !== undefined);
+});
+
 test("timeout: infinite loop is interrupted", { skip: !hasQuickJs }, async () => {
   const { createCodeModeRuntime } = await import("../dist/index.js");
   const { source } = fakeSource();
-  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUICKJS_RUNTIME });
 
   const result = await runtime.run("while(true) {}", {}, { timeoutMs: 100 });
 
