@@ -457,3 +457,18 @@ test("error envelope: successful and failed calls are both tracked", { skip: !ha
   assert.equal(result.toolCalls[1].ok, false);
   assert.equal(result.toolCalls[1].error, "resource not found");
 });
+
+test("timeout: infinite loop is interrupted", { skip: !hasQuickJs }, async () => {
+  const { createCodeModeRuntime } = await import("../dist/index.js");
+  const { source } = fakeSource();
+  const runtime = await createCodeModeRuntime({ servers: [source], runtime: QUIX_RUNTIME });
+
+  const result = await runtime.run("while(true) {}", {}, { timeoutMs: 100 });
+
+  assert.notEqual(result.error, undefined, "Expected an error from infinite loop");
+  assert.ok(
+    result.error.message.toLowerCase().includes("timeout") ||
+      result.error.message.toLowerCase().includes("interrupt"),
+    `Expected error message about timeout/interrupt, got: ${result.error.message}`,
+  );
+});
