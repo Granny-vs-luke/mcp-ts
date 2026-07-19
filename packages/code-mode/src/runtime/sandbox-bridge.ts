@@ -149,6 +149,7 @@ export function generateInterfaceMap(tools: IndexedTool[]): Record<string, strin
 export function generateNamespaceBridgeCode(
   tools: IndexedTool[],
   _servers: Map<string, ToolServer>,
+  asyncPattern?: boolean,
 ): string {
   const parts: string[] = [];
   const namespaces = new Set<string>();
@@ -162,9 +163,13 @@ export function generateNamespaceBridgeCode(
       parts.push(`globalThis.${sanitizedServer} = globalThis.${sanitizedServer} || {};`);
     }
 
+    const callPattern = asyncPattern
+      ? `__callToolRef(${JSON.stringify(tool.serverId)}, ${JSON.stringify(tool.toolName)}, JSON.stringify(args || {}))`
+      : `__callToolRef.applySyncPromise(undefined, [${JSON.stringify(tool.serverId)}, ${JSON.stringify(tool.toolName)}, JSON.stringify(args || {})])`;
+
     parts.push(`
       globalThis.${sanitizedServer}.${sanitizedTool} = function(args) {
-        var resultJson = __callToolRef.applySyncPromise(undefined, [${JSON.stringify(tool.serverId)}, ${JSON.stringify(tool.toolName)}, JSON.stringify(args || {})]);
+        var resultJson = ${callPattern};
         var parsed = JSON.parse(resultJson);
         if (!parsed.success) throw new Error(parsed.error);
         return parsed.result;
@@ -184,48 +189,101 @@ export function generateNamespaceBridgeCode(
 export function generateBootstrapCode(
   interfacesString: string,
   interfaceMapJson: string,
+  quickjs?: boolean,
 ): string {
+  const stringifyHelper = `function(a) { return typeof a === "object" && a !== null ? JSON.stringify(a, null, 2) : String(a); }`;
+
+  const callConsole = (level: string, ref: string) => {
+    return `${ref}(...args.map(${stringifyHelper}))`;
+  };
+
+  if (quickjs) {
+    return `
+"use strict";
+
+globalThis.console = {
+  log: function(...args) { ${callConsole("log", "__logRef")} },
+  error: function(...args) { ${callConsole("error", "__errorRef")} },
+  warn: function(...args) { ${callConsole("warn", "__warnRef")} },
+  info: function(...args) { ${callConsole("info", "__infoRef")} },
+};
+
+globalThis.callTool = function(serverId, toolName, args) {
+  var resultJson = __callToolRef(serverId, toolName, JSON.stringify(args || {}));
+  var parsed = JSON.parse(resultJson);
+  if (!parsed.success) throw new Error(parsed.error);
+  return parsed.result;
+};
+
+globalThis.callToolRaw = function(serverId, toolName, args) {
+  var resultJson = __callToolRawRef(serverId, toolName, JSON.stringify(args || {}));
+  var parsed = JSON.parse(resultJson);
+  if (!parsed.success) throw new Error(parsed.error);
+  return parsed.result;
+};
+
+globalThis.searchTools = function(query, limit) {
+  var resultJson = __searchToolsRef(query || "", limit || 10);
+  return JSON.parse(resultJson);
+};
+
+globalThis.getToolSchema = function(serverId, toolName) {
+  var resultJson = __getToolSchemaRef(serverId, toolName);
+  return JSON.parse(resultJson);
+};
+
+globalThis.__interfaces = ${JSON.stringify(interfacesString)};
+const __interfaceMap = ${interfaceMapJson};
+globalThis.__getToolInterface = function(toolName) {
+  return __interfaceMap[toolName] || null;
+};
+
+var __inputParsed = JSON.parse(typeof __input === "string" ? __input : "null");
+globalThis.input = typeof __inputParsed === "undefined" || __inputParsed === null ? undefined : __inputParsed;
+`;
+  }
+
   return `
-    "use strict";
+"use strict";
 
-    const __stringify = (a) => typeof a === "object" && a !== null ? JSON.stringify(a, null, 2) : String(a);
-    globalThis.console = {
-      log: (...args) => __logRef.applySync(undefined, args.map(__stringify)),
-      error: (...args) => __errorRef.applySync(undefined, args.map(__stringify)),
-      warn: (...args) => __warnRef.applySync(undefined, args.map(__stringify)),
-      info: (...args) => __infoRef.applySync(undefined, args.map(__stringify)),
-    };
+const __stringify = (a) => typeof a === "object" && a !== null ? JSON.stringify(a, null, 2) : String(a);
+globalThis.console = {
+  log: (...args) => __logRef.applySync(undefined, args.map(__stringify)),
+  error: (...args) => __errorRef.applySync(undefined, args.map(__stringify)),
+  warn: (...args) => __warnRef.applySync(undefined, args.map(__stringify)),
+  info: (...args) => __infoRef.applySync(undefined, args.map(__stringify)),
+};
 
-    globalThis.callTool = function(serverId, toolName, args) {
-      var resultJson = __callToolRef.applySyncPromise(undefined, [serverId, toolName, JSON.stringify(args || {})]);
-      var parsed = JSON.parse(resultJson);
-      if (!parsed.success) throw new Error(parsed.error);
-      return parsed.result;
-    };
+globalThis.callTool = function(serverId, toolName, args) {
+  var resultJson = __callToolRef.applySyncPromise(undefined, [serverId, toolName, JSON.stringify(args || {})]);
+  var parsed = JSON.parse(resultJson);
+  if (!parsed.success) throw new Error(parsed.error);
+  return parsed.result;
+};
 
-    globalThis.callToolRaw = function(serverId, toolName, args) {
-      var resultJson = __callToolRawRef.applySyncPromise(undefined, [serverId, toolName, JSON.stringify(args || {})]);
-      var parsed = JSON.parse(resultJson);
-      if (!parsed.success) throw new Error(parsed.error);
-      return parsed.result;
-    };
+globalThis.callToolRaw = function(serverId, toolName, args) {
+  var resultJson = __callToolRawRef.applySyncPromise(undefined, [serverId, toolName, JSON.stringify(args || {})]);
+  var parsed = JSON.parse(resultJson);
+  if (!parsed.success) throw new Error(parsed.error);
+  return parsed.result;
+};
 
-    globalThis.searchTools = function(query, limit) {
-      var resultJson = __searchToolsRef.applySyncPromise(undefined, [query || "", limit || 10]);
-      return JSON.parse(resultJson);
-    };
+globalThis.searchTools = function(query, limit) {
+  var resultJson = __searchToolsRef.applySyncPromise(undefined, [query || "", limit || 10]);
+  return JSON.parse(resultJson);
+};
 
-    globalThis.getToolSchema = function(serverId, toolName) {
-      var resultJson = __getToolSchemaRef.applySyncPromise(undefined, [serverId, toolName]);
-      return JSON.parse(resultJson);
-    };
+globalThis.getToolSchema = function(serverId, toolName) {
+  var resultJson = __getToolSchemaRef.applySyncPromise(undefined, [serverId, toolName]);
+  return JSON.parse(resultJson);
+};
 
-    globalThis.__interfaces = ${JSON.stringify(interfacesString)};
-    const __interfaceMap = ${interfaceMapJson};
-    globalThis.__getToolInterface = function(toolName) {
-      return __interfaceMap[toolName] || null;
-    };
+globalThis.__interfaces = ${JSON.stringify(interfacesString)};
+const __interfaceMap = ${interfaceMapJson};
+globalThis.__getToolInterface = function(toolName) {
+  return __interfaceMap[toolName] || null;
+};
 
-    globalThis.input = typeof __input !== "undefined" ? __input : undefined;
-  `;
+globalThis.input = typeof __input !== "undefined" ? __input : undefined;
+`;
 }

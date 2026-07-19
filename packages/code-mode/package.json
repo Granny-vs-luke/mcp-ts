@@ -30,7 +30,9 @@
     "test": "npm run build && node --test test/*.test.mjs",
     "type-check": "tsc --noEmit"
   },
-  "dependencies": {},
+  "dependencies": {
+    "quickjs-emscripten": "^0.23.0"
+  },
   "optionalDependencies": {
     "isolated-vm": "^6.1.2"
   },

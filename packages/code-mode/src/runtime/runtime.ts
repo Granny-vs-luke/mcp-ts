@@ -17,6 +17,7 @@ import {
 } from "./sandbox-bridge.js";
 import { BaseCodeModeRuntime } from "./base-runtime.js";
 export { BaseCodeModeRuntime } from "./base-runtime.js";
+export { QuickJsCodeModeRuntime } from "./quickjs-runtime.js";
 
 export class IsolatedVmCodeModeRuntime extends BaseCodeModeRuntime {
   async run(
@@ -220,13 +221,25 @@ export class IsolatedVmCodeModeRuntime extends BaseCodeModeRuntime {
 export async function createCodeModeRuntime(
   options: CodeModeRuntimeOptions & { runtime?: 'isolated-vm' | 'quickjs' },
 ): Promise<CodeModeRuntime> {
-  const runtimeType = options.runtime ?? 'isolated-vm';
+  const runtimeType = options.runtime ?? await tryDetectRuntime();
   if (runtimeType === 'quickjs') {
-    throw new Error("QuickJS runtime not yet implemented");
+    const { QuickJsCodeModeRuntime } = await import("./quickjs-runtime.js");
+    const runtime = new QuickJsCodeModeRuntime(options);
+    await runtime.searchTools("", 1);
+    return runtime;
   }
   const runtime = new IsolatedVmCodeModeRuntime(options);
   await runtime.searchTools("", 1);
   return runtime;
+}
+
+export async function tryDetectRuntime(): Promise<'isolated-vm' | 'quickjs'> {
+  try {
+    await import("isolated-vm");
+    return 'isolated-vm';
+  } catch {
+    return 'quickjs';
+  }
 }
 
 async function loadIsolatedVm(): Promise<typeof import("isolated-vm").default> {
