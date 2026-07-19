@@ -28,6 +28,7 @@
     "postbuild": "node -e \"var fs=require('fs'),cp=require('child_process');['../../../mcp-server/scripts/resolve-local-pkg.cjs'].forEach(function(f){fs.existsSync(f)&&cp.execSync('node '+f,{cwd:__dirname,stdio:'inherit'})})\"",
     "prepublishOnly": "npm run build",
     "test": "npm run build && node --test test/*.test.mjs",
+    "test:quickjs": "npm run build && node --test test/quickjs.test.mjs",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
