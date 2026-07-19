@@ -5,112 +5,21 @@ import type {
   CodeModeRuntime,
   CodeModeRuntimeOptions,
   CodeModeToolCall,
-  IndexedTool,
-  ToolSearchResult,
-  ToolServer,
 } from "../types.js";
 import { CodemodeError, classifyError } from "./errors.js";
 import { estimateJsonBytes, resolveLimits } from "./limits.js";
-import {
-  indexServers,
-  listServersFromIndex,
-  normalizeServerId,
-  resolveTool,
-  searchToolIndex,
-} from "./tool-index.js";
+import { resolveTool } from "./tool-index.js";
 import {
   generateAllInterfaces,
-  generateBootstrapCode,
   generateInterfaceMap,
+  generateBootstrapCode,
   generateNamespaceBridgeCode,
-  toolToTypeScriptInterface,
 } from "./sandbox-bridge.js";
+import { BaseCodeModeRuntime } from "./base-runtime.js";
+export { BaseCodeModeRuntime } from "./base-runtime.js";
+export { QuickJsCodeModeRuntime } from "./quickjs-runtime.js";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function extractToolErrorText(result: Record<string, unknown>): string | undefined {
-  const content = result.content;
-  if (typeof content === "string") {
-    return content.replace(/^Error:\s*/i, "");
-  }
-  if (Array.isArray(content) && content.length > 0) {
-    const first = content[0];
-    if (isRecord(first) && typeof first.text === "string") return first.text.replace(/^Error:\s*/i, "");
-    if (typeof first === "string") return first.replace(/^Error:\s*/i, "");
-    return JSON.stringify(first);
-  }
-  if (isRecord(content)) {
-    const maybeError = (content as Record<string, unknown>).error ?? (content as Record<string, unknown>).message;
-    if (typeof maybeError === "string") return maybeError;
-    return JSON.stringify(content);
-  }
-  return undefined;
-}
-
-export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
-  private servers: Map<string, ToolServer>;
-  private indexedTools: IndexedTool[] = [];
-  private initialized = false;
-  private maxSearchResults: number;
-
-  constructor(private options: CodeModeRuntimeOptions) {
-    this.maxSearchResults = options.maxSearchResults ?? 10;
-    this.servers = new Map<string, ToolServer>();
-    for (const server of options.servers) {
-      this.servers.set(normalizeServerId(server.serverId), server);
-    }
-  }
-
-  private async ensureInitialized(): Promise<void> {
-    if (!this.initialized) {
-      this.indexedTools = await indexServers(this.options.servers);
-      this.initialized = true;
-    }
-  }
-
-  async searchTools(query: string, limit?: number): Promise<ToolSearchResult[]> {
-    await this.ensureInitialized();
-    return searchToolIndex(this.indexedTools, query, limit ?? this.maxSearchResults);
-  }
-
-  listServers(): Array<{ serverId: string; serverName: string; toolCount: number }> {
-    return listServersFromIndex(this.indexedTools);
-  }
-
-  getToolInterfaces(toolNames: string[]): string {
-    const interfaces: string[] = [];
-    const notFound: string[] = [];
-
-    for (const name of toolNames) {
-      // name can be "serverId.toolName" or just "toolName"
-      let tool: IndexedTool | undefined;
-      if (name.includes(".")) {
-        const [serverId, ...rest] = name.split(".");
-        const toolName = rest.join(".");
-        tool = resolveTool(this.indexedTools, toolName, serverId);
-      } else {
-        tool = resolveTool(this.indexedTools, name);
-      }
-
-      if (tool) {
-        interfaces.push(toolToTypeScriptInterface(tool));
-      } else {
-        notFound.push(`// Tool '${name}' not found`);
-      }
-    }
-
-    if (interfaces.length === 0 && notFound.length > 0) {
-      return notFound.join("\n");
-    }
-    let result = interfaces.join("\n\n");
-    if (notFound.length > 0) {
-      result += "\n\n" + notFound.join("\n");
-    }
-    return result;
-  }
-
+export class IsolatedVmCodeModeRuntime extends BaseCodeModeRuntime {
   async run(
     code: string,
     input: unknown = {},
@@ -125,8 +34,8 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
     });
     const logs: CodeModeLogEntry[] = [];
     const toolCalls: CodeModeToolCall[] = [];
-    let activeToolCalls = 0;
-    let totalToolCalls = 0;
+    const activeToolCallsRef = { value: 0 };
+    const totalToolCallsRef = { value: 0 };
 
     const ivm = await loadIsolatedVm();
     const isolate = new ivm.Isolate({ memoryLimit: limits.memoryLimitMb });
@@ -141,68 +50,15 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
       toolName: string,
       argsJson: string,
     ): Promise<string> => {
-      if (totalToolCalls >= limits.maxToolCalls) {
-        return JSON.stringify({ success: true, result: { error: `maxToolCalls ${limits.maxToolCalls} exceeded.`, isError: true } });
-      }
-      if (activeToolCalls >= limits.maxConcurrentToolCalls) {
-        return JSON.stringify({ success: true, result: { error: `maxConcurrentToolCalls ${limits.maxConcurrentToolCalls} exceeded.`, isError: true } });
-      }
-
-      activeToolCalls += 1;
-      totalToolCalls += 1;
-      const callStartedAt = Date.now();
-      const call: CodeModeToolCall = {
-        id: `call_${totalToolCalls}`,
-        serverId,
-        toolName,
-        args: null as unknown as Record<string, unknown>,
-        startedAt: callStartedAt,
-        durationMs: 0,
-        ok: false,
-      };
-      toolCalls.push(call);
-
-      try {
-        const args = JSON.parse(argsJson);
-        call.args = args;
-
-        let server = this.servers.get(normalizeServerId(serverId));
-        if (!server) {
-          const tool = resolveTool(this.indexedTools, toolName, serverId);
-          if (!tool) throw new Error(`Tool "${toolName}" was not found on server "${serverId}".`);
-          server = this.servers.get(tool.serverId);
-          if (!server) throw new Error(`Server "${tool.serverId}" is no longer registered.`);
-        }
-
-        const result = await server.callTool(toolName, args);
-        if (isRecord(result) && result.isError === true) {
-          call.ok = false;
-          call.error = extractToolErrorText(result) || "MCP tool returned an error";
-        } else {
-          call.ok = true;
-        }
-        return JSON.stringify({ success: true, result });
-      } catch (error) {
-        call.ok = false;
-        call.error = error instanceof Error ? error.message : String(error);
-        return JSON.stringify({ success: true, result: { error: call.error, isError: true } });
-      } finally {
-        call.durationMs = Date.now() - callStartedAt;
-        activeToolCalls -= 1;
-      }
+      return this.hostCallTool(serverId, toolName, argsJson, toolCalls, activeToolCallsRef, totalToolCallsRef, limits);
     };
 
     const hostSearchTools = async (query: string, limit: number): Promise<string> => {
-      const results = searchToolIndex(this.indexedTools, query, limit);
-      return JSON.stringify(results);
+      return this.hostSearchTools(query, limit);
     };
 
     const hostGetToolSchema = async (serverId: string, toolName: string): Promise<string> => {
-      const tool = resolveTool(this.indexedTools, toolName, serverId);
-      if (!tool) {
-        return JSON.stringify({ error: `Tool "${toolName}" not found on server "${serverId}".` });
-      }
-      return JSON.stringify(tool);
+      return this.hostGetToolSchema(serverId, toolName);
     };
 
     const hostCallToolRaw = async (
@@ -232,9 +88,7 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
     };
 
     const hostLog = (level: CodeModeLogEntry["level"], args: unknown[]) => {
-      if (logs.length < limits.maxLogEntries) {
-        logs.push({ level, args });
-      }
+      this.hostLog(level, args, logs, limits);
     };
 
     try {
@@ -365,12 +219,27 @@ export class IsolatedVmCodeModeRuntime implements CodeModeRuntime {
 }
 
 export async function createCodeModeRuntime(
-  options: CodeModeRuntimeOptions,
+  options: CodeModeRuntimeOptions & { runtime?: 'isolated-vm' | 'quickjs' },
 ): Promise<CodeModeRuntime> {
+  const runtimeType = options.runtime ?? await tryDetectRuntime();
+  if (runtimeType === 'quickjs') {
+    const { QuickJsCodeModeRuntime } = await import("./quickjs-runtime.js");
+    const runtime = new QuickJsCodeModeRuntime(options);
+    await runtime.searchTools("", 1);
+    return runtime;
+  }
   const runtime = new IsolatedVmCodeModeRuntime(options);
-  // Eagerly initialize tool index
   await runtime.searchTools("", 1);
   return runtime;
+}
+
+export async function tryDetectRuntime(): Promise<'isolated-vm' | 'quickjs'> {
+  try {
+    await import("isolated-vm");
+    return 'isolated-vm';
+  } catch {
+    return 'quickjs';
+  }
 }
 
 async function loadIsolatedVm(): Promise<typeof import("isolated-vm").default> {

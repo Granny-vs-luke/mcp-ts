@@ -1,5 +1,5 @@
 // Runtime
-export { createCodeModeRuntime, IsolatedVmCodeModeRuntime } from "./runtime/runtime.js";
+export { createCodeModeRuntime, IsolatedVmCodeModeRuntime, BaseCodeModeRuntime, QuickJsCodeModeRuntime } from "./runtime/runtime.js";
 // Error types and classification
 export { CodemodeError, classifyError } from "./runtime/errors.js";
 
