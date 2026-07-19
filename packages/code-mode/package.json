@@ -31,11 +31,10 @@
     "test:quickjs": "npm run build && node --test test/quickjs.test.mjs",
     "type-check": "tsc --noEmit"
   },
-  "dependencies": {
-    "quickjs-emscripten": "^0.23.0"
-  },
+  "dependencies": {},
   "optionalDependencies": {
-    "isolated-vm": "^6.1.2"
+    "isolated-vm": "^6.1.2",
+    "quickjs-emscripten": "^0.23.0"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
