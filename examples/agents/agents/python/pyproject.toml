@@ -12,7 +12,7 @@ dependencies = [
     "fastapi>=0.136.1",
     "google-adk>=1.31.1",
     "langchain-deepseek>=1.0.1",
-    "langchain-openai>=1.1.7",
+    "langchain-openai>=1.1.14",
     "litellm>=1.83.14",
     "uvicorn>=0.46.0",
 ]
